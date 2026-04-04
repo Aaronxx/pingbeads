@@ -1,0 +1,44 @@
+<!--components/colorStats/colorStats.wxml-->
+<view class="color-stats">
+  <!-- 统计摘要 -->
+  <view wx:if="{{stats}}" class="stats-summary">
+    <view class="summary-item">
+      <text class="label">颜色种类</text>
+      <text class="value">{{stats.colorCount}}</text>
+    </view>
+    <view class="summary-item">
+      <text class="label">总计</text>
+      <text class="value">{{stats.totalCount}}</text>
+    </view>
+  </view>
+
+  <!-- 排序和操作按钮 -->
+  <view wx:if="{{stats}}" class="stats-actions">
+    <view class="sort-toggle" bindtap="toggleSort">
+      <text>排序: {{sortBy === 'count' ? '数量' : '色号'}}</text>
+    </view>
+  </view>
+
+  <!-- 颜色列表 -->
+  <view wx:if="{{stats}}" class="color-list">
+    <view
+      wx:for="{{sortBy === 'count' ? stats.sortedByCount : stats.sortedByCode}}"
+      wx:key="code"
+      class="color-item {{highlightCode === item.code ? 'highlight' : ''}}"
+      bindtap="handleCodeTap"
+      data-code="{{item.code}}"
+      data-hex="{{item.hex}}"
+    >
+      <view class="color-swatch" style="background-color: {{item.hex}};"></view>
+      <view class="color-info">
+        <text class="color-code">{{item.code}}</text>
+        <text class="color-count">{{item.count}} 颗</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 空状态 -->
+  <view wx:if="{{!stats}}" class="empty-state">
+    <text>暂无统计数据</text>
+  </view>
+</view>

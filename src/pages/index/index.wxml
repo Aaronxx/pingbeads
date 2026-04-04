@@ -1,0 +1,99 @@
+<!--pages/index/index.wxml-->
+<view class="container">
+  <!-- 标题 -->
+  <view class="header">
+    <text class="title">Mark 色彩马赛克</text>
+    <text class="subtitle">图片转珠子图案</text>
+  </view>
+
+  <!-- 第一步：选择图片 -->
+  <view class="section">
+    <view class="section-title">1. 选择图片</view>
+    <imagePicker
+      bind:imageSelected="onImageSelected"
+      bind:imageCleared="onImageCleared"
+    />
+  </view>
+
+  <!-- 设置区域 -->
+  <view class="section settings" wx:if="{{imagePath}}">
+    <view class="section-title">2. 设置参数</view>
+
+    <view class="setting-item">
+      <text class="setting-label">网格大小: {{gridSize}}px (越小越精细)</text>
+      <slider
+        min="2"
+        max="50"
+        step="1"
+        value="{{gridSize}}"
+        bindchange="onGridSizeChange"
+        show-value
+      />
+    </view>
+
+    <view class="setting-item">
+      <text class="setting-label">颜色合并阈值: {{mergeThreshold}} (越大合并越多)</text>
+      <slider
+        min="0"
+        max="150"
+        step="5"
+        value="{{mergeThreshold}}"
+        bindchange="onThresholdChange"
+        show-value
+      />
+    </view>
+
+    <view class="setting-item">
+      <switch checked="{{showCode}}" bindchange="onToggleShowCode"/>
+      <text class="setting-label">显示色号标注</text>
+    </view>
+  </view>
+
+  <!-- 第二步：马赛克画布 -->
+  <view class="section" wx:if="{{imagePath && currentStep >= 1}}">
+    <view class="section-title">3. 马赛克预览</view>
+    <mosaicCanvas
+      imagePath="{{imagePath}}"
+      gridSize="{{gridSize}}"
+      mergeThreshold="{{mergeThreshold}}"
+      highlightCode="{{highlightCode}}"
+      showCode="{{showCode}}"
+      bind:cellClick="onCodeClick"
+      bind:mosaicGenerated="onMosaicGenerated"
+    />
+  </view>
+
+  <!-- 第三步：颜色统计 -->
+  <view class="section" wx:if="{{mosaicData}}">
+    <view class="section-title">4. 颜色统计</view>
+    <colorStats
+      mosaicData="{{mosaicData}}"
+      highlightCode="{{highlightCode}}"
+      bind:codeClick="onCodeClick"
+    />
+  </view>
+
+  <!-- 导出按钮 -->
+  <view class="export-section" wx:if="{{mosaicData}}">
+    <button class="export-btn" bindtap="onShowExportMenu">
+      导出
+    </button>
+  </view>
+
+  <!-- 导出菜单弹窗 -->
+  <view class="export-menu-mask" wx:if="{{showExportMenu}}" bindtap="onHideExportMenu"></view>
+  <view class="export-menu {{showExportMenu ? 'show' : ''}}">
+    <view class="menu-item" bindtap="exportPNG">
+      <text>导出 PNG 图片</text>
+    </view>
+    <view class="menu-item" bindtap="exportCSV">
+      <text>导出 CSV 清单</text>
+    </view>
+    <view class="menu-item" bindtap="copyToClipboard">
+      <text>复制到剪贴板</text>
+    </view>
+    <view class="menu-item cancel" bindtap="onHideExportMenu">
+      <text>取消</text>
+    </view>
+  </view>
+</view>

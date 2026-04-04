@@ -1,0 +1,41 @@
+<!--components/mosaicCanvas/mosaicCanvas.wxml-->
+<view class="mosaic-wrapper {{isFullscreen ? 'fullscreen' : ''}}">
+  <!-- 全屏按钮 -->
+  <view class="fullscreen-btn" bindtap="toggleFullscreen">
+    <text>{{isFullscreen ? '退出全屏' : '全屏'}}</text>
+  </view>
+
+  <!-- 渲染区域 -->
+  <view
+    wx:if="{{gridInfo}}"
+    class="mosaic-scroll"
+    style="transform: scale({{scale}});"
+    bindtouchstart="handleTouchStart"
+    bindtouchmove="handleTouchMove"
+    bindtouchend="handleTouchEnd"
+  >
+    <!-- 使用 view 渲染马赛克格子 -->
+    <view class="mosaic-grid" style="width: {{gridInfo.cols * gridInfo.gridSize}}px; height: {{gridInfo.rows * gridInfo.gridSize}}px;">
+      <view
+        wx:for="{{flatCells}}"
+        wx:key="index"
+        class="mosaic-cell {{highlightCode && item.markCode !== highlightCode ? 'dimmed' : ''}}"
+        style="left: {{item.x}}px; top: {{item.y}}px; width: {{gridInfo.gridSize}}px; height: {{gridInfo.gridSize}}px; background-color: {{highlightCode && item.markCode !== highlightCode ? '#CCCCCC' : item.markHex}};"
+        data-code="{{item.markCode}}"
+        bindtap="handleCellTap"
+      >
+        <text wx:if="{{showCode}}" class="cell-code">{{item.markCode}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 处理中提示 -->
+  <view wx:if="{{isProcessing}}" class="processing-tip">
+    <text>正在处理图片...</text>
+  </view>
+
+  <!-- 空状态提示 -->
+  <view wx:elif="{{!imagePath}}" class="empty-tip">
+    <text>请先选择图片</text>
+  </view>
+</view>

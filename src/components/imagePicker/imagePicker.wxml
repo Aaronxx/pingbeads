@@ -1,0 +1,34 @@
+<!--components/imagePicker/imagePicker.wxml-->
+<view class="image-picker">
+  <!-- 选择按钮（未选择图片时显示） -->
+  <view
+    wx:if="{{!hasImage && showPicker}}"
+    class="picker-button"
+    bindtap="chooseImage"
+  >
+    <view class="icon-plus">+</view>
+    <text class="picker-text">选择图片</text>
+  </view>
+
+  <!-- 图片预览（已选择图片时显示） -->
+  <view wx:if="{{hasImage}}" class="image-preview">
+    <image
+      class="preview-image"
+      src="{{imagePath}}"
+      mode="aspectFit"
+      bindtap="previewImage"
+    />
+    <view class="preview-actions">
+      <button
+        class="action-btn"
+        size="mini"
+        bindtap="reselectImage"
+      >重新选择</button>
+      <button
+        class="action-btn delete"
+        size="mini"
+        bindtap="clearImage"
+      >清除</button>
+    </view>
+  </view>
+</view>

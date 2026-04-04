@@ -1,0 +1,9 @@
+{
+  "usingComponents": {
+    "imagePicker": "/src/components/imagePicker/imagePicker",
+    "mosaicCanvas": "/src/components/mosaicCanvas/mosaicCanvas",
+    "colorStats": "/src/components/colorStats/colorStats"
+  },
+  "navigationBarTitleText": "Mark 色彩马赛克",
+  "enablePullDownRefresh": false
+}
