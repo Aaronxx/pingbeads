@@ -25,12 +25,8 @@
         </view>
       </view>
       
-      <!-- 右侧保存 -->
-      <view class="button-right" wx:if="{{mosaicData}}">
-        <button class="save-btn" bindtap="exportPNG">
-          <text>保存</text>
-        </button>
-      </view>
+      <!-- 右侧预留（给保存按钮） -->
+      <view class="button-right" wx:if="{{!mosaicData}}"></view>
     </view>
 
     <!-- 预览区：宽高90% -->
@@ -53,6 +49,13 @@
         <text class="placeholder-text">选择图片生成马赛克</text>
       </view>
     </view>
+
+    <!-- 底部保存按钮：宽度90%，高度5% -->
+    <view class="bottom-bar" wx:if="{{mosaicData}}">
+      <button class="save-btn" bindtap="exportPNG">
+        <text>保存图片</text>
+      </button>
+    </view>
   </view>
 
   <!-- 底部：颜色统计 -->
@@ -62,6 +65,18 @@
       <text class="stats-count">共 {{mosaicData.cols * mosaicData.rows}} 格</text>
     </view>
     <colorStats mosaicData="{{mosaicData}}" highlightCode="{{highlightCode}}" bind:codeClick="onCodeClick" />
+  </view>
+
+  <!-- 底部保存按钮：宽度30%，高度5% -->
+  <view class="bottom-save-bar" wx:if="{{mosaicData}}">
+    <button 
+      class="save-btn-full {{isExporting ? 'exporting' : ''}}" 
+      bindtap="exportPNG"
+      disabled="{{isExporting}}"
+    >
+      <text wx:if="{{isExporting}}" class="btn-text exporting-text">导出中...</text>
+      <text wx:else class="btn-text">保存图片</text>
+    </button>
   </view>
   
   <!-- 隐藏的导出用 canvas -->

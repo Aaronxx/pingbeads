@@ -19,7 +19,9 @@ Page({
     previewQuality: 2,
     // 导出 canvas 尺寸
     exportWidth: 300,
-    exportHeight: 300
+    exportHeight: 300,
+    // 是否正在导出
+    isExporting: false
   },
 
   onLoad() {
@@ -100,6 +102,14 @@ Page({
       wx.showToast({ title: '请先生成马赛克', icon: 'none' });
       return;
     }
+    
+    // 如果正在导出，不允许重复点击
+    if (this.data.isExporting) {
+      return;
+    }
+    
+    // 开始导出
+    this.setData({ isExporting: true });
 
     const that = this;
     const { gridData, cols, rows, gridSize } = this.data.mosaicData;
@@ -194,10 +204,14 @@ Page({
                 wx.showToast({ title: '保存失败', icon: 'none' });
               }
             });
+            // 重置导出状态
+            that.setData({ isExporting: false });
           },
           fail: (err) => {
             console.error('导出失败:', err);
             wx.showToast({ title: '导出失败', icon: 'none' });
+            // 重置导出状态
+            that.setData({ isExporting: false });
           }
         }, that);
       });
@@ -231,14 +245,17 @@ Page({
               filePath: res.tempFilePath,
               success: () => {
                 wx.showToast({ title: '保存成功', icon: 'success' });
+                this.setData({ isExporting: false });
               },
               fail: () => {
                 wx.showToast({ title: '保存失败', icon: 'none' });
+                this.setData({ isExporting: false });
               }
             });
           },
           fail: () => {
             wx.showToast({ title: '导出失败', icon: 'none' });
+            this.setData({ isExporting: false });
           }
         }, this);
       }, 200);

@@ -199,26 +199,59 @@ page {
 }
 
 /* ========================
-   保存按钮
+   底部保存按钮：宽度98%，高度5%
    ======================== */
-.save-btn {
+.bottom-save-bar {
+  position: fixed;
+  bottom: 20rpx;
+  width: 200rpx;
+  height: 60rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.save-btn-full {
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
   color: #fff;
-  font-size: 24rpx;
-  font-weight: 500;
-  padding: 12rpx 24rpx;
-  border-radius: var(--radius-sm);
-  box-shadow: 0 4rpx 12rpx rgba(59, 130, 246, 0.35);
+  font-size: 28rpx;
+  font-weight: 600;
+  border-radius: 12rpx;
+  box-shadow: 0 4rpx 16rpx rgba(59, 130, 246, 0.4);
   border: none;
-  transition: all 0.2s ease;
 }
 
-.save-btn:active {
-  transform: translateY(1rpx);
-  box-shadow: 0 2rpx 6rpx rgba(59, 130, 246, 0.3);
+.save-btn-full[disabled] {
+  opacity: 0.8;
+}
+
+.save-btn-full.exporting {
+  background: linear-gradient(135deg, #93c5fd 0%, #60a5fa 100%);
+}
+
+.btn-text {
+  display: inline-block;
+}
+
+.exporting-text {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 为底部按钮留出空间 */
+.container {
+  padding-bottom: 80rpx;
 }
 
 /* ========================
