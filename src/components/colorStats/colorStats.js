@@ -17,26 +17,30 @@ Component({
 
   data: {
     // 统计数据
-    stats: null,
-    // 排序方式: 'count'(数量) | 'code'(色号)
-    sortBy: 'count'
+    stats: null
   },
 
   observers: {
     'mosaicData': function(newData) {
-      console.log('[ColorStats] 收到 mosaicData:', newData ? '有数据' : '无数据');
-      if (newData) {
-        console.log('[ColorStats] mosaicData.gridData 存在:', !!newData.gridData);
-        console.log('[ColorStats] gridData 行数:', newData.gridData ? newData.gridData.length : 0);
-        if (newData.gridData && newData.gridData.length > 0 && newData.gridData[0]) {
-          console.log('[ColorStats] gridData[0] 列数:', newData.gridData[0].length);
-          const firstCell = newData.gridData[0][0];
-          console.log('[ColorStats] 第一个格子:', firstCell);
-          console.log('[ColorStats] markCode:', firstCell ? firstCell.markCode : 'undefined');
-          console.log('[ColorStats] markHex:', firstCell ? firstCell.markHex : 'undefined');
+      if (newData && newData.gridData) {
+        const stats = calculateStats(newData);
+        // 预处理：格式化色号和判断是否为浅色
+        if (stats && stats.sortedByCount) {
+          stats.sortedByCount = stats.sortedByCount.map(item => {
+            let displayCode = item.code;
+            // 去掉第二个字符（如果第一个字符是字母，第二个是0）
+            // 比如 H09 -> H9, P01 -> P1, F020 -> F20
+            if (displayCode.length >= 2 && displayCode[1] === '0') {
+              displayCode = displayCode.charAt(0) + displayCode.substring(2);
+            }
+            return {
+              ...item,
+              displayCode: displayCode + ' (' + item.count + ')',
+              isLight: this.isLightColor(item.hex)
+            };
+          });
         }
-        wx.showToast({ title: 'ColorStats收到数据', icon: 'none' });
-        this.calculateStats(newData);
+        this.setData({ stats });
       } else {
         this.setData({ stats: null });
       }
@@ -44,29 +48,35 @@ Component({
   },
 
   methods: {
-    // 计算统计数据
-    calculateStats(mosaicData) {
-      console.log('[ColorStats] 开始计算统计');
-      const stats = calculateStats(mosaicData);
-      console.log('[ColorStats] 统计结果:', stats);
-      this.setData({ stats });
-    },
-
-    // 切换排序方式
-    toggleSort() {
-      const newSort = this.data.sortBy === 'count' ? 'code' : 'count';
-      this.setData({ sortBy: newSort });
+    // 判断颜色是否为浅色（需要深色文字）
+    isLightColor(hex) {
+      if (!hex) return false;
+      hex = hex.replace('#', '');
+      let r, g, b;
+      if (hex.length === 3) {
+        r = parseInt(hex[0] + hex[0], 16);
+        g = parseInt(hex[1] + hex[1], 16);
+        b = parseInt(hex[2] + hex[2], 16);
+      } else if (hex.length === 6) {
+        r = parseInt(hex.substring(0, 2), 16);
+        g = parseInt(hex.substring(2, 4), 16);
+        b = parseInt(hex.substring(4, 6), 16);
+      } else {
+        return false;
+      }
+      const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+      return brightness > 150;
     },
 
     // 点击色号
     handleCodeTap(e) {
-      const { code, hex } = e.currentTarget.dataset;
-
-      // 如果点击当前高亮的色号，则取消高亮
+      const { code } = e.currentTarget.dataset;
       if (code === this.data.highlightCode) {
         this.triggerEvent('codeClick', { code: null, hex: null });
       } else {
-        this.triggerEvent('codeClick', { code, hex });
+        // 找到对应的 hex
+        const item = this.data.stats.sortedByCount.find(i => i.code === code);
+        this.triggerEvent('codeClick', { code, hex: item ? item.hex : null });
       }
     }
   }

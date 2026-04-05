@@ -49,13 +49,6 @@
         <text class="placeholder-text">选择图片生成马赛克</text>
       </view>
     </view>
-
-    <!-- 底部保存按钮：宽度90%，高度5% -->
-    <view class="bottom-bar" wx:if="{{mosaicData}}">
-      <button class="save-btn" bindtap="exportPNG">
-        <text>保存图片</text>
-      </button>
-    </view>
   </view>
 
   <!-- 底部：颜色统计 -->

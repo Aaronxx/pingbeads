@@ -124,14 +124,17 @@ Page({
     const mosaicWidth = cols * exportGridSize;
     const mosaicHeight = rows * exportGridSize;
     
-    // 统计行高度
-    const statsHeight = 80;
-    const statsItemWidth = 100;  // 每个统计项宽度
-    const statsItemCount = Math.min(stats.sortedByCount.length, 8);  // 最多显示8种颜色
-    const statsWidth = statsItemCount * statsItemWidth;
+    // 统计行：显示所有颜色，按数量排序
+    const statsList = stats.sortedByCount;
+    const statsItemWidth = Math.floor(mosaicWidth / 10);  // 等分10份，使统计区域与图片等宽
+    const statsItemHeight = 50; // 统计项高度
+    const statsItemCount = statsList.length;
+    const statsRowCount = Math.ceil(statsItemCount / 10);  // 每行最多10个
+    const statsHeight = statsItemHeight * statsRowCount + 20;
+    const statsWidth = mosaicWidth;  // 与马赛克图片等宽
     
     // 合并后的尺寸
-    const canvasWidth = Math.max(mosaicWidth, statsWidth + 40);
+    const canvasWidth = mosaicWidth;  // 以马赛克宽度为基准
     const canvasHeight = mosaicHeight + statsHeight;
     
     // 使用节点查询获取 canvas
@@ -175,33 +178,42 @@ Page({
           }
         }
         
-        // 2. 绘制统计行（底部）- 改为小矩形样式
+        // 2. 绘制统计行（底部）- 圆角按钮样式
         const statsY = mosaicHeight + 10;
         ctx.fillStyle = '#f8f9fa';
         ctx.fillRect(0, mosaicHeight, canvasWidth, statsHeight);
         
-        // 绘制统计项：色块 + 数量
+        // 计算每行实际显示的项数（不超过10个）
+        const itemsPerRow = 10;
+        
+        // 绘制统计项：圆角按钮样式，文字为 色号 (数量)
         for (let i = 0; i < statsItemCount; i++) {
-          const item = stats.sortedByCount[i];
-          const x = 20 + i * statsItemWidth;
+          const item = statsList[i];
+          const row = Math.floor(i / itemsPerRow);
+          const col = i % itemsPerRow;
           
-          // 绘制小矩形背景
-          ctx.fillStyle = '#fff';
-          ctx.strokeStyle = '#e9ecef';
-          ctx.lineWidth = 1;
-          ctx.fillRect(x, statsY, statsItemWidth - 10, 50);
-          ctx.strokeRect(x, statsY, statsItemWidth - 10, 50);
+          // 均匀分布，每行等分
+          const itemWidth = canvasWidth / itemsPerRow;
+          const x = col * itemWidth + 10;
+          const y = statsY + row * statsItemHeight;
           
-          // 绘制色块
+          // 格式化色号（省略第一个0）
+          let displayCode = item.code;
+          if (displayCode.length >= 4 && displayCode[1] === '0') {
+            displayCode = displayCode.substring(0, 1) + displayCode.substring(2);
+          }
+          
+          // 绘制圆角按钮背景
           ctx.fillStyle = item.hex;
-          ctx.fillRect(x + 8, statsY + 10, 24, 24);
+          this.drawRoundedRect(ctx, x, y, itemWidth - 20, statsItemHeight - 5, 15);
           
-          // 绘制数量
-          ctx.fillStyle = '#333';
-          ctx.font = 'bold 18px sans-serif';
-          ctx.textAlign = 'left';
-          ctx.textBaseline = 'top';
-          ctx.fillText(`×${item.count}`, x + 40, statsY + 12);
+          // 绘制文字
+          const isLightColor = this.isLightColor(item.hex);
+          ctx.fillStyle = isLightColor ? '#333' : '#fff';
+          ctx.font = 'bold 14px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`${displayCode} (${item.count})`, x + (itemWidth - 20) / 2, y + (statsItemHeight - 5) / 2);
         }
         
         // 导出图片
@@ -282,5 +294,44 @@ Page({
       title: 'Mark 色彩马赛克 - 图片转珠子图案',
       path: '/pages/index/index'
     };
+  },
+
+  // 绘制圆角矩形
+  drawRoundedRect(ctx, x, y, width, height, radius) {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+    ctx.fill();
+  },
+
+  // 判断颜色是否为浅色（需要深色文字）
+  isLightColor(hex) {
+    if (!hex) return false;
+    // 去掉 #
+    hex = hex.replace('#', '');
+    // 解析 RGB
+    let r, g, b;
+    if (hex.length === 3) {
+      r = parseInt(hex[0] + hex[0], 16);
+      g = parseInt(hex[1] + hex[1], 16);
+      b = parseInt(hex[2] + hex[2], 16);
+    } else if (hex.length === 6) {
+      r = parseInt(hex.substring(0, 2), 16);
+      g = parseInt(hex.substring(2, 4), 16);
+      b = parseInt(hex.substring(4, 6), 16);
+    } else {
+      return false;
+    }
+    // 计算亮度
+    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+    return brightness > 150;
   }
 });
