@@ -67,16 +67,15 @@
     <colorStats mosaicData="{{mosaicData}}" highlightCode="{{highlightCode}}" bind:codeClick="onCodeClick" />
   </view>
 
-  <!-- 底部保存按钮：宽度30%，高度5% -->
-  <view class="bottom-save-bar" wx:if="{{mosaicData}}">
-    <button 
-      class="save-btn-full {{isExporting ? 'exporting' : ''}}" 
+  <!-- 底部悬浮框：宽度与屏幕同宽 -->
+  <view class="bottom-fixed-bar" wx:if="{{mosaicData}}">
+    <view 
+      class="save-btn-full {{isExporting ? 'exporting' : ''}} {{isExporting ? 'disabled' : ''}}" 
       bindtap="exportPNG"
-      disabled="{{isExporting}}"
     >
       <text wx:if="{{isExporting}}" class="btn-text exporting-text">导出中...</text>
       <text wx:else class="btn-text">保存图片</text>
-    </button>
+    </view>
   </view>
   
   <!-- 隐藏的导出用 canvas -->

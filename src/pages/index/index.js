@@ -116,18 +116,22 @@ Page({
     const { calculateStats } = require('../../utils/statsCalculator');
     const stats = calculateStats(this.data.mosaicData);
     
+    // 增大分辨率：导出时使用更大的格子
+    const exportScale = 3;  // 放大3倍
+    const exportGridSize = gridSize * exportScale;
+    
     // 计算尺寸
-    const mosaicWidth = cols * gridSize;
-    const mosaicHeight = rows * gridSize;
+    const mosaicWidth = cols * exportGridSize;
+    const mosaicHeight = rows * exportGridSize;
     
     // 统计行高度
-    const statsHeight = 60;
-    const cellSize = Math.min(24, gridSize * 1.5);  // 统计区域的色块稍大一点
-    const statsRowCount = Math.min(stats.sortedByCount.length, 10);  // 最多显示10种颜色
-    const statsWidth = statsRowCount * cellSize;
+    const statsHeight = 80;
+    const statsItemWidth = 100;  // 每个统计项宽度
+    const statsItemCount = Math.min(stats.sortedByCount.length, 8);  // 最多显示8种颜色
+    const statsWidth = statsItemCount * statsItemWidth;
     
     // 合并后的尺寸
-    const canvasWidth = Math.max(mosaicWidth, statsWidth);
+    const canvasWidth = Math.max(mosaicWidth, statsWidth + 40);
     const canvasHeight = mosaicHeight + statsHeight;
     
     // 使用节点查询获取 canvas
@@ -147,47 +151,57 @@ Page({
         canvas.width = canvasWidth;
         canvas.height = canvasHeight;
         
-        // 1. 绘制马赛克主体
+        // 1. 绘制马赛克主体（使用放大后的格子）
         for (let row = 0; row < rows; row++) {
           for (let col = 0; col < cols; col++) {
             const cell = gridData[row][col];
             if (cell) {
+              const x = col * exportGridSize;
+              const y = row * exportGridSize;
+              
               // 绘制色块
               ctx.fillStyle = cell.markHex;
-              ctx.fillRect(cell.x, cell.y, cell.width, cell.height);
+              ctx.fillRect(x, y, exportGridSize, exportGridSize);
               
-              // 绘制色号（如果格子足够大）
-              if (gridSize >= 8) {
+              // 绘制色号（根据放大后的格子调整字号）
+              if (exportGridSize >= 15) {
                 ctx.fillStyle = '#fff';
-                ctx.font = `bold ${Math.max(8, gridSize * 0.5)}px sans-serif`;
+                ctx.font = `bold ${Math.max(10, exportGridSize * 0.4)}px sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(cell.markCode, cell.x + cell.width / 2, cell.y + cell.height / 2);
+                ctx.fillText(cell.markCode, x + exportGridSize / 2, y + exportGridSize / 2);
               }
             }
           }
         }
         
-        // 2. 绘制统计行（底部）
+        // 2. 绘制统计行（底部）- 改为小矩形样式
         const statsY = mosaicHeight + 10;
-        ctx.fillStyle = '#f5f5f5';
+        ctx.fillStyle = '#f8f9fa';
         ctx.fillRect(0, mosaicHeight, canvasWidth, statsHeight);
         
-        // 绘制颜色统计色块
-        for (let i = 0; i < statsRowCount; i++) {
+        // 绘制统计项：色块 + 数量
+        for (let i = 0; i < statsItemCount; i++) {
           const item = stats.sortedByCount[i];
-          const x = i * cellSize + 10;
+          const x = 20 + i * statsItemWidth;
           
-          // 色块
+          // 绘制小矩形背景
+          ctx.fillStyle = '#fff';
+          ctx.strokeStyle = '#e9ecef';
+          ctx.lineWidth = 1;
+          ctx.fillRect(x, statsY, statsItemWidth - 10, 50);
+          ctx.strokeRect(x, statsY, statsItemWidth - 10, 50);
+          
+          // 绘制色块
           ctx.fillStyle = item.hex;
-          ctx.fillRect(x, statsY, cellSize - 2, cellSize - 2);
+          ctx.fillRect(x + 8, statsY + 10, 24, 24);
           
-          // 色号+数量
+          // 绘制数量
           ctx.fillStyle = '#333';
-          ctx.font = 'bold 10px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText(`${item.code}`, x + cellSize / 2, statsY + cellSize + 10);
-          ctx.fillText(`${item.count}`, x + cellSize / 2, statsY + cellSize + 22);
+          ctx.font = 'bold 18px sans-serif';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'top';
+          ctx.fillText(`×${item.count}`, x + 40, statsY + 12);
         }
         
         // 导出图片
