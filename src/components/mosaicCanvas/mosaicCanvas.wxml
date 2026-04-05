@@ -25,8 +25,9 @@
       <view
         wx:for="{{flatCells}}"
         wx:key="index"
+        wx:if="{{item}}"
         class="mosaic-cell {{gridInfo.gridSize < 12 ? 'small' : ''}} {{highlightCode && item.markCode !== highlightCode ? 'dimmed' : ''}}"
-        style="left: {{item.x}}px; top: {{item.y}}px; width: {{gridInfo.gridSize}}px; height: {{gridInfo.gridSize}}px; background-color: {{highlightCode && item.markCode !== highlightCode ? '#CCCCCC' : item.markHex}};"
+        style="left: {{item.x}}px; top: {{item.y}}px; width: {{item.width || gridInfo.gridSize}}px; height: {{item.height || gridInfo.gridSize}}px; background-color: {{highlightCode && item.markCode !== highlightCode ? '#CCCCCC' : item.markHex}};"
         data-code="{{item.markCode}}"
         bindtap="handleCellTap"
       >

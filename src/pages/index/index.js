@@ -31,7 +31,6 @@ Page({
   // 图片选择回调
   onImageSelected(e) {
     const { path } = e.detail;
-    wx.showToast({ title: '选择成功: ' + path.substring(0, 20), icon: 'none' });
     this.setData({
       imagePath: path,
       currentStep: 1,
@@ -53,15 +52,11 @@ Page({
 
   // 马赛克处理完成回调
   onMosaicGenerated(e) {
-    console.log('[Index] onMosaicGenerated 收到事件', e.detail);
     const { gridInfo } = e.detail;
-    console.log('[Index] gridInfo:', gridInfo ? '有数据' : '无数据');
-    wx.showToast({ title: '收到马赛克数据', icon: 'none' });
     this.setData({
       mosaicData: gridInfo,
       currentStep: 2
     });
-    console.log('[Index] mosaicData 已设置');
   },
 
   // 点击颜色色号回调
@@ -117,7 +112,7 @@ Page({
     const stats = calculateStats(this.data.mosaicData);
     
     // 增大分辨率：导出时使用更大的格子
-    const exportScale = 3;  // 放大3倍
+    const exportScale = 6;  // 放大6倍
     const exportGridSize = gridSize * exportScale;
     
     // 计算尺寸
@@ -126,15 +121,12 @@ Page({
     
     // 统计行：显示所有颜色，按数量排序
     const statsList = stats.sortedByCount;
-    const statsItemWidth = Math.floor(mosaicWidth / 10);  // 等分10份，使统计区域与图片等宽
+    const itemsPerRow = 10;  // 每行10个，与图片等宽
     const statsItemHeight = 50; // 统计项高度
     const statsItemCount = statsList.length;
-    const statsRowCount = Math.ceil(statsItemCount / 10);  // 每行最多10个
+    const statsRowCount = Math.ceil(statsItemCount / itemsPerRow);
     const statsHeight = statsItemHeight * statsRowCount + 20;
-    const statsWidth = mosaicWidth;  // 与马赛克图片等宽
-    
-    // 合并后的尺寸
-    const canvasWidth = mosaicWidth;  // 以马赛克宽度为基准
+    const canvasWidth = mosaicWidth;
     const canvasHeight = mosaicHeight + statsHeight;
     
     // 使用节点查询获取 canvas
@@ -168,8 +160,10 @@ Page({
               
               // 绘制色号（根据放大后的格子调整字号）
               if (exportGridSize >= 15) {
-                ctx.fillStyle = '#fff';
-                ctx.font = `bold ${Math.max(10, exportGridSize * 0.4)}px sans-serif`;
+                // 根据色块颜色自动选择文字颜色
+                const isLight = this.isLightColor(cell.markHex);
+                ctx.fillStyle = isLight ? '#333' : '#fff';
+                ctx.font = `bold ${Math.max(12, exportGridSize * 0.4)}px sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText(cell.markCode, x + exportGridSize / 2, y + exportGridSize / 2);
@@ -178,15 +172,15 @@ Page({
           }
         }
         
-        // 2. 绘制统计行（底部）- 圆角按钮样式
+        // 2. 绘制统计行（底部）- 玻璃拟态圆角按钮样式
         const statsY = mosaicHeight + 10;
         ctx.fillStyle = '#f8f9fa';
         ctx.fillRect(0, mosaicHeight, canvasWidth, statsHeight);
         
-        // 计算每行实际显示的项数（不超过10个）
+        // 每行10个，与图片等宽
         const itemsPerRow = 10;
         
-        // 绘制统计项：圆角按钮样式，文字为 色号 (数量)
+        // 绘制统计项：玻璃拟态圆角按钮样式
         for (let i = 0; i < statsItemCount; i++) {
           const item = statsList[i];
           const row = Math.floor(i / itemsPerRow);
@@ -194,26 +188,52 @@ Page({
           
           // 均匀分布，每行等分
           const itemWidth = canvasWidth / itemsPerRow;
-          const x = col * itemWidth + 10;
+          const x = col * itemWidth + 8;
           const y = statsY + row * statsItemHeight;
+          const btnWidth = itemWidth - 16;
+          const btnHeight = statsItemHeight - 5;
+          const radius = 15;
           
-          // 格式化色号（省略第一个0）
+          // 格式化色号（省略第二个字符的0）
           let displayCode = item.code;
-          if (displayCode.length >= 4 && displayCode[1] === '0') {
-            displayCode = displayCode.substring(0, 1) + displayCode.substring(2);
+          if (displayCode.length >= 2 && displayCode[1] === '0') {
+            displayCode = displayCode.charAt(0) + displayCode.substring(2);
           }
           
-          // 绘制圆角按钮背景
-          ctx.fillStyle = item.hex;
-          this.drawRoundedRect(ctx, x, y, itemWidth - 20, statsItemHeight - 5, 15);
-          
-          // 绘制文字
           const isLightColor = this.isLightColor(item.hex);
+          
+          // 绘制圆角按钮背景（玻璃拟态效果）
+          // 1. 先绘制按钮背景
+          ctx.fillStyle = item.hex;
+          this.drawRoundedRect(ctx, x, y, btnWidth, btnHeight, radius);
+          
+          // 2. 绘制顶部高光
+          ctx.save();
+          this.drawRoundedRect(ctx, x, y, btnWidth, btnHeight, radius);
+          ctx.clip();
+          const gradient = ctx.createLinearGradient(x, y, x, y + btnHeight * 0.4);
+          gradient.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+          gradient.addColorStop(1, 'rgba(255, 255, 255, 0.1)');
+          ctx.fillStyle = gradient;
+          ctx.fillRect(x, y, btnWidth, btnHeight * 0.4);
+          ctx.restore();
+          
+          // 3. 绘制边框（玻璃拟态的亮边框）
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+          ctx.lineWidth = 1;
+          this.drawRoundedRect(ctx, x, y, btnWidth, btnHeight, radius);
+          
+          // 4. 绘制文字
           ctx.fillStyle = isLightColor ? '#333' : '#fff';
-          ctx.font = 'bold 14px sans-serif';
+          ctx.font = 'bold 12px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(`${displayCode} (${item.count})`, x + (itemWidth - 20) / 2, y + (statsItemHeight - 5) / 2);
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+          ctx.shadowBlur = 1;
+          ctx.shadowOffsetX = 1;
+          ctx.shadowOffsetY = 1;
+          ctx.fillText(`${displayCode} (${item.count})`, x + btnWidth / 2, y + btnHeight / 2);
+          ctx.shadowColor = 'transparent';
         }
         
         // 导出图片
