@@ -22,7 +22,7 @@
       <view
         wx:for="{{flatCells}}"
         wx:key="index"
-        class="mosaic-cell {{highlightCode && item.markCode !== highlightCode ? 'dimmed' : ''}}"
+        class="mosaic-cell {{gridInfo.gridSize < 12 ? 'small' : ''}} {{highlightCode && item.markCode !== highlightCode ? 'dimmed' : ''}}"
         style="left: {{item.x}}px; top: {{item.y}}px; width: {{gridInfo.gridSize}}px; height: {{gridInfo.gridSize}}px; background-color: {{highlightCode && item.markCode !== highlightCode ? '#CCCCCC' : item.markHex}};"
         data-code="{{item.markCode}}"
         bindtap="handleCellTap"

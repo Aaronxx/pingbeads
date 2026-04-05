@@ -68,6 +68,20 @@
   text-align: center;
   line-height: 1;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 20rpx;  /* 默认小字号 */
+  padding: 2rpx;
+}
+
+/* 小格子用更小的字 */
+.mosaic-grid .cell-code {
+  font-size: 16rpx;
+}
+
+/* 色块较小时隐藏文字 */
+.mosaic-cell.small .cell-code {
+  display: none;
 }
 
 .processing-tip,
