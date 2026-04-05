@@ -121,29 +121,32 @@ Component({
         success(res) {
           console.log('[MosaicCanvas] 图片尺寸:', res.width, res.height);
 
-          // 限制最大尺寸，避免内存问题
-          const maxSize = 800;
-          let srcWidth = res.width;
-          let srcHeight = res.height;
+          // 获取父容器宽度（大约屏幕宽度 * 0.9 * 0.9）
+          const systemInfo = wx.getSystemInfoSync();
+          const maxPreviewWidth = systemInfo.windowWidth * 0.81; // 95% * 90% * 稍微留空
           
-          if (srcWidth > maxSize || srcHeight > maxSize) {
-            const scale = maxSize / Math.max(srcWidth, srcHeight);
-            srcWidth = Math.floor(srcWidth * scale);
-            srcHeight = Math.floor(srcHeight * scale);
+          // 根据图片比例计算显示尺寸
+          let displayWidth = maxPreviewWidth;
+          let displayHeight = (res.height / res.width) * displayWidth;
+          
+          // 限制最大高度，避免太高
+          const maxHeight = systemInfo.windowHeight * 0.6;
+          if (displayHeight > maxHeight) {
+            displayHeight = maxHeight;
+            displayWidth = (displayHeight / res.height) * res.width;
           }
 
-          const maxPreviewWidth = 400;
-          const scale = maxPreviewWidth / res.width;
-          const outputWidth = maxPreviewWidth;
-          const outputHeight = Math.round(res.height * scale);
+          // 限制最小尺寸
+          displayWidth = Math.max(displayWidth, 200);
+          displayHeight = Math.max(displayHeight, 200);
 
           that.setData({
-            canvasWidth: outputWidth,
-            canvasHeight: outputHeight
+            canvasWidth: Math.floor(displayWidth),
+            canvasHeight: Math.floor(displayHeight)
           });
 
           // 尝试获取真实像素数据
-          that.tryGetPixelData(imagePath, srcWidth, srcHeight, outputWidth, outputHeight, actualGridSize);
+          that.tryGetPixelData(imagePath, res.width, res.height, Math.floor(displayWidth), Math.floor(displayHeight), actualGridSize);
         },
         fail(e) {
           console.error('[MosaicCanvas] wx.getImageInfo失败:', e);

@@ -1,116 +1,239 @@
 /* pages/index/index.wxss */
 
+/* 变量定义 */
+page {
+  --primary: #3b82f6;
+  --primary-dark: #2563eb;
+  --primary-light: #60a5fa;
+  --bg-main: #f0f2f5;
+  --bg-card: #ffffff;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --border-light: #e2e8f0;
+  --shadow-sm: 0 1rpx 3rpx rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4rpx 12rpx rgba(0, 0, 0, 0.1);
+  --radius-sm: 8rpx;
+  --radius-md: 12rpx;
+  --radius-lg: 16rpx;
+}
+
 .container {
   min-height: 100vh;
-  background-color: #f8f8f8;
-  padding: 20rpx;
-  box-sizing: border-box;
+  background: var(--bg-main);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12rpx 0;
 }
 
-.header {
-  text-align: center;
-  padding: 30rpx 0;
+/* ========================
+   大外框：宽95%，高98%
+   ======================== */
+.main-wrapper {
+  width: 95%;
+  height: 98vh;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
 }
 
-.title {
-  display: block;
-  font-size: 40rpx;
-  font-weight: bold;
-  color: #333;
+/* 碎花背景 - 大框剩余区域 */
+.main-wrapper::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: 
+    radial-gradient(circle at 20% 30%, rgba(59, 130, 246, 0.05) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(99, 102, 241, 0.04) 0%, transparent 40%),
+    radial-gradient(circle at 40% 80%, rgba(16, 185, 129, 0.04) 0%, transparent 45%),
+    radial-gradient(circle at 90% 70%, rgba(236, 72, 153, 0.03) 0%, transparent 35%),
+    radial-gradient(circle at 10% 90%, rgba(245, 158, 11, 0.03) 0%, transparent 40%),
+    url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%233b82f6' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  background-size: 
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    40rpx 40rpx;
+  background-position: center;
+  pointer-events: none;
+  z-index: 0;
 }
 
-.subtitle {
-  display: block;
-  font-size: 26rpx;
-  color: #666;
-  margin-top: 10rpx;
+/* ========================
+   按钮行：宽度90%
+   ======================== */
+.button-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 90%;
+  margin: 16rpx auto 0;
+  padding: 12rpx 0;
+  position: relative;
+  z-index: 1;
 }
 
-.section {
-  background-color: #fff;
-  border-radius: 12rpx;
-  padding: 30rpx;
-  margin-bottom: 20rpx;
+.button-left {
+  flex-shrink: 0;
 }
 
-.section-title {
-  font-size: 30rpx;
-  font-weight: bold;
-  color: #333;
-  margin-bottom: 20rpx;
-  padding-left: 20rpx;
-  border-left: 6rpx solid #07c160;
+.button-center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20rpx;
+  padding: 0 12rpx;
 }
 
-.settings {
-  padding: 20rpx 30rpx;
+.button-right {
+  flex-shrink: 0;
 }
 
+/* 设置项 */
 .setting-item {
-  margin-bottom: 30rpx;
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
 }
 
 .setting-label {
-  display: block;
-  font-size: 28rpx;
-  color: #333;
-  margin-bottom: 10rpx;
+  font-size: 20rpx;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
-.export-section {
-  padding: 20rpx 30rpx;
+.slider-mini {
+  width: 80rpx;
 }
 
-.export-btn {
-  width: 100%;
-  background-color: #07c160;
-  color: #fff;
-  font-size: 32rpx;
-  border-radius: 12rpx;
-}
-
-/* 导出菜单 */
-.export-menu-mask {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-  z-index: 100;
-}
-
-.export-menu {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: #fff;
-  border-radius: 24rpx 24rpx 0 0;
-  transform: translateY(100%);
-  transition: transform 0.3s ease;
-  z-index: 101;
-}
-
-.export-menu.show {
-  transform: translateY(0);
-}
-
-.menu-item {
+/* ========================
+   预览区：宽高90%
+   ======================== */
+.preview-area {
+  width: 90%;
+  flex: 1;
+  margin: 16rpx auto 16rpx;
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  overflow: hidden;
+  position: relative;
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 100rpx;
-  border-bottom: 1rpx solid #eee;
-  font-size: 32rpx;
-  color: #333;
+  z-index: 1;
+  box-shadow: var(--shadow-sm);
 }
 
-.menu-item:active {
-  background-color: #f5f5f5;
+/* 预览区背景纹理 */
+.preview-area::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: 
+    linear-gradient(45deg, #f1f5f9 25%, transparent 25%),
+    linear-gradient(-45deg, #f1f5f9 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #f1f5f9 75%),
+    linear-gradient(-45deg, transparent 75%, #f1f5f9 75%);
+  background-size: 20rpx 20rpx;
+  background-position: 0 0, 0 10rpx, 10rpx -10rpx, -10rpx 0;
+  opacity: 0.5;
+  pointer-events: none;
 }
 
-.menu-item.cancel {
-  color: #999;
-  border-bottom: none;
+/* 占位符 */
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20rpx;
+  z-index: 1;
+}
+
+.placeholder-icon {
+  font-size: 80rpx;
+  opacity: 0.5;
+}
+
+.placeholder-text {
+  font-size: 26rpx;
+  color: var(--text-muted);
+}
+
+/* ========================
+   底部统计面板
+   ======================== */
+.stats-panel {
+  width: 95%;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  margin-top: 12rpx;
+}
+
+.stats-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 24rpx;
+  border-bottom: 1rpx solid var(--border-light);
+}
+
+.stats-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.stats-count {
+  font-size: 24rpx;
+  color: var(--text-muted);
+}
+
+/* ========================
+   保存按钮
+   ======================== */
+.save-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  color: #fff;
+  font-size: 24rpx;
+  font-weight: 500;
+  padding: 12rpx 24rpx;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4rpx 12rpx rgba(59, 130, 246, 0.35);
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.save-btn:active {
+  transform: translateY(1rpx);
+  box-shadow: 0 2rpx 6rpx rgba(59, 130, 246, 0.3);
+}
+
+/* ========================
+   响应式
+   ======================== */
+@media (max-width: 600rpx) {
+  .button-center {
+    gap: 10rpx;
+  }
+  
+  .setting-label {
+    display: none;
+  }
+  
+  .slider-mini {
+    width: 60rpx;
+  }
 }

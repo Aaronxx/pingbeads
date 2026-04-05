@@ -1,5 +1,8 @@
 <!--components/mosaicCanvas/mosaicCanvas.wxml-->
-<view class="mosaic-wrapper {{isFullscreen ? 'fullscreen' : ''}}">
+<view 
+  class="mosaic-wrapper {{isFullscreen ? 'fullscreen' : ''}}" 
+  style="width: {{canvasWidth}}px; height: {{canvasHeight}}px;"
+>
   <!-- 隐藏的 canvas 用于获取像素数据 -->
   <canvas type="2d" id="pixel-canvas" style="width: 1px; height: 1px; position: absolute; opacity: 0;" />
 

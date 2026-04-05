@@ -1,64 +1,50 @@
 /* components/imagePicker/imagePicker.wxss */
 
 .image-picker {
-  width: 100%;
+  display: inline-block;
 }
 
+/* 选择按钮 - 和保存按钮一致的样式但更小 */
 .picker-button {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 300rpx;
-  height: 300rpx;
-  background-color: #f5f5f5;
-  border: 2rpx dashed #ccc;
-  border-radius: 16rpx;
-  margin: 0 auto;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #fff;
+  font-size: 24rpx;
+  font-weight: 500;
+  padding: 12rpx 20rpx;
+  border-radius: 8rpx;
+  box-shadow: 0 4rpx 12rpx rgba(59, 130, 246, 0.35);
+  border: none;
+  transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .picker-button:active {
-  background-color: #eeeeee;
+  transform: translateY(1rpx);
+  box-shadow: 0 2rpx 6rpx rgba(59, 130, 246, 0.3);
 }
 
-.icon-plus {
-  font-size: 80rpx;
-  color: #999;
-  line-height: 1;
-}
-
-.picker-text {
-  margin-top: 16rpx;
-  font-size: 28rpx;
-  color: #999;
-}
-
-.image-preview {
+/* 按钮组 */
+.picker-actions {
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  gap: 12rpx;
 }
 
-.preview-image {
-  width: 100%;
-  max-height: 500rpx;
-  border-radius: 16rpx;
+/* 清除按钮 - 红色 */
+.picker-button.clear {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  box-shadow: 0 4rpx 12rpx rgba(239, 68, 68, 0.35);
 }
 
+.picker-button.clear:active {
+  box-shadow: 0 2rpx 6rpx rgba(239, 68, 68, 0.3);
+}
+
+/* 隐藏不需要的元素 */
+.picker-text,
+.image-preview,
 .preview-actions {
-  display: flex;
-  gap: 20rpx;
-  margin-top: 20rpx;
-}
-
-.action-btn {
-  padding: 10rpx 30rpx;
-  font-size: 26rpx;
-  background-color: #07c160;
-  color: #fff;
-  border-radius: 8rpx;
-}
-
-.action-btn.delete {
-  background-color: #ff4d4f;
+  display: none;
 }
