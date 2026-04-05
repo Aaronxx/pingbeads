@@ -54,6 +54,7 @@
   align-items: center;
   box-sizing: border-box;
   border: 0.5px solid rgba(0, 0, 0, 0.1);
+  overflow: hidden;
 }
 
 .mosaic-cell.dimmed {
@@ -62,9 +63,11 @@
 
 .cell-code {
   color: #fff;
-  font-size: 20rpx;
   font-weight: bold;
   text-shadow: 0 0 2rpx rgba(0, 0, 0, 0.9);
+  text-align: center;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .processing-tip,

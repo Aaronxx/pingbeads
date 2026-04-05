@@ -14,9 +14,11 @@ Page({
     // 网格大小
     gridSize: 10,
     // 颜色合并阈值
-    mergeThreshold: 85,
+    mergeThreshold: 5,
     // 导出菜单显示状态
-    showExportMenu: false
+    showExportMenu: false,
+    // 预览质量: 1=低(快速), 2=中, 3=高(精细)
+    previewQuality: 2
   },
 
   onLoad() {
@@ -70,15 +72,18 @@ Page({
     this.setData({ showCode: e.detail.value });
   },
 
+  // 调整预览质量
+  onPreviewQualityChange(e) {
+    this.setData({
+      previewQuality: parseInt(e.detail.value) || 2
+    });
+  },
+
   // 调整网格大小
   onGridSizeChange(e) {
     this.setData({
       gridSize: parseInt(e.detail.value) || 10
     });
-    // 重新处理图片
-    if (this.data.imagePath) {
-      this.processImage();
-    }
   },
 
   // 调整合并阈值
@@ -86,25 +91,6 @@ Page({
     this.setData({
       mergeThreshold: parseInt(e.detail.value) || 30
     });
-    // 重新处理图片
-    if (this.data.imagePath) {
-      this.processImage();
-    }
-  },
-
-  // 处理图片（重新生成马赛克）
-  processImage() {
-    // 触发 mosaicCanvas 重新处理
-    this.setData({
-      mosaicData: null,
-      currentStep: 1
-    });
-    // 延迟一下让组件重新渲染
-    setTimeout(() => {
-      this.setData({
-        currentStep: 2
-      });
-    }, 100);
   },
 
   // 显示导出菜单

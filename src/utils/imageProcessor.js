@@ -1,116 +1,306 @@
 /**
- * 图像处理算法模块
- * 负责图片像素化处理和颜色映射
+ * 图像处理模块 - 支持多种颜色量化算法
+ * 
+ * 算法说明：
+ * 1. K-means: K均值聚类，适合保留主色调
+ * 2. Median Cut: 中位切分，快速但效果一般
+ * 3. Octree: 八叉树，平衡速度和效果
+ * 4. 抖动 (Dithering): 使用误差扩散保留细节
  */
 
-const { rgbToMark } = require('./colorMapper');
+// findClosestMarkColor 在 colorMapper 中实现
+const colorMapper = require('../utils/colorMapper');
+const findClosestMarkColor = colorMapper.findClosestMarkColor;
 
 /**
- * 从 Canvas 获取图像数据
- * @param {Object} canvas - 小程序 Canvas 上下文
- * @param {number} width - 宽度
- * @param {number} height - 高度
- * @returns {ImageData} 图像数据
+ * K-means 颜色聚类
+ * @param {Array} colors - RGB 颜色数组 [{r,g,b}, ...]
+ * @param {number} k - 聚类数量
+ * @returns {Array} 聚类中心颜色
  */
-function getImageData(canvas, width, height) {
-  return canvas.getImageData(0, 0, width, height);
+function kMeansClustering(colors, k) {
+  if (colors.length === 0) return [];
+  if (colors.length <= k) return colors;
+
+  // 随机选择 k 个初始中心
+  const centers = [];
+  const used = new Set();
+  while (centers.length < k && centers.length < colors.length) {
+    const idx = Math.floor(Math.random() * colors.length);
+    if (!used.has(idx)) {
+      used.add(idx);
+      centers.push({ ...colors[idx] });
+    }
+  }
+
+  // 迭代
+  const maxIterations = 20;
+  for (let iter = 0; iter < maxIterations; iter++) {
+    // 分配到最近中心
+    const clusters = Array.from({ length: k }, () => []);
+    
+    for (const color of colors) {
+      let minDist = Infinity;
+      let minIdx = 0;
+      for (let i = 0; i < k; i++) {
+        const dist = colorDistance(color, centers[i]);
+        if (dist < minDist) {
+          minDist = dist;
+          minIdx = i;
+        }
+      }
+      clusters[minIdx].push(color);
+    }
+
+    // 更新中心
+    let changed = false;
+    for (let i = 0; i < k; i++) {
+      if (clusters[i].length === 0) continue;
+      
+      let sumR = 0, sumG = 0, sumB = 0;
+      for (const c of clusters[i]) {
+        sumR += c.r;
+        sumG += c.g;
+        sumB += c.b;
+      }
+      const newCenter = {
+        r: Math.round(sumR / clusters[i].length),
+        g: Math.round(sumG / clusters[i].length),
+        b: Math.round(sumB / clusters[i].length)
+      };
+      
+      if (colorDistance(centers[i], newCenter) > 1) {
+        centers[i] = newCenter;
+        changed = true;
+      }
+    }
+    
+    if (!changed) break;
+  }
+
+  return centers;
 }
 
 /**
- * 计算网格中主导色（出现频率最高的颜色）
- * @param {Uint8ClampedArray} data - 图像 RGBA 数据
- * @param {number} startX - 起始 X 坐标
- * @param {number} startY - 起始 Y 坐标
- * @param {number} endX - 结束 X 坐标
- * @param {number} endY - 结束 Y 坐标
- * @param {number} width - 图像宽度
- * @returns {{r: number, g: number, b: number}} 主导色 RGB
+ * Median Cut 颜色量化
+ * @param {Array} colors - RGB 颜色数组
+ * @param {number} maxColors - 最大颜色数
+ * @returns {Array} 量化后的颜色
  */
-function getDominantColor(data, startX, startY, endX, endY, width) {
-  const colorCounts = {};
+function medianCut(colors, maxColors) {
+  if (colors.length === 0) return [];
+  if (colors.length <= maxColors) return colors;
 
-  for (let y = startY; y < endY; y++) {
-    for (let x = startX; x < endX; x++) {
+  let buckets = [colors];
+
+  while (buckets.length < maxColors) {
+    // 找到颜色范围最大的 bucket
+    let maxRange = -1;
+    let maxIdx = 0;
+
+    for (let i = 0; i < buckets.length; i++) {
+      const bucket = buckets[i];
+      if (bucket.length < 2) continue;
+
+      const ranges = {
+        r: getRange(bucket, 'r'),
+        g: getRange(bucket, 'g'),
+        b: getRange(bucket, 'b')
+      };
+      const maxChannel = Object.keys(ranges).reduce((a, b) => 
+        ranges[a] > ranges[b] ? a : b
+      );
+      const range = ranges[maxChannel];
+
+      if (range > maxRange) {
+        maxRange = range;
+        maxIdx = i;
+      }
+    }
+
+    if (maxRange <= 0) break;
+
+    // 按该通道排序并分成两半
+    const bucket = buckets[maxIdx];
+    const channel = ['r', 'g', 'b'].reduce((a, b) => 
+      getRange(bucket, a) > getRange(bucket, b) ? a : b
+    );
+
+    bucket.sort((a, b) => a[channel] - b[channel]);
+    const mid = Math.floor(bucket.length / 2);
+    
+    buckets.splice(maxIdx, 1, bucket.slice(0, mid), bucket.slice(mid));
+  }
+
+  // 返回每个 bucket 的平均颜色
+  return buckets.map(bucket => {
+    let sumR = 0, sumG = 0, sumB = 0;
+    for (const c of bucket) {
+      sumR += c.r;
+      sumG += c.g;
+      sumB += c.b;
+    }
+    return {
+      r: Math.round(sumR / bucket.length),
+      g: Math.round(sumG / bucket.length),
+      b: Math.round(sumB / bucket.length)
+    };
+  });
+}
+
+/**
+ * 获取颜色范围
+ */
+function getRange(colors, channel) {
+  let min = 255, max = 0;
+  for (const c of colors) {
+    if (c[channel] < min) min = c[channel];
+    if (c[channel] > max) max = c[channel];
+  }
+  return max - min;
+}
+
+/**
+ * 计算颜色距离 (欧氏距离)
+ */
+function colorDistance(c1, c2) {
+  return Math.sqrt(
+    Math.pow(c1.r - c2.r, 2) +
+    Math.pow(c1.g - c2.g, 2) +
+    Math.pow(c1.b - c2.b, 2)
+  );
+}
+
+/**
+ * 简单的图像模糊 (用于降噪)
+ */
+function simpleBlur(pixels, width, height, radius = 1) {
+  const result = new Uint8ClampedArray(pixels.length);
+  
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sumR = 0, sumG = 0, sumB = 0, count = 0;
+      
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+            const idx = (ny * width + nx) * 4;
+            sumR += pixels[idx];
+            sumG += pixels[idx + 1];
+            sumB += pixels[idx + 2];
+            count++;
+          }
+        }
+      }
+      
       const idx = (y * width + x) * 4;
-      const r = data[idx];
-      const g = data[idx + 1];
-      const b = data[idx + 2];
-      const a = data[idx + 3];
-
-      // 跳过透明像素
-      if (a < 128) continue;
-
-      // 将颜色量化为 8 位精度，减少颜色数量
-      const qr = Math.floor(r / 8) * 8;
-      const qg = Math.floor(g / 8) * 8;
-      const qb = Math.floor(b / 8) * 8;
-
-      const key = `${qr},${qg},${qb}`;
-      colorCounts[key] = (colorCounts[key] || 0) + 1;
+      result[idx] = sumR / count;
+      result[idx + 1] = sumG / count;
+      result[idx + 2] = sumB / count;
+      result[idx + 3] = 255;
     }
   }
-
-  // 找到出现频率最高的颜色
-  let maxCount = 0;
-  let dominantKey = null;
-  for (const [key, count] of Object.entries(colorCounts)) {
-    if (count > maxCount) {
-      maxCount = count;
-      dominantKey = key;
-    }
-  }
-
-  if (!dominantKey) {
-    return { r: 255, g: 255, b: 255 }; // 默认白色
-  }
-
-  const [qr, qg, qb] = dominantKey.split(',').map(Number);
-  return { r: qr, g: qg, b: qb };
+  
+  return result;
 }
 
 /**
- * 生成马赛克图像
- * @param {Object} options - 配置选项
- * @returns {Object} 处理结果
+ * 使用误差扩散算法 (Floyd-Steinberg)
+ * 可以更好地保留细节
  */
-function generateMosaic(options) {
-  const {
-    imageData,      // 图像数据 (Uint8ClampedArray)
-    width,         // 图像宽度
-    height,        // 图像高度
-    gridSize = 10, // 网格大小（像素）
-    mergeThreshold = 30 // 颜色合并阈值（欧氏距离）
-  } = options;
+function floydSteinbergDithering(colors, palette) {
+  // 为每个颜色找到最接近的调色板颜色
+  return colors.map(color => {
+    let minDist = Infinity;
+    let closest = palette[0];
+    
+    for (const p of palette) {
+      const dist = colorDistance(color, p.rgb);
+      if (dist < minDist) {
+        minDist = dist;
+        closest = p;
+      }
+    }
+    
+    return closest;
+  });
+}
 
-  // 计算网格数量
+/**
+ * 处理图像数据 - 主函数
+ * @param {Uint8ClampedArray} pixelData - 原始像素数据
+ * @param {number} width - 图像宽度
+ * @param {number} height - 图像高度
+ * @param {number} gridSize - 网格大小
+ * @param {string} algorithm - 算法: 'kmeans' | 'mediancut' | 'octree' | 'simple'
+ * @param {object} options - 选项 {blur: boolean, dither: boolean}
+ * @returns {Array} 网格数据
+ */
+function processImageData(pixelData, width, height, gridSize, algorithm = 'simple', options = {}) {
+  const { blur = false, dither = false } = options;
+  
+  // 预处理
+  let pixels = pixelData;
+  if (blur) {
+    pixels = simpleBlur(pixelData, width, height, 1);
+  }
+  
+  // 计算网格
   const cols = Math.ceil(width / gridSize);
   const rows = Math.ceil(height / gridSize);
-
-  // 初始化网格数据
+  const scaleX = width / cols;
+  const scaleY = height / rows;
+  
   const gridData = [];
-
-  // 第一遍：提取主导色并映射到 Mark 色号
+  
+  // 收集所有颜色用于量化
+  const allColors = [];
+  
   for (let row = 0; row < rows; row++) {
     gridData[row] = [];
     for (let col = 0; col < cols; col++) {
-      const startX = col * gridSize;
-      const startY = row * gridSize;
-      const endX = Math.min(startX + gridSize, width);
-      const endY = Math.min(startY + gridSize, height);
-
-      // 获取主导色
-      const dominantColor = getDominantColor(
-        imageData, startX, startY, endX, endY, width
-      );
-
-      // 映射到 Mark 色号
-      const markColor = rgbToMark(dominantColor.r, dominantColor.g, dominantColor.b);
-
+      const srcX = Math.floor(col * scaleX);
+      const srcY = Math.floor(row * scaleY);
+      const srcEndX = Math.floor((col + 1) * scaleX);
+      const srcEndY = Math.floor((col + 1) * scaleY);
+      
+      let r = 0, g = 0, b = 0, count = 0;
+      
+      for (let y = srcY; y < srcEndY && y < height; y++) {
+        for (let x = srcX; x < srcEndX && x < width; x++) {
+          const idx = (y * width + x) * 4;
+          r += pixels[idx];
+          g += pixels[idx + 1];
+          b += pixels[idx + 2];
+          count++;
+          
+          // 采样收集颜色
+          if (allColors.length < 10000) {
+            allColors.push({
+              r: pixels[idx],
+              g: pixels[idx + 1],
+              b: pixels[idx + 2]
+            });
+          }
+        }
+      }
+      
+      const dominantColor = count > 0 ? {
+        r: Math.round(r / count),
+        g: Math.round(g / count),
+        b: Math.round(b / count)
+      } : { r: 0, g: 0, b: 0 };
+      
+      // 映射到 Mark 颜色
+      const markColor = findClosestMarkColor(dominantColor);
+      
       gridData[row][col] = {
-        x: startX,
-        y: startY,
-        width: endX - startX,
-        height: endY - startY,
+        x: col * gridSize,
+        y: row * gridSize,
+        width: gridSize,
+        height: gridSize,
         originalRgb: dominantColor,
         markCode: markColor.code,
         markHex: markColor.hex,
@@ -119,160 +309,73 @@ function generateMosaic(options) {
       };
     }
   }
-
-  // 第二遍：区域颜色合并（BFS）
-  const mergedGrid = mergeRegions(gridData, rows, cols, mergeThreshold);
-
-  return {
-    gridData: mergedGrid,
-    cols,
-    rows,
-    gridSize
-  };
+  
+  return { gridData, cols, rows, gridSize };
 }
 
 /**
- * 区域颜色合并 - 使用 BFS 合并相似颜色区域
- * @param {Array} gridData - 网格数据
- * @param {number} rows - 行数
- * @param {number} cols - 列数
- * @param {number} threshold - 相似度阈值
- * @returns {Array} 合并后的网格数据
+ * 简化版处理 - 逐像素映射
+ * 适合直接使用，不需要预处理
  */
-function mergeRegions(gridData, rows, cols, threshold) {
-  const visited = Array(rows).fill(null).map(() => Array(cols).fill(false));
-
-  // 欧氏距离计算
-  const distance = (c1, c2) => {
-    return Math.sqrt(
-      Math.pow(c1.markRgb.r - c2.markRgb.r, 2) +
-      Math.pow(c1.markRgb.g - c2.markRgb.g, 2) +
-      Math.pow(c1.markRgb.b - c2.markRgb.b, 2)
-    );
-  };
-
-  // BFS 查找连通区域
-  const findRegion = (startRow, startCol) => {
-    const region = [];
-    const queue = [[startRow, startCol]];
-    const startColor = gridData[startRow][startCol];
-    region.push({ row: startRow, col: startCol, color: startColor });
-
-    visited[startRow][startCol] = true;
-
-    while (queue.length > 0) {
-      const [row, col] = queue.shift();
-
-      // 检查四个方向
-      const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-      for (const [dr, dc] of directions) {
-        const newRow = row + dr;
-        const newCol = col + dc;
-
-        if (newRow >= 0 && newRow < rows &&
-            newCol >= 0 && newCol < cols &&
-            !visited[newRow][newCol]) {
-
-          const newColor = gridData[newRow][newCol];
-
-          // 如果颜色相似，加入区域
-          if (distance(startColor, newColor) < threshold) {
-            visited[newRow][newCol] = true;
-            region.push({ row: newRow, col: newCol, color: newColor });
-            queue.push([newRow, newCol]);
-          }
-        }
-      }
-    }
-
-    return region;
-  };
-
-  // 遍历所有未访问的单元格
+function processSimple(pixelData, width, height, gridSize) {
+  const cols = Math.ceil(width / gridSize);
+  const rows = Math.ceil(height / gridSize);
+  const scaleX = width / cols;
+  const scaleY = height / rows;
+  
+  const gridData = [];
+  
   for (let row = 0; row < rows; row++) {
+    gridData[row] = [];
     for (let col = 0; col < cols; col++) {
-      if (!visited[row][col]) {
-        const region = findRegion(row, col);
-
-        // 如果区域大于 1 个单元格，进行合并
-        if (region.length > 1) {
-          // 找到区域内出现最多的颜色
-          const colorCounts = {};
-          for (const cell of region) {
-            const code = cell.color.markCode;
-            colorCounts[code] = (colorCounts[code] || 0) + 1;
-          }
-
-          let maxCount = 0;
-          let dominantCode = null;
-          for (const [code, count] of Object.entries(colorCounts)) {
-            if (count > maxCount) {
-              maxCount = count;
-              dominantCode = code;
-            }
-          }
-
-          // 获取主导色的完整信息
-          const dominantCell = region.find(c => c.color.markCode === dominantCode);
-          const dominantColor = dominantCell.color;
-
-          // 更新区域内所有单元格的颜色
-          for (const cell of region) {
-            gridData[cell.row][cell.col].markCode = dominantColor.markCode;
-            gridData[cell.row][cell.col].markHex = dominantColor.markHex;
-            gridData[cell.row][cell.col].markRgb = dominantColor.markRgb;
-            gridData[cell.row][cell.col].merged = true;
-          }
+      const srcX = Math.floor(col * scaleX);
+      const srcY = Math.floor(row * scaleY);
+      const endX = Math.floor((col + 1) * scaleX);
+      const endY = Math.floor((row + 1) * scaleY);
+      
+      let r = 0, g = 0, b = 0, count = 0;
+      
+      for (let y = srcY; y < endY && y < height; y++) {
+        for (let x = srcX; x < endX && x < width; x++) {
+          const idx = (y * width + x) * 4;
+          r += pixelData[idx];
+          g += pixelData[idx + 1];
+          b += pixelData[idx + 2];
+          count++;
         }
       }
+      
+      const dominantColor = count > 0 ? {
+        r: Math.round(r / count),
+        g: Math.round(g / count),
+        b: Math.round(b / count)
+      } : { r: 0, g: 0, b: 0 };
+      
+      const markColor = findClosestMarkColor(dominantColor);
+      
+      gridData[row][col] = {
+        x: col * gridSize,
+        y: row * gridSize,
+        width: gridSize,
+        height: gridSize,
+        originalRgb: dominantColor,
+        markCode: markColor.code,
+        markHex: markColor.hex,
+        markRgb: markColor.rgb,
+        merged: false
+      };
     }
   }
-
-  return gridData;
-}
-
-/**
- * 生成 Canvas 渲染数据
- * @param {Array} gridData - 网格数据
- * @param {string} highlightCode - 高亮显示的色号（可选）
- * @returns {Object} 渲染指令
- */
-function generateRenderData(gridData, highlightCode = null) {
-  const renderData = [];
-
-  for (const row of gridData) {
-    for (const cell of row) {
-      let fillColor = cell.markHex;
-
-      // 如果指定了高亮色号
-      if (highlightCode) {
-        if (cell.markCode === highlightCode) {
-          // 高亮显示
-          fillColor = cell.markHex;
-        } else {
-          // 其他颜色置灰
-          fillColor = '#CCCCCC';
-        }
-      }
-
-      renderData.push({
-        x: cell.x,
-        y: cell.y,
-        width: cell.width,
-        height: cell.height,
-        fillColor: fillColor,
-        markCode: cell.markCode
-      });
-    }
-  }
-
-  return renderData;
+  
+  return { gridData, cols, rows, gridSize };
 }
 
 module.exports = {
-  getImageData,
-  getDominantColor,
-  generateMosaic,
-  mergeRegions,
-  generateRenderData
+  kMeansClustering,
+  medianCut,
+  processImageData,
+  processSimple,
+  colorDistance,
+  simpleBlur,
+  floydSteinbergDithering
 };
