@@ -1,0 +1,9 @@
+// 马赛克处理完成回调
+  onMosaicGenerated(e) {
+    const { gridInfo, flatCells } = e.detail;
+    this.setData({
+      mosaicData: gridInfo,
+      flatCells: flatCells || [],
+      currentStep: 2
+    });
+  },

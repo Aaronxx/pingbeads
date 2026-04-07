@@ -11,29 +11,16 @@
     <text>{{isFullscreen ? '退出全屏' : '全屏'}}</text>
   </view>
 
-  <!-- 渲染区域 -->
-  <view
-    wx:if="{{gridInfo}}"
-    class="mosaic-scroll"
-    style="transform: scale({{scale}});"
-    bindtouchstart="handleTouchStart"
-    bindtouchmove="handleTouchMove"
-    bindtouchend="handleTouchEnd"
-  >
-    <!-- 使用 view 渲染马赛克格子 -->
-    <view class="mosaic-grid" style="width: {{gridInfo.cols * gridInfo.gridSize}}px; height: {{gridInfo.rows * gridInfo.gridSize}}px;">
-      <view
-        wx:for="{{flatCells}}"
-        wx:key="index"
-        wx:if="{{item}}"
-        class="mosaic-cell {{gridInfo.gridSize < 12 ? 'small' : ''}} {{highlightCode && item.markCode !== highlightCode ? 'dimmed' : ''}}"
-        style="left: {{item.x}}px; top: {{item.y}}px; width: {{item.width || gridInfo.gridSize}}px; height: {{item.height || gridInfo.gridSize}}px; background-color: {{highlightCode && item.markCode !== highlightCode ? '#CCCCCC' : item.markHex}};"
-        data-code="{{item.markCode}}"
-        bindtap="handleCellTap"
-      >
-        <text wx:if="{{showCode}}" class="cell-code">{{item.markCode}}</text>
-      </view>
-    </view>
+  <!-- 使用 Canvas 渲染马赛克（解决 DOM 数量限制） -->
+  <view class="canvas-container" style="width: {{canvasWidth}}px; height: {{canvasHeight}}px;">
+    <canvas 
+      type="2d" 
+      id="mosaic-render-canvas" 
+      style="width: 100%; height: 100%;"
+      bindtouchstart="handleTouchStart"
+      bindtouchmove="handleTouchMove"
+      bindtouchend="handleTouchEnd"
+    />
   </view>
 
   <!-- 处理中提示 -->

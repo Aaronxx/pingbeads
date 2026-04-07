@@ -316,6 +316,7 @@ function processImageData(pixelData, width, height, gridSize, algorithm = 'simpl
 /**
  * 简化版处理 - 逐像素映射
  * 适合直接使用，不需要预处理
+ * 优化：使用分片处理避免阻塞
  */
 function processSimple(pixelData, width, height, gridSize) {
   const cols = Math.ceil(width / gridSize);
@@ -325,16 +326,35 @@ function processSimple(pixelData, width, height, gridSize) {
   
   const gridData = [];
   
+  // 预先计算每个网格区域的像素范围
+  const gridRegions = [];
   for (let row = 0; row < rows; row++) {
-    gridData[row] = [];
+    gridRegions[row] = [];
     for (let col = 0; col < cols; col++) {
       const srcX = Math.floor(col * scaleX);
       const srcY = Math.floor(row * scaleY);
       const endX = Math.floor((col + 1) * scaleX);
       const endY = Math.floor((row + 1) * scaleY);
+      gridRegions[row][col] = { srcX, srcY, endX, endY };
+    }
+  }
+  
+  // 使用查找表加速颜色映射
+  const { fastFindClosestMarkColor } = require('../utils/colorMapper');
+  
+  // 如果没有像素数据，使用简单算法
+  if (!pixelData || pixelData.length === 0) {
+    return generatePlaceholderGrid(cols, rows, gridSize);
+  }
+  
+  for (let row = 0; row < rows; row++) {
+    gridData[row] = [];
+    for (let col = 0; col < cols; col++) {
+      const { srcX, srcY, endX, endY } = gridRegions[row][col];
       
       let r = 0, g = 0, b = 0, count = 0;
       
+      // 遍历网格内所有像素
       for (let y = srcY; y < endY && y < height; y++) {
         for (let x = srcX; x < endX && x < width; x++) {
           const idx = (y * width + x) * 4;
@@ -351,7 +371,8 @@ function processSimple(pixelData, width, height, gridSize) {
         b: Math.round(b / count)
       } : { r: 0, g: 0, b: 0 };
       
-      const markColor = findClosestMarkColor(dominantColor);
+      // 使用快速查找
+      const markColor = fastFindClosestMarkColor(dominantColor);
       
       gridData[row][col] = {
         x: col * gridSize,
@@ -359,6 +380,41 @@ function processSimple(pixelData, width, height, gridSize) {
         width: gridSize,
         height: gridSize,
         originalRgb: dominantColor,
+        markCode: markColor.code,
+        markHex: markColor.hex,
+        markRgb: markColor.rgb,
+        merged: false
+      };
+    }
+  }
+  
+  return { gridData, cols, rows, gridSize };
+}
+
+/**
+ * 生成占位网格（无图片数据时使用）
+ */
+function generatePlaceholderGrid(cols, rows, gridSize) {
+  const { fastFindClosestMarkColor } = require('../utils/colorMapper');
+  
+  const gridData = [];
+  
+  for (let row = 0; row < rows; row++) {
+    gridData[row] = [];
+    for (let col = 0; col < cols; col++) {
+      // 生成渐变占位色
+      const r = Math.floor(128 + 127 * Math.sin(col / cols * Math.PI));
+      const g = Math.floor(128 + 127 * Math.sin(row / rows * Math.PI));
+      const b = 150;
+      
+      const markColor = fastFindClosestMarkColor({ r, g, b });
+      
+      gridData[row][col] = {
+        x: col * gridSize,
+        y: row * gridSize,
+        width: gridSize,
+        height: gridSize,
+        originalRgb: { r, g, b },
         markCode: markColor.code,
         markHex: markColor.hex,
         markRgb: markColor.rgb,

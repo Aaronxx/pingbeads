@@ -52,9 +52,9 @@ Page({
 
   // 马赛克处理完成回调
   onMosaicGenerated(e) {
-    const { gridInfo } = e.detail;
+    const { gridInfo, gridData } = e.detail;
     this.setData({
-      mosaicData: gridInfo,
+      mosaicData: { ...gridInfo, gridData: gridData },
       currentStep: 2
     });
   },
@@ -107,7 +107,7 @@ Page({
     this.setData({ isExporting: true });
 
     const that = this;
-    const { gridData, cols, rows, gridSize } = this.data.mosaicData;
+    const { cols, rows, gridSize, gridData } = this.data.mosaicData;
     const { calculateStats } = require('../../utils/statsCalculator');
     const stats = calculateStats(this.data.mosaicData);
     
@@ -156,7 +156,8 @@ Page({
               
               // 绘制色块
               ctx.fillStyle = cell.markHex;
-              ctx.fillRect(x, y, exportGridSize, exportGridSize);
+              const size = gridSize * exportScale;
+          ctx.fillRect(x, y, size, size);
               
               // 绘制色号（根据放大后的格子调整字号）
               if (exportGridSize >= 15) {

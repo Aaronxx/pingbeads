@@ -1,0 +1,13 @@
+this.setData({
+        flatCells: flatCells,
+        gridData: null,
+        isProcessing: false
+      });
+      
+      this.triggerEvent('mosaicGenerated', { 
+        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
+        flatCells: flatCells
+      });
+    },
+    
+    getQualityGridSize(quality) {

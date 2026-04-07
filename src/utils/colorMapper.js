@@ -1,9 +1,54 @@
 /**
  * 颜色映射算法模块
  * 将 RGB 颜色映射到 Mark 色号
+ * 优化：使用预计算的查找表加速
  */
 
 const { markPalette } = require('../data/colorPalettes');
+
+// 预计算 256×256×256 RGB 到 Mark 的映射表（可选，占用 16MB）
+// 为平衡性能和内存，使用 8-bit 精度映射
+let colorLookupTable = null;
+
+/**
+ * 构建快速颜色查找表
+ * 将 RGB 空间量化到 32×32×32 = 32768 个 bucket
+ */
+function buildColorLookupTable() {
+  if (colorLookupTable) return;
+  
+  const resolution = 32;
+  colorLookupTable = new Array(resolution * resolution * resolution);
+  
+  for (let r = 0; r < resolution; r++) {
+    for (let g = 0; g < resolution; g++) {
+      for (let b = 0; b < resolution; b++) {
+        const rgb = {
+          r: Math.round(r * 255 / (resolution - 1)),
+          g: Math.round(g * 255 / (resolution - 1)),
+          b: Math.round(b * 255 / (resolution - 1))
+        };
+        
+        // 找到最接近的 Mark 颜色
+        let minDistance = Infinity;
+        let closestColor = markPalette[0];
+        
+        for (const color of markPalette) {
+          const distance = euclideanDistance(rgb, color.rgb);
+          if (distance < minDistance) {
+            minDistance = distance;
+            closestColor = color;
+          }
+        }
+        
+        colorLookupTable[r * resolution * resolution + g * resolution + b] = closestColor;
+      }
+    }
+  }
+}
+
+// 初始化查找表
+buildColorLookupTable();
 
 /**
  * 计算两个 RGB 颜色之间的欧氏距离
@@ -59,7 +104,26 @@ function hexToRgb(hex) {
 }
 
 /**
- * 找到最接近的 Mark 色号
+ * 快速查找最接近的 Mark 色号（使用查找表）
+ * @param {{r: number, g: number, b: number}} targetRgb - 目标 RGB 颜色
+ * @returns {{code: string, hex: string, rgb: {r: number, g: number, b: number}}}
+ */
+function fastFindClosestMarkColor(targetRgb) {
+  if (!colorLookupTable) {
+    return findClosestMarkColor(targetRgb);
+  }
+  
+  const resolution = 32;
+  // 量化到 32 级
+  const rIdx = Math.min(resolution - 1, Math.floor(targetRgb.r * resolution / 256));
+  const gIdx = Math.min(resolution - 1, Math.floor(targetRgb.g * resolution / 256));
+  const bIdx = Math.min(resolution - 1, Math.floor(targetRgb.b * resolution / 256));
+  
+  return colorLookupTable[rIdx * resolution * resolution + gIdx * resolution + bIdx];
+}
+
+/**
+ * 找到最接近的 Mark 色号（精确版本）
  * @param {{r: number, g: number, b: number}} targetRgb - 目标 RGB 颜色
  * @returns {{code: string, hex: string, rgb: {r: number, g: number, b: number}, distance: number}}
  */
@@ -119,6 +183,7 @@ module.exports = {
   euclideanDistance,
   rgbToHex,
   hexToRgb,
+  fastFindClosestMarkColor,
   findClosestMarkColor,
   rgbToMark,
   hexToMark,
