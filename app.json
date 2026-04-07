@@ -2,6 +2,7 @@
   "pages": [
     "src/pages/index/index"
   ],
+  "lazyCodeLoading": "requiredComponents",
   "window": {
     "backgroundTextStyle": "light",
     "navigationBarBackgroundColor": "#ffffff",
@@ -14,6 +15,7 @@
     }
   },
   "requiredBackgroundModes": [],
+  "lazyloadPlaceholderEnable": true,
   "usingComponents": {},
   "style": "v2",
   "sitemapLocation": "sitemap.json"
