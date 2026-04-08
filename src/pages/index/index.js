@@ -26,6 +26,8 @@ Page({
     isExporting: false,
     // 触发器，用于强制重新生成
     regenerateTrigger: 0,
+    // 真机调试时的 canvasId
+    canvasId: 'export-canvas',
 
     // 下拉框选项
     qualityOptions: [
@@ -212,7 +214,8 @@ Page({
     const stats = this.data.flatCells || { sortedByCount: [] };
     
     // 增大分辨率：导出时使用更大的格子
-    const exportScale = 6;  // 放大6倍
+    // 限制最大导出尺寸在 4096 像素内，避免 Canvas 2D 导出失败
+    const exportScale = 2;  // 放大2倍，保证在尺寸限制内
     const exportGridSize = gridSize * exportScale;
     
     // 计算尺寸
@@ -265,12 +268,14 @@ Page({
             ctx.fillStyle = cell.markHex;
             ctx.fillRect(x, y, cellWidth, cellHeight);
 
-            // 绘制色号（根据放大后的格子调整字号）
-            if (exportGridSize >= 15) {
+            // 绘制色号（根据实际的格子大小调整字号）
+            if (cellWidth >= 15 && cellHeight >= 15) {
               // 根据色块颜色自动选择文字颜色
               const isLight = this.isLightColor(cell.markHex);
               ctx.fillStyle = isLight ? '#333' : '#fff';
-              ctx.font = `bold ${Math.max(12, exportGridSize * 0.4)}px sans-serif`;
+              // 使用实际的 cellWidth 来计算字号，确保文字适应格子大小
+              const fontSize = Math.max(8, Math.min(cellWidth, cellHeight) * 0.35);
+              ctx.font = `bold ${fontSize.toFixed(0)}px sans-serif`;
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
               ctx.fillText(cell.markCode, x + cellWidth / 2, y + cellHeight / 2);
@@ -342,32 +347,44 @@ Page({
           ctx.shadowColor = 'transparent';
         }
         
-        // 导出图片 - Canvas 2D 需要使用 canvasId
-        wx.canvasToTempFilePath({
-          canvasId: 'export-canvas',
-          canvas: canvas,
-          success: (res) => {
-            console.log('导出临时文件路径:', res.tempFilePath);
-            // 先检查并请求相册权限
-            that.saveToPhotoAlbum(res.tempFilePath);
-          },
-          fail: (err) => {
-            console.error('导出失败:', err);
-            wx.showToast({ title: '导出失败: ' + (err.errMsg || ''), icon: 'none' });
-            // 重置导出状态
-            that.setData({ isExporting: false });
+        // 导出图片 - Canvas 2D 需要延迟等待渲染完成
+        // 延长等待时间到 1 秒，确保大图也能导出成功
+        console.log('准备导出，canvas对象:', typeof canvas);
+
+        setTimeout(() => {
+          const exportOptions = {
+            success: (res) => {
+              console.log('导出成功，临时文件路径:', res.tempFilePath);
+              that.saveToPhotoAlbum(res.tempFilePath);
+            },
+            fail: (err) => {
+              console.error('导出失败详细信息:', JSON.stringify(err));
+              wx.showToast({ title: '导出失败，请重试' + JSON.stringify(err), icon: 'none' });
+              that.setData({ isExporting: false });
+            }
+          };
+
+          // 优先使用 canvas 对象
+          if (typeof canvas === 'object' && canvas !== null) {
+            exportOptions.canvas = canvas;
+          } else if (that.data.canvasId) {
+            exportOptions.canvasId = that.data.canvasId;
           }
-        }, that);
+
+          wx.canvasToTempFilePath(exportOptions, that);
+        }, 3000); // 1秒等待
       });
   },
 
   // 保存图片到相册（带权限检查）
   saveToPhotoAlbum(tempFilePath) {
     const that = this;
+    console.log('准备保存到相册, 文件路径:', tempFilePath);
 
     // 检查相册权限
     wx.getSetting({
       success(res) {
+        console.log('权限设置:', JSON.stringify(res.authSetting));
         if (!res.authSetting['scope.writePhotosAlbum']) {
           // 没有权限，请求授权
           wx.authorize({
@@ -415,7 +432,6 @@ Page({
         wx.showToast({ title: '保存成功', icon: 'success' });
       },
       fail(err) {
-        console.error('保存失败:', err);
         // 如果是权限问题，引导去设置
         if (err.errMsg && err.errMsg.includes('auth deny')) {
           wx.showModal({
@@ -485,20 +501,22 @@ Page({
           }
         }
 
-        // 导出 - Canvas 2D 需要使用 canvasId
-        wx.canvasToTempFilePath({
-          canvasId: 'export-canvas',
-          canvas: canvas,
-          success: (res) => {
-            console.log('导出临时文件路径:', res.tempFilePath);
-            that.saveToPhotoAlbum(res.tempFilePath);
-          },
-          fail: (err) => {
-            console.error('导出失败:', err);
-            wx.showToast({ title: '导出失败: ' + (err.errMsg || ''), icon: 'none' });
-            that.setData({ isExporting: false });
-          }
-        });
+        // 导出 - Canvas 2D 需要延迟等待渲染完成
+        // 延长等待时间到 1 秒，确保大图也能导出成功
+        setTimeout(() => {
+          wx.canvasToTempFilePath({
+            canvas: canvas,
+            success: (res) => {
+              console.log('导出临时文件路径:', res.tempFilePath);
+              that.saveToPhotoAlbum(res.tempFilePath);
+            },
+            fail: (err) => {
+              console.error('导出失败:', err);
+              wx.showToast({ title: '导出失败，请重试', icon: 'none' });
+              that.setData({ isExporting: false });
+            }
+          }, that);
+        }, 3000); // 1秒等待
       });
   },
 
@@ -547,5 +565,79 @@ Page({
     // 计算亮度
     const brightness = (r * 299 + g * 587 + b * 114) / 1000;
     return brightness > 150;
+  },
+
+  // 使用 canvasId 导出（真机调试兼容方案）
+  exportWithCanvasId(width, height, retryCount) {
+    const that = this;
+    const maxRetries = 3;
+    const delay = 300 * (retryCount + 1);
+    
+    setTimeout(() => {
+      // 从组件获取数据
+      const mosaicCanvas = that.selectComponent('#mosaic-canvas');
+      if (!mosaicCanvas || !mosaicCanvas.getExportData) {
+        wx.showToast({ title: '导出组件异常', icon: 'none' });
+        that.setData({ isExporting: false });
+        return;
+      }
+      
+      const exportData = mosaicCanvas.getExportData();
+      const { rows, cols, gridSize } = exportData.gridInfo;
+      const gridData = exportData.gridData;
+      
+      if (!gridData) {
+        wx.showToast({ title: '请先生成马赛克', icon: 'none' });
+        that.setData({ isExporting: false });
+        return;
+      }
+      
+      // 使用节点查询获取 canvas
+      const query = wx.createSelectorQuery();
+      query.select('#export-canvas')
+        .fields({ node: true, size: true })
+        .exec((res) => {
+          if (!res[0] || !res[0].node) {
+            // 使用传统 canvas
+            that.exportPNGLegacy(width, height);
+            return;
+          }
+          
+          const canvas = res[0].node;
+          const ctx = canvas.getContext('2d');
+          
+          // 设置尺寸
+          canvas.width = width;
+          canvas.height = height;
+          
+          // 绘制马赛克
+          for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < cols; col++) {
+              const cell = gridData[row] && gridData[row][col];
+              if (cell && cell.markCode && !cell.isRegionMember) {
+                ctx.fillStyle = cell.markHex;
+                ctx.fillRect(cell.x, cell.y, cell.width, cell.height);
+              }
+            }
+          }
+          
+          // 尝试导出
+          wx.canvasToTempFilePath({
+            canvasId: 'export-canvas',
+            success: (res) => {
+              that.saveToPhotoAlbum(res.tempFilePath);
+            },
+            fail: (err) => {
+              console.error('canvasId导出失败:', err);
+              if (retryCount < maxRetries) {
+                that.exportWithCanvasId(width, height, retryCount + 1);
+              } else {
+                // 回退到传统方式
+                that.exportPNGLegacy(width, height);
+              }
+            }
+          }, that);
+        });
+    }, delay);
   }
 });
