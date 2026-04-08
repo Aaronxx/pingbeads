@@ -73,6 +73,15 @@ Component({
         console.log('reprocess image');
         this.processImage(this.data.imagePath);
       }
+    },
+    // 监听 scale 变化，重新渲染 Canvas
+    'scale': function(newScale) {
+      console.log('=== scale observer ===', newScale);
+      // 当 scale 变化时，重新渲染 Canvas
+      if (this.cachedGridData && this.cachedGridInfo) {
+        const { cols, rows, gridSize } = this.cachedGridInfo;
+        this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+      }
     }
   },
 
@@ -166,11 +175,12 @@ Component({
     
     getQualityGridSize(quality) {
       const baseGridSize = this.data.gridSize;
+      // 调整：让预览使用更大的格子，保持高分辨率
       switch (quality) {
-        case 1: return Math.max(8, baseGridSize * 2);
-        case 2: return baseGridSize;
-        case 3: return Math.max(4, Math.floor(baseGridSize / 2));
-        default: return baseGridSize;
+        case 1: return Math.max(12, baseGridSize * 2);  // 低质量用较大格子
+        case 2: return Math.max(10, baseGridSize);     // 中等质量
+        case 3: return Math.max(8, baseGridSize);      // 高质量
+        default: return Math.max(10, baseGridSize);
       }
     },
 
@@ -386,27 +396,35 @@ Component({
           // 忽略查询返回的尺寸，因为它可能受 CSS 影响
           let canvasWidth = that.data.canvasWidth || 300;
           let canvasHeight = that.data.canvasHeight || 300;
-          
-          // 如果 data 中的尺寸太小，使用查询到的尺寸
+
+          // 使用 Canvas 极限尺寸 4096，保持最高分辨率
+          const MAX_CANVAS_SIZE = 4096;
+          canvasWidth = Math.min(canvasWidth, MAX_CANVAS_SIZE);
+          canvasHeight = Math.min(canvasHeight, MAX_CANVAS_SIZE);
+
+          // 如果 data 中的尺寸太小，使用查询到的尺寸（但不超极限）
           if (res[0].width > canvasWidth || res[0].height > canvasHeight) {
-            canvasWidth = res[0].width;
-            canvasHeight = res[0].height;
+            canvasWidth = Math.min(res[0].width, MAX_CANVAS_SIZE);
+            canvasHeight = Math.min(res[0].height, MAX_CANVAS_SIZE);
           }
           
           console.log('Canvas尺寸(来自data):', canvasWidth, 'x', canvasHeight);
           console.log('Grid尺寸:', cols, 'x', rows, '格子大小:', gridSize);
           
-          // 设置 canvas 尺寸 - 使用 data 中的尺寸
-          canvas.width = canvasWidth;
-          canvas.height = canvasHeight;
+          // 设置 canvas 尺寸 - 应用用户缩放比例以保持高分辨率
+          const userScale = that.data.scale || 1;
+          canvas.width = canvasWidth * userScale;
+          canvas.height = canvasHeight * userScale;
+
+          console.log('用户缩放:', userScale, '实际Canvas尺寸:', canvas.width, 'x', canvas.height);
           
           // 存储引用
           that.canvasNode = canvas;
           that.canvasCtx = ctx;
           
-          // 清空画布 - 使用浅灰色背景
+          // 清空画布 - 使用浅灰色背景（使用实际Canvas尺寸）
           ctx.fillStyle = '#f0f0f0';
-          ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
           
           // 计算缩放以适应 Canvas
           const totalGridWidth = cols * gridSize;
@@ -417,13 +435,20 @@ Component({
           // 计算缩放比例，让整个马赛克适应 Canvas
           const scaleX = totalGridWidth > 0 ? canvasWidth / totalGridWidth : 1;
           const scaleY = totalGridHeight > 0 ? canvasHeight / totalGridHeight : 1;
-          const scale = Math.min(scaleX, scaleY, 1);
+          const baseScale = Math.min(scaleX, scaleY, 1);
+
+          // 叠加用户的缩放比例（已经在上面定义了userScale）
+          const scale = baseScale * userScale;
           
           console.log('缩放比例:', scale);
           
-          // 居中偏移
-          const offsetX = (canvasWidth - totalGridWidth * scale) / 2;
-          const offsetY = (canvasHeight - totalGridHeight * scale) / 2;
+          // 居中偏移 - 使用实际的 Canvas 尺寸
+          const actualCanvasWidth = canvas.width;
+          const actualCanvasHeight = canvas.height;
+          const offsetX = (actualCanvasWidth - totalGridWidth * scale) / 2;
+          const offsetY = (actualCanvasHeight - totalGridHeight * scale) / 2;
+
+          console.log('实际Canvas尺寸:', actualCanvasWidth, 'x', actualCanvasHeight);
           
           console.log('偏移:', offsetX, offsetY);
           
@@ -444,12 +469,17 @@ Component({
               ctx.fillStyle = cell.markHex;
               ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(cellWidth), Math.ceil(cellHeight));
 
+              // 绘制格子边框，让轮廓更清晰
+              ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
+
               // 绘制色号（根据格子大小）
               const size = Math.min(cellWidth, cellHeight);
-              if (that.data.showCode && size >= 15) {
+              if (that.data.showCode && size >= 8) {
                 const isLight = that.isLightColor(cell.markHex);
                 ctx.fillStyle = isLight ? '#333333' : '#ffffff';
-                ctx.font = `${Math.max(10, size * 0.4)}px sans-serif`;
+                ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText(cell.markCode, x + cellWidth / 2, y + cellHeight / 2);
@@ -527,7 +557,7 @@ Component({
 
         if (this.initialTouchDistance > 0) {
           const scaleFactor = currentDistance / this.initialTouchDistance;
-          const newScale = Math.max(0.5, Math.min(3, this.initialScale * scaleFactor));
+          const newScale = Math.max(0.5, Math.min(80, this.initialScale * scaleFactor));
           this.setData({ scale: newScale });
         }
       } else if (e.touches.length === 1 && this.data.lastTouch) {
@@ -540,7 +570,7 @@ Component({
         // 简单的平移效果（上下滑动可以调整缩放）
         let newScale = this.data.scale;
         if (Math.abs(deltaY) > Math.abs(deltaX)) {
-          newScale = Math.max(0.5, Math.min(3, newScale + deltaY * 0.003));
+          newScale = Math.max(0.5, Math.min(80, newScale + deltaY * 0.003));
         }
 
         this.setData({ scale: newScale, lastTouch: current });

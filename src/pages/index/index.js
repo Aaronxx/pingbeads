@@ -12,7 +12,7 @@ Page({
     // 预计算的统计结果
     flatCells: null,
     // 是否显示色号标注
-    showCode: false,
+    showCode: true,
     // 网格大小
     gridSize: 10,
     // 颜色合并阈值
