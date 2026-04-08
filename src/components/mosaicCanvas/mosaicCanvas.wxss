@@ -12,7 +12,7 @@ page {
   height: 100%;
   background: linear-gradient(135deg, #f5f7fa 0%, #e4e7eb 100%);
   border-radius: 16rpx;
-  overflow: hidden;
+  overflow: visible;
   box-sizing: border-box;
 }
 
@@ -24,16 +24,20 @@ page {
   bottom: 0;
   z-index: 9999;
   height: 100vh;
+  width: 100vw !important;
   border-radius: 0;
   background: #000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 /* 全屏按钮 */
 .fullscreen-btn {
   position: absolute;
-  top: 24rpx;
-  right: 24rpx;
-  z-index: 100;
+  top: -20rpx;
+  right: -20rpx;
+  z-index: 9999;
   padding: 12rpx 24rpx;
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
@@ -48,6 +52,13 @@ page {
   transform: scale(0.96);
 }
 
+/* 全屏时退出按钮在左上角 */
+.fullscreen-btn.fullscreen-exit {
+  top: 40rpx;
+  left: 40rpx;
+  right: auto;
+}
+
 /* 滚动区域 */
 .mosaic-scroll {
   width: 100%;
@@ -58,6 +69,12 @@ page {
   transform-origin: center center;
   transition: transform 0.15s ease-out;
   touch-action: pan-x pan-y;
+}
+
+/* Canvas 容器 */
+.canvas-container {
+  transition: transform 0.1s ease-out;
+  transform-origin: center center;
 }
 
 /* 网格容器 */

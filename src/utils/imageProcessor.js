@@ -317,15 +317,20 @@ function processImageData(pixelData, width, height, gridSize, algorithm = 'simpl
  * 简化版处理 - 逐像素映射
  * 适合直接使用，不需要预处理
  * 优化：使用分片处理避免阻塞
+ * @param {Uint8ClampedArray} pixelData - 像素数据
+ * @param {number} width - 图像宽度
+ * @param {number} height - 图像高度
+ * @param {number} gridSize - 网格大小
+ * @param {number} mergeThreshold - 颜色聚合阈值 (0-30)
  */
-function processSimple(pixelData, width, height, gridSize) {
+function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0) {
   const cols = Math.ceil(width / gridSize);
   const rows = Math.ceil(height / gridSize);
   const scaleX = width / cols;
   const scaleY = height / rows;
-  
+
   const gridData = [];
-  
+
   // 预先计算每个网格区域的像素范围
   const gridRegions = [];
   for (let row = 0; row < rows; row++) {
@@ -338,22 +343,22 @@ function processSimple(pixelData, width, height, gridSize) {
       gridRegions[row][col] = { srcX, srcY, endX, endY };
     }
   }
-  
+
   // 使用查找表加速颜色映射
   const { fastFindClosestMarkColor } = require('../utils/colorMapper');
-  
+
   // 如果没有像素数据，使用简单算法
   if (!pixelData || pixelData.length === 0) {
     return generatePlaceholderGrid(cols, rows, gridSize);
   }
-  
+
   for (let row = 0; row < rows; row++) {
     gridData[row] = [];
     for (let col = 0; col < cols; col++) {
       const { srcX, srcY, endX, endY } = gridRegions[row][col];
-      
+
       let r = 0, g = 0, b = 0, count = 0;
-      
+
       // 遍历网格内所有像素
       for (let y = srcY; y < endY && y < height; y++) {
         for (let x = srcX; x < endX && x < width; x++) {
@@ -364,16 +369,16 @@ function processSimple(pixelData, width, height, gridSize) {
           count++;
         }
       }
-      
+
       const dominantColor = count > 0 ? {
         r: Math.round(r / count),
         g: Math.round(g / count),
         b: Math.round(b / count)
       } : { r: 0, g: 0, b: 0 };
-      
+
       // 使用快速查找
       const markColor = fastFindClosestMarkColor(dominantColor);
-      
+
       gridData[row][col] = {
         x: col * gridSize,
         y: row * gridSize,
@@ -382,12 +387,16 @@ function processSimple(pixelData, width, height, gridSize) {
         originalRgb: dominantColor,
         markCode: markColor.code,
         markHex: markColor.hex,
-        markRgb: markColor.rgb,
-        merged: false
+        markRgb: markColor.rgb
       };
     }
   }
-  
+
+  // 颜色聚合 - 将相近的原始 RGB 颜色映射到相同的 Mark 色号
+  if (mergeThreshold > 0) {
+    aggregateSimilarColors(gridData, rows, cols, mergeThreshold);
+  }
+
   return { gridData, cols, rows, gridSize };
 }
 
@@ -426,11 +435,197 @@ function generatePlaceholderGrid(cols, rows, gridSize) {
   return { gridData, cols, rows, gridSize };
 }
 
+/**
+ * 颜色聚合 - 基于目标色块数量的 K-means 聚类（优化版）
+ * @param {Array} gridData - 网格数据
+ * @param {number} rows - 行数
+ * @param {number} cols - 列数
+ * @param {number} targetCount - 目标色块数量 (1-30)
+ */
+function aggregateSimilarColors(gridData, rows, cols, targetCount) {
+  if (!gridData || targetCount <= 0) return gridData;
+
+  console.log('=== aggregateSimilarColors ===');
+  console.log('targetCount:', targetCount, 'rows:', rows, 'cols:', cols);
+
+  // 收集所有格子的主导色 RGB
+  const allColors = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const cell = gridData[row] && gridData[row][col];
+      if (cell && cell.originalRgb) {
+        allColors.push({
+          row,
+          col,
+          rgb: cell.originalRgb
+        });
+      }
+    }
+  }
+
+  if (allColors.length === 0) return gridData;
+
+  console.log('Total colors:', allColors.length);
+
+  // 如果格子数量已经小于目标数量，不需要聚类
+  if (allColors.length <= targetCount) {
+    console.log('Cells already less than target, skip aggregation');
+    return gridData;
+  }
+
+  // K-means 聚类优化：只对唯一颜色进行聚类
+  // 1. 收集唯一的 RGB 颜色，并统计每个唯一颜色的数量
+  const colorCountMap = new Map();
+  for (const c of allColors) {
+    const key = `${c.rgb.r},${c.rgb.g},${c.rgb.b}`;
+    if (!colorCountMap.has(key)) {
+      colorCountMap.set(key, { rgb: c.rgb, count: 0 });
+    }
+    colorCountMap.get(key).count++;
+  }
+
+  const uniqueColors = Array.from(colorCountMap.values());
+  console.log('Unique RGB colors:', uniqueColors.length);
+
+  // 如果唯一颜色数量已经小于等于目标，不需要聚类
+  if (uniqueColors.length <= targetCount) {
+    console.log('Unique colors already less than target, skip');
+    return gridData;
+  }
+
+  // 2. 简化：直接对唯一颜色进行聚类（减少计算量）
+  // 使用加权采样选择初始中心
+  const centers = [];
+  const step = Math.max(1, Math.floor(uniqueColors.length / targetCount));
+  for (let i = 0; i < targetCount && i * step < uniqueColors.length; i++) {
+    centers.push({ ...uniqueColors[i * step].rgb });
+  }
+
+  // 确保至少有 targetCount 个中心
+  while (centers.length < targetCount && centers.length < uniqueColors.length) {
+    centers.push({ ...uniqueColors[centers.length].rgb });
+  }
+
+  console.log('Initial centers:', centers.length);
+
+  // 3. 简化距离计算：使用曼哈顿距离（比欧氏距离快）
+  const fastDistance = (c1, c2) => {
+    return Math.abs(c1.r - c2.r) + Math.abs(c1.g - c2.g) + Math.abs(c1.b - c2.b);
+  };
+
+  // 4. 减少迭代次数
+  const maxIterations = 5;
+  for (let iter = 0; iter < maxIterations; iter++) {
+    // 分配每个唯一颜色到最近的中心
+    const clusters = Array.from({ length: centers.length }, () => []);
+
+    for (const colorInfo of uniqueColors) {
+      let minDist = Infinity;
+      let minIdx = 0;
+
+      for (let i = 0; i < centers.length; i++) {
+        const dist = fastDistance(colorInfo.rgb, centers[i]);
+        if (dist < minDist) {
+          minDist = dist;
+          minIdx = i;
+        }
+      }
+
+      clusters[minIdx].push(colorInfo);
+    }
+
+    // 更新中心
+    let changed = false;
+    for (let i = 0; i < centers.length; i++) {
+      if (clusters[i].length === 0) continue;
+
+      let sumR = 0, sumG = 0, sumB = 0;
+      for (const c of clusters[i]) {
+        sumR += c.rgb.r * c.count;
+        sumG += c.rgb.g * c.count;
+        sumB += c.rgb.b * c.count;
+      }
+
+      const totalWeight = clusters[i].reduce((sum, c) => sum + c.count, 0);
+      const newCenter = {
+        r: Math.round(sumR / totalWeight),
+        g: Math.round(sumG / totalWeight),
+        b: Math.round(sumB / totalWeight)
+      };
+
+      if (fastDistance(centers[i], newCenter) > 3) {
+        centers[i] = newCenter;
+        changed = true;
+      }
+    }
+
+    if (!changed) break;
+  }
+
+  // 5. 为每个聚类中心找到最接近的 Mark 色号
+  const { fastFindClosestMarkColor } = require('../utils/colorMapper');
+  const centerMarkColors = centers.map(center => fastFindClosestMarkColor(center));
+
+  console.log('Cluster centers marked');
+
+  // 6. 将每个唯一颜色映射到其所属聚类的 Mark 色号
+  // 使用颜色到中心的映射表，避免重复计算
+  const rgbToCenterIdx = new Map();
+
+  for (const colorInfo of uniqueColors) {
+    let minDist = Infinity;
+    let minIdx = 0;
+
+    for (let i = 0; i < centers.length; i++) {
+      const dist = fastDistance(colorInfo.rgb, centers[i]);
+      if (dist < minDist) {
+        minDist = dist;
+        minIdx = i;
+      }
+    }
+
+    rgbToCenterIdx.set(`${colorInfo.rgb.r},${colorInfo.rgb.g},${colorInfo.rgb.b}`, minIdx);
+  }
+
+  // 7. 应用到所有格子
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const cell = gridData[row] && gridData[row][col];
+      if (!cell || !cell.originalRgb) continue;
+
+      const key = `${cell.originalRgb.r},${cell.originalRgb.g},${cell.originalRgb.b}`;
+      const centerIdx = rgbToCenterIdx.get(key);
+
+      if (centerIdx !== undefined) {
+        const markColor = centerMarkColors[centerIdx];
+        cell.markCode = markColor.code;
+        cell.markHex = markColor.hex;
+        cell.markRgb = markColor.rgb;
+      }
+    }
+  }
+
+  // 统计实际使用的色号数量
+  const usedCodes = new Set();
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const cell = gridData[row] && gridData[row][col];
+      if (cell && cell.markCode) {
+        usedCodes.add(cell.markCode);
+      }
+    }
+  }
+  console.log('Actual unique Mark codes:', usedCodes.size);
+  console.log('=== aggregateSimilarColors end ===');
+  return gridData;
+}
+
 module.exports = {
   kMeansClustering,
   medianCut,
   processImageData,
   processSimple,
+  aggregateSimilarColors,
   colorDistance,
   simpleBlur,
   floydSteinbergDithering

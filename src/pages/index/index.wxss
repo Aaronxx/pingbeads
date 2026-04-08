@@ -114,6 +114,29 @@ page {
   width: 80rpx;
 }
 
+/* 下拉框样式 */
+.picker-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8rpx 16rpx;
+  background: linear-gradient(135deg, #f0f4ff 0%, #e8f4f8 100%);
+  border-radius: 8rpx;
+  min-width: 80rpx;
+}
+
+.picker-label {
+  font-size: 18rpx;
+  color: var(--text-muted);
+  margin-bottom: 2rpx;
+}
+
+.picker-value {
+  font-size: 22rpx;
+  color: var(--primary);
+  font-weight: 600;
+}
+
 /* ========================
    预览区：宽高90%
    ======================== */
@@ -123,7 +146,7 @@ page {
   margin: 16rpx auto 16rpx;
   border-radius: var(--radius-md);
   background: var(--bg-card);
-  overflow: hidden;
+  overflow: visible;
   position: relative;
   display: flex;
   justify-content: center;

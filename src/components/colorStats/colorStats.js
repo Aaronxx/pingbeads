@@ -1,17 +1,16 @@
 // components/colorStats/colorStats.js
-const { calculateStats } = require('../../utils/statsCalculator');
 
 Component({
   properties: {
-    // 马赛克数据
-    mosaicData: {
+    // 预计算的统计结果
+    flatCells: {
       type: Object,
       value: null
     },
     // 当前高亮的色号
     highlightCode: {
       type: String,
-      value: null
+      value: ''
     }
   },
 
@@ -21,26 +20,31 @@ Component({
   },
 
   observers: {
-    'mosaicData': function(newData) {
-      if (newData && newData.gridData) {
-        const stats = calculateStats(newData);
+    'flatCells': function(newData) {
+      if (newData && newData.sortedByCount) {
         // 预处理：格式化色号和判断是否为浅色
-        if (stats && stats.sortedByCount) {
-          stats.sortedByCount = stats.sortedByCount.map(item => {
-            let displayCode = item.code;
-            // 去掉第二个字符（如果第一个字符是字母，第二个是0）
-            // 比如 H09 -> H9, P01 -> P1, F020 -> F20
-            if (displayCode.length >= 2 && displayCode[1] === '0') {
-              displayCode = displayCode.charAt(0) + displayCode.substring(2);
-            }
-            return {
-              ...item,
-              displayCode: displayCode + ' (' + item.count + ')',
-              isLight: this.isLightColor(item.hex)
-            };
-          });
-        }
-        this.setData({ stats });
+        const processed = newData.sortedByCount.map(item => {
+          let displayCode = item.code;
+          // 去掉第二个字符（如果第一个字符是字母，第二个是0）
+          // 比如 H09 -> H9, P01 -> P1, F020 -> F20
+          if (displayCode.length >= 2 && displayCode[1] === '0') {
+            displayCode = displayCode.charAt(0) + displayCode.substring(2);
+          }
+          return {
+            ...item,
+            displayCode: displayCode + ' (' + item.count + ')',
+            isLight: this.isLightColor(item.hex)
+          };
+        });
+
+        this.setData({
+          stats: {
+            colorCount: newData.colorCount,
+            totalCount: newData.totalCount,
+            sortedByCount: processed,
+            sortedByCode: newData.sortedByCode || processed
+          }
+        });
       } else {
         this.setData({ stats: null });
       }

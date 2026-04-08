@@ -12,16 +12,28 @@
       <!-- 中间设置 -->
       <view class="button-center" wx:if="{{imagePath}}">
         <view class="setting-item">
-          <text class="setting-label">精细</text>
-          <slider min="1" max="3" step="1" value="{{previewQuality}}" bindchange="onPreviewQualityChange" show-value class="slider-mini" />
+          <picker mode="selector" range="{{qualityOptions}}" range-key="name" value="{{previewQuality - 1}}" bindchange="onPreviewQualityChange">
+            <view class="picker-box">
+              <text class="picker-label">精细</text>
+              <text class="picker-value">{{qualityOptions[previewQuality - 1].name}}</text>
+            </view>
+          </picker>
         </view>
         <view class="setting-item">
-          <text class="setting-label">网格</text>
-          <slider min="2" max="50" step="1" value="{{gridSize}}" bindchange="onGridSizeChange" show-value class="slider-mini" />
+          <picker mode="selector" range="{{gridOptions}}" range-key="name" value="{{gridOptionIndex}}" bindchange="onGridSizeChange">
+            <view class="picker-box">
+              <text class="picker-label">网格</text>
+              <text class="picker-value">{{gridOptions[gridOptionIndex].name}}</text>
+            </view>
+          </picker>
         </view>
         <view class="setting-item">
-          <text class="setting-label">合并</text>
-          <slider min="0" max="150" step="5" value="{{mergeThreshold}}" bindchange="onThresholdChange" show-value class="slider-mini" />
+          <picker mode="selector" range="{{thresholdOptions}}" range-key="name" value="{{thresholdOptionIndex}}" bindchange="onThresholdChange">
+            <view class="picker-box">
+              <text class="picker-label">合并</text>
+              <text class="picker-value">{{thresholdOptions[thresholdOptionIndex].name}}</text>
+            </view>
+          </picker>
         </view>
       </view>
       
@@ -40,8 +52,10 @@
         highlightCode="{{highlightCode}}"
         showCode="{{showCode}}"
         previewQuality="{{previewQuality}}"
+        regenerateTrigger="{{regenerateTrigger}}"
         bind:cellClick="onCodeClick"
         bind:mosaicGenerated="onMosaicGenerated"
+        bind:statsUpdate="onStatsUpdate"
       />
       <!-- 空状态 -->
       <view wx:else class="placeholder">
@@ -57,7 +71,7 @@
       <text class="stats-title">颜色统计</text>
       <text class="stats-count">共 {{mosaicData.cols * mosaicData.rows}} 格</text>
     </view>
-    <colorStats mosaicData="{{mosaicData}}" highlightCode="{{highlightCode}}" bind:codeClick="onCodeClick" />
+    <colorStats flatCells="{{flatCells}}" highlightCode="{{highlightCode || ''}}" bind:codeClick="onCodeClick" />
   </view>
 
   <!-- 底部悬浮框：宽度与屏幕同宽 -->
@@ -71,6 +85,6 @@
     </view>
   </view>
   
-  <!-- 隐藏的导出用 canvas -->
-  <canvas type="2d" id="export-canvas" style="position: absolute; left: -9999px; top: -9999px;" />
+  <!-- 隐藏的导出用 canvas - 使用 type="2d" -->
+  <canvas type="2d" id="export-canvas" style="width: 1px; height: 1px; position: fixed; left: -100px; top: -100px;" />
 </view>

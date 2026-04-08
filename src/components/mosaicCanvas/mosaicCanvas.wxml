@@ -1,21 +1,21 @@
 <!--components/mosaicCanvas/mosaicCanvas.wxml-->
-<view 
-  class="mosaic-wrapper {{isFullscreen ? 'fullscreen' : ''}}" 
+<view
+  class="mosaic-wrapper {{isFullscreen ? 'fullscreen' : ''}}"
   style="width: {{canvasWidth}}px; height: {{canvasHeight}}px;"
 >
   <!-- 隐藏的 canvas 用于获取像素数据 -->
   <canvas type="2d" id="pixel-canvas" style="width: 1px; height: 1px; position: absolute; opacity: 0;" />
 
-  <!-- 全屏按钮 -->
-  <view class="fullscreen-btn" bindtap="toggleFullscreen">
-    <text>{{isFullscreen ? '退出全屏' : '全屏'}}</text>
+  <!-- 全屏按钮：非全屏时在右上角，全屏时在左上角 -->
+  <view class="fullscreen-btn {{isFullscreen ? 'fullscreen-exit' : ''}}" bindtap="toggleFullscreen">
+    <text>{{isFullscreen ? '✕ 退出' : '全屏'}}</text>
   </view>
 
   <!-- 使用 Canvas 渲染马赛克（解决 DOM 数量限制） -->
-  <view class="canvas-container" style="width: {{canvasWidth}}px; height: {{canvasHeight}}px;">
-    <canvas 
-      type="2d" 
-      id="mosaic-render-canvas" 
+  <view class="canvas-container" style="width: {{canvasWidth}}px; height: {{canvasHeight}}px; transform: scale({{scale}});">
+    <canvas
+      type="2d"
+      id="mosaic-render-canvas"
       style="width: 100%; height: 100%;"
       bindtouchstart="handleTouchStart"
       bindtouchmove="handleTouchMove"

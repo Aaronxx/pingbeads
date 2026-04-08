@@ -1,5 +1,5 @@
 // components/mosaicCanvas/mosaicCanvas.js
-const { processSimple, medianCut, colorDistance } = require('../../utils/imageProcessor');
+const { processSimple, aggregateSimilarColors } = require('../../utils/imageProcessor');
 const { findClosestMarkColor } = require('../../utils/colorMapper');
 
 Component({
@@ -10,7 +10,8 @@ Component({
     highlightCode: { type: String, value: null },
     showCode: { type: Boolean, value: false },
     scale: { type: Number, value: 1 },
-    previewQuality: { type: Number, value: 2 }
+    previewQuality: { type: Number, value: 2 },
+    regenerateTrigger: { type: Number, value: 0 }
   },
 
   data: {
@@ -35,18 +36,42 @@ Component({
 
   observers: {
     'imagePath': function(newPath) {
+      console.log('=== imagePath observer ===');
+      console.log('newPath:', newPath);
+      console.log('cachedPixelData exists:', !!this.cachedPixelData);
       if (newPath) {
         this.processImage(newPath);
       }
     },
-    'gridSize, mergeThreshold': function(newGridSize, newMergeThreshold) {
+    'regenerateTrigger': function() {
+      console.log('=== regenerateTrigger observer ===');
+      console.log('cachedPixelData exists:', !!this.cachedPixelData);
+      // 当触发器变化时，重新生成
       if (this.cachedPixelData && this.cachedWidth > 0) {
-        this.regenerateFromCache();
+        // 设置处理中状态，让用户看到正在重新生成
+        this.setData({ isProcessing: true });
+        // 延迟一下再重新生成，让用户看到清空效果
+        setTimeout(() => {
+          this.regenerateFromCache();
+        }, 200);
       }
     },
-    'previewQuality': function() {
+    'gridSize, mergeThreshold, previewQuality': function() {
+      console.log('=== params observer ===');
+      console.log('cachedPixelData exists:', !!this.cachedPixelData);
+      console.log('imagePath:', this.data.imagePath);
+
       if (this.cachedPixelData && this.cachedWidth > 0) {
-        this.regenerateFromCache();
+        // 有缓存数据，使用缓存重新生成
+        console.log('use cache to regenerate');
+        this.setData({ isProcessing: true });
+        setTimeout(() => {
+          this.regenerateFromCache();
+        }, 200);
+      } else if (this.data.imagePath) {
+        // 没有缓存但有图片路径，重新加载图片
+        console.log('reprocess image');
+        this.processImage(this.data.imagePath);
       }
     }
   },
@@ -67,40 +92,76 @@ Component({
       const pixelData = this.getCachedPixelData();
       const cachedWidth = this.cachedWidth;
       const cachedHeight = this.cachedHeight;
-      
+
       if (!pixelData || cachedWidth === 0) return;
-      
+
       const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
-      
-      const result = processSimple(pixelData, cachedWidth, cachedHeight, qualityGridSize);
-      
-      const mergedGrid = this.mergeRegions(result.gridData, result.rows, result.cols, this.data.mergeThreshold);
-      
-      const flatCells = [];
-      for (let row = 0; row < result.rows; row++) {
-        for (let col = 0; col < result.cols; col++) {
-          if (mergedGrid[row] && mergedGrid[row][col]) {
-            flatCells.push(mergedGrid[row][col]);
-          }
-        }
-      }
-      
+
+      // 传入 mergeThreshold 参数，在颜色映射阶段进行颜色聚合
+      const result = processSimple(pixelData, cachedWidth, cachedHeight, qualityGridSize, this.data.mergeThreshold);
+
+      // 直接计算统计结果（不传输大量格子数据）
+      const stats = this.calculateStats(result.gridData, result.rows, result.cols);
+      console.log('regenerateFromCache - stats:', stats);
+
       this.setData({
         gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
-        flatCells: flatCells,
         isProcessing: false
       });
-      
-      // 渲染到 Canvas - 延迟执行确保 Canvas 已渲染
+
+      // 触发统计更新事件，传递预计算的统计结果
+      this.triggerEvent('statsUpdate', { stats: stats });
+
+      // 渲染到 Canvas
       setTimeout(() => {
         this.renderToCanvas(result.gridData, result.cols, result.rows, qualityGridSize);
       }, 100);
-      
-      // 将 gridData 也传递出去，供导出功能使用
-      this.triggerEvent('mosaicGenerated', { 
-        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
-        gridData: result.gridData
+
+      // 保存 gridData 引用，供导出使用（通过方法获取）
+      this.cachedGridData = result.gridData;
+      this.cachedGridInfo = { cols: result.cols, rows: result.rows, gridSize: qualityGridSize };
+
+      // 触发完成事件
+      this.triggerEvent('mosaicGenerated', {
+        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize }
       });
+    },
+
+    // 计算统计结果
+    calculateStats(gridData, rows, cols) {
+      const colorCounts = {};
+      let totalCount = 0;
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const cell = gridData[row] && gridData[row][col];
+          if (!cell || !cell.markCode) continue;
+          const code = cell.markCode;
+          if (!colorCounts[code]) {
+            colorCounts[code] = {
+              code: cell.markCode,
+              hex: cell.markHex || '#000000',
+              count: 0
+            };
+          }
+          colorCounts[code].count++;
+          totalCount++;
+        }
+      }
+
+      return {
+        colorCount: Object.keys(colorCounts).length,
+        totalCount: totalCount,
+        sortedByCount: Object.values(colorCounts).sort((a, b) => b.count - a.count)
+      };
+    },
+
+    // 获取 gridData（供导出使用）
+    getExportData() {
+      return {
+        gridInfo: this.cachedGridInfo,
+        gridData: this.cachedGridData
+      };
     },
     
     getQualityGridSize(quality) {
@@ -114,8 +175,13 @@ Component({
     },
 
     processImage(imagePath) {
+      console.log('=== processImage ===');
+      console.log('gridSize:', this.data.gridSize);
+      console.log('mergeThreshold:', this.data.mergeThreshold);
+      console.log('previewQuality:', this.data.previewQuality);
+
       this.setData({ isProcessing: true });
-      
+
       const that = this;
       const actualGridSize = this.data.gridSize;
       
@@ -222,71 +288,67 @@ Component({
 
     processWithSimpleAlgorithm(width, height, gridSize) {
       this.setData({ isProcessing: false });
-      
+
       const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
-      const result = processSimple(null, width, height, qualityGridSize);
-      
-      const mergedGrid = this.mergeRegions(result.gridData, result.rows, result.cols, this.data.mergeThreshold);
-      
-      const flatCells = [];
-      for (let row = 0; row < result.rows; row++) {
-        for (let col = 0; col < result.cols; col++) {
-          if (mergedGrid[row] && mergedGrid[row][col]) {
-            flatCells.push(mergedGrid[row][col]);
-          }
-        }
-      }
-      
+      // 传入 mergeThreshold 参数
+      const result = processSimple(null, width, height, qualityGridSize, this.data.mergeThreshold);
+
+      // 直接计算统计结果
+      const stats = this.calculateStats(result.gridData, result.rows, result.cols);
+      console.log('stats:', stats);
+
       this.setData({
         gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
-        flatCells: flatCells,
         isProcessing: false
       });
-      
-      // 渲染到 Canvas - 延迟执行确保 Canvas 已渲染
+
+      // 触发统计更新事件
+      this.triggerEvent('statsUpdate', { stats: stats });
+
+      // 渲染到 Canvas
       setTimeout(() => {
         this.renderToCanvas(result.gridData, result.cols, result.rows, qualityGridSize);
       }, 100);
-      
-      // 将 gridData 也传递出去，供导出功能使用
-      this.triggerEvent('mosaicGenerated', { 
-        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
-        gridData: result.gridData
+
+      // 保存引用
+      this.cachedGridData = result.gridData;
+      this.cachedGridInfo = { cols: result.cols, rows: result.rows, gridSize: qualityGridSize };
+
+      this.triggerEvent('mosaicGenerated', {
+        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize }
       });
     },
 
     processPixelData(pixelData, width, height, gridSize) {
       this.setData({ isProcessing: true });
-      
+
       const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
-      const result = processSimple(pixelData, width, height, qualityGridSize);
-      
-      const mergedGrid = this.mergeRegions(result.gridData, result.rows, result.cols, this.data.mergeThreshold);
-      
-      const flatCells = [];
-      for (let row = 0; row < result.rows; row++) {
-        for (let col = 0; col < result.cols; col++) {
-          if (mergedGrid[row] && mergedGrid[row][col]) {
-            flatCells.push(mergedGrid[row][col]);
-          }
-        }
-      }
-      
+      // 传入 mergeThreshold 参数，在颜色映射阶段进行颜色聚合
+      const result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold);
+
+      // 直接计算统计结果
+      const stats = this.calculateStats(result.gridData, result.rows, result.cols);
+      console.log('flatCells count:', stats.totalCount);
+
       this.setData({
         gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
-        flatCells: flatCells,
         isProcessing: false
       });
-      
-      // 渲染到 Canvas - 延迟执行确保 Canvas 已渲染
+
+      // 触发统计更新事件
+      this.triggerEvent('statsUpdate', { stats: stats });
+
+      // 渲染到 Canvas
       setTimeout(() => {
         this.renderToCanvas(result.gridData, result.cols, result.rows, qualityGridSize);
       }, 100);
-      
-      // 将 gridData 也传递出去，供导出功能使用
-      this.triggerEvent('mosaicGenerated', { 
-        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
-        gridData: result.gridData
+
+      // 保存引用
+      this.cachedGridData = result.gridData;
+      this.cachedGridInfo = { cols: result.cols, rows: result.rows, gridSize: qualityGridSize };
+
+      this.triggerEvent('mosaicGenerated', {
+        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize }
       });
     },
 
@@ -365,28 +427,32 @@ Component({
           
           console.log('偏移:', offsetX, offsetY);
           
-          // 绘制所有格子
+          // 绘制所有格子（每个格子独立显示）
           for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
               const cell = gridData[row] && gridData[row][col];
-              if (!cell) continue;
-              
+              // 跳过空格子
+              if (!cell || !cell.markCode) continue;
+
+              const cellWidth = gridSize * scale;
+              const cellHeight = gridSize * scale;
+
               const x = offsetX + col * gridSize * scale;
               const y = offsetY + row * gridSize * scale;
-              const size = gridSize * scale;
-              
+
               // 绘制色块
               ctx.fillStyle = cell.markHex;
-              ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(size), Math.ceil(size));
-              
+              ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(cellWidth), Math.ceil(cellHeight));
+
               // 绘制色号（根据格子大小）
+              const size = Math.min(cellWidth, cellHeight);
               if (that.data.showCode && size >= 15) {
                 const isLight = that.isLightColor(cell.markHex);
                 ctx.fillStyle = isLight ? '#333333' : '#ffffff';
                 ctx.font = `${Math.max(10, size * 0.4)}px sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(cell.markCode, x + size / 2, y + size / 2);
+                ctx.fillText(cell.markCode, x + cellWidth / 2, y + cellHeight / 2);
               }
             }
           }
@@ -419,45 +485,16 @@ Component({
       this.renderToCanvas(gridData, cols, rows, gridSize);
     },
 
-    mergeRegions(gridData, rows, cols, threshold) {
-      // 暂时禁用合并，避免出现空缺
-      return gridData;
-      
-      /*
-      if (threshold <= 0) return gridData;
-      
-      const merged = JSON.parse(JSON.stringify(gridData));
-      
-      for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
-          if (!merged[row][col]) continue;
-          
-          const code = merged[row][col].markCode;
-          const currentWidth = merged[row][col].width || this.data.gridSize;
-          const currentHeight = merged[row][col].height || this.data.gridSize;
-          
-          // 尝试向右合并
-          if (col < cols - 1 && merged[row][col + 1] && merged[row][col + 1].markCode === code) {
-            const rightWidth = merged[row][col + 1].width || this.data.gridSize;
-            merged[row][col].width = currentWidth + rightWidth;
-            merged[row][col + 1] = null;
-          }
-          
-          // 尝试向下合并
-          if (row < rows - 1 && merged[row + 1][col] && merged[row + 1][col].markCode === code) {
-            const downHeight = merged[row + 1][col].height || this.data.gridSize;
-            merged[row][col].height = currentHeight + downHeight;
-            merged[row + 1][col] = null;
-          }
-        }
-      }
-      
-      return merged;
-      */
-    },
-
     toggleFullscreen() {
-      this.setData({ isFullscreen: !this.data.isFullscreen });
+      const isFullscreen = !this.data.isFullscreen;
+      this.setData({ isFullscreen });
+
+      // 设置横屏
+      if (isFullscreen) {
+        wx.setPageOrientation('landscape');
+      } else {
+        wx.setPageOrientation('portrait');
+      }
     },
 
     handleCellTap(e) {
@@ -465,29 +502,56 @@ Component({
       this.triggerEvent('cellClick', { code });
     },
 
+    // 记录初始双指距离
+    initialTouchDistance: 0,
+    initialScale: 1,
+
     handleTouchStart(e) {
-      this.setData({ lastTouch: e.touches[0] });
+      if (e.touches.length === 2) {
+        // 双指触摸，记录初始距离和缩放
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        this.initialTouchDistance = Math.hypot(dx, dy);
+        this.initialScale = this.data.scale;
+      } else if (e.touches.length === 1) {
+        this.setData({ lastTouch: e.touches[0] });
+      }
     },
 
     handleTouchMove(e) {
-      const current = e.touches[0];
-      const last = this.data.lastTouch;
-      
-      if (last) {
+      if (e.touches.length === 2) {
+        // 双指缩放
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const currentDistance = Math.hypot(dx, dy);
+
+        if (this.initialTouchDistance > 0) {
+          const scaleFactor = currentDistance / this.initialTouchDistance;
+          const newScale = Math.max(0.5, Math.min(3, this.initialScale * scaleFactor));
+          this.setData({ scale: newScale });
+        }
+      } else if (e.touches.length === 1 && this.data.lastTouch) {
+        // 单指拖动（平移）- 可选功能
+        const current = e.touches[0];
+        const last = this.data.lastTouch;
         const deltaX = current.clientX - last.clientX;
         const deltaY = current.clientY - last.clientY;
-        
+
+        // 简单的平移效果（上下滑动可以调整缩放）
         let newScale = this.data.scale;
         if (Math.abs(deltaY) > Math.abs(deltaX)) {
-          newScale = Math.max(0.5, Math.min(3, newScale + deltaY * 0.005));
+          newScale = Math.max(0.5, Math.min(3, newScale + deltaY * 0.003));
         }
-        
+
         this.setData({ scale: newScale, lastTouch: current });
       }
     },
 
-    handleTouchEnd() {
-      this.setData({ lastTouch: null });
+    handleTouchEnd(e) {
+      if (e.touches.length === 0) {
+        this.setData({ lastTouch: null });
+        this.initialTouchDistance = 0;
+      }
     }
   }
 });
