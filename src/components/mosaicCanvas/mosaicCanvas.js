@@ -21,6 +21,10 @@ Component({
     gridInfo: null,
     isFullscreen: false,
     scale: 1,
+    // 拖动偏移量
+    offsetX: 0,
+    offsetY: 0,
+    isNewTouch: true,
     flatCells: [],
     // 不再在此存储大数组，改用普通属性
     cachedWidth: 0,
@@ -78,6 +82,13 @@ Component({
     'scale': function(newScale) {
       console.log('=== scale observer ===', newScale);
       // 当 scale 变化时，重新渲染 Canvas
+      if (this.cachedGridData && this.cachedGridInfo) {
+        const { cols, rows, gridSize } = this.cachedGridInfo;
+        this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+      }
+    },
+    // 监听偏移变化，重新渲染 Canvas
+    'offsetX,offsetY': function() {
       if (this.cachedGridData && this.cachedGridInfo) {
         const { cols, rows, gridSize } = this.cachedGridInfo;
         this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
@@ -445,8 +456,11 @@ Component({
           // 居中偏移 - 使用实际的 Canvas 尺寸
           const actualCanvasWidth = canvas.width;
           const actualCanvasHeight = canvas.height;
-          const offsetX = (actualCanvasWidth - totalGridWidth * scale) / 2;
-          const offsetY = (actualCanvasHeight - totalGridHeight * scale) / 2;
+          const baseOffsetX = (actualCanvasWidth - totalGridWidth * scale) / 2;
+          const baseOffsetY = (actualCanvasHeight - totalGridHeight * scale) / 2;
+          // 加上用户的拖动偏移
+          const offsetX = baseOffsetX + (this.data.offsetX || 0);
+          const offsetY = baseOffsetY + (this.data.offsetY || 0);
 
           console.log('实际Canvas尺寸:', actualCanvasWidth, 'x', actualCanvasHeight);
           
@@ -537,6 +551,7 @@ Component({
     initialScale: 1,
 
     handleTouchStart(e) {
+      console.log('=== 触摸开始 ===', 'touches:', e.touches.length, 'isNewTouch:', this.data.isNewTouch);
       if (e.touches.length === 2) {
         // 双指触摸，记录初始距离和缩放
         const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -544,7 +559,12 @@ Component({
         this.initialTouchDistance = Math.hypot(dx, dy);
         this.initialScale = this.data.scale;
       } else if (e.touches.length === 1) {
-        this.setData({ lastTouch: e.touches[0] });
+        // 只有新触摸时才重置偏移量
+        if (this.data.isNewTouch) {
+          this.setData({ lastTouch: e.touches[0], offsetX: 0, offsetY: 0, isNewTouch: false });
+        } else {
+          this.setData({ lastTouch: e.touches[0] });
+        }
       }
     },
 
@@ -561,25 +581,33 @@ Component({
           this.setData({ scale: newScale });
         }
       } else if (e.touches.length === 1 && this.data.lastTouch) {
-        // 单指拖动（平移）- 可选功能
         const current = e.touches[0];
         const last = this.data.lastTouch;
         const deltaX = current.clientX - last.clientX;
         const deltaY = current.clientY - last.clientY;
 
-        // 简单的平移效果（上下滑动可以调整缩放）
-        let newScale = this.data.scale;
-        if (Math.abs(deltaY) > Math.abs(deltaX)) {
-          newScale = Math.max(0.5, Math.min(80, newScale + deltaY * 0.003));
-        }
+        console.log('=== 触摸移动 ===', 'scale:', this.data.scale, 'deltaX:', deltaX, 'deltaY:', deltaY);
 
-        this.setData({ scale: newScale, lastTouch: current });
+        // 放大后启用平移（任意scale都可以拖动）
+        if (this.data.scale > 1.0) {
+          const newOffsetX = this.data.offsetX + deltaX;
+          const newOffsetY = this.data.offsetY + deltaY;
+          console.log('更新偏移:', newOffsetX, newOffsetY);
+          this.setData({ offsetX: newOffsetX, offsetY: newOffsetY, lastTouch: current });
+        } else {
+          // 小缩放时上下滑动调整缩放
+          let newScale = this.data.scale;
+          if (Math.abs(deltaY) > Math.abs(deltaX)) {
+            newScale = Math.max(0.5, Math.min(80, newScale + deltaY * 0.003));
+          }
+          this.setData({ scale: newScale, lastTouch: current });
+        }
       }
     },
 
     handleTouchEnd(e) {
       if (e.touches.length === 0) {
-        this.setData({ lastTouch: null });
+        this.setData({ lastTouch: null, isNewTouch: true });
         this.initialTouchDistance = 0;
       }
     }

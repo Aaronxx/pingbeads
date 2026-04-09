@@ -12,14 +12,6 @@
       <!-- 中间设置 -->
       <view class="button-center" wx:if="{{imagePath}}">
         <view class="setting-item">
-          <picker mode="selector" range="{{qualityOptions}}" range-key="name" value="{{previewQuality - 1}}" bindchange="onPreviewQualityChange">
-            <view class="picker-box">
-              <text class="picker-label">精细</text>
-              <text class="picker-value">{{qualityOptions[previewQuality - 1].name}}</text>
-            </view>
-          </picker>
-        </view>
-        <view class="setting-item">
           <picker mode="selector" range="{{gridOptions}}" range-key="name" value="{{gridOptionIndex}}" bindchange="onGridSizeChange">
             <view class="picker-box">
               <text class="picker-label">网格</text>

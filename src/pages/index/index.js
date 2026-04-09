@@ -229,8 +229,14 @@ Page({
     const statsItemCount = statsList.length;
     const statsRowCount = Math.ceil(statsItemCount / itemsPerRow);
     const statsHeight = statsItemHeight * statsRowCount + 20;
-    const canvasWidth = mosaicWidth;
-    const canvasHeight = mosaicHeight + statsHeight;
+
+    // 标尺区域尺寸
+    const rulerWidth = 40;   // 左侧标尺宽度
+    const rulerHeight = 30;  // 顶部标尺高度
+
+    // 包含标尺的画布尺寸
+    const canvasWidth = mosaicWidth + rulerWidth;
+    const canvasHeight = mosaicHeight + rulerHeight + statsHeight;
     
     // 使用节点查询获取 canvas
     const query = wx.createSelectorQuery();
@@ -248,8 +254,66 @@ Page({
         // 设置 canvas 尺寸
         canvas.width = canvasWidth;
         canvas.height = canvasHeight;
-        
-        // 1. 绘制马赛克主体（使用放大后的格子）
+
+        // 0. 绘制背景
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+        // 1. 绘制顶部列标尺 - 每个色块显示列号
+        ctx.fillStyle = '#f0f0f0';
+        ctx.fillRect(rulerWidth, 0, mosaicWidth, rulerHeight);
+        ctx.strokeStyle = '#cccccc';
+        ctx.lineWidth = 1;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // 动态计算字体大小，确保能显示下所有列号
+        const colFontSize = Math.max(6, Math.min(10, mosaicWidth / cols * 0.7));
+        ctx.font = `${colFontSize}px sans-serif`;
+
+        for (let col = 1; col <= cols; col++) {
+          const x = rulerWidth + (col - 0.5) * gridSize * exportScale;
+          // 刻度线
+          ctx.beginPath();
+          ctx.moveTo(rulerWidth + (col - 1) * gridSize * exportScale, rulerHeight - 5);
+          ctx.lineTo(rulerWidth + (col - 1) * gridSize * exportScale, rulerHeight);
+          ctx.stroke();
+          // 列号（从1开始）
+          ctx.fillStyle = '#666666';
+          ctx.fillText(col.toString(), x, rulerHeight / 2);
+        }
+
+        // 2. 绘制左侧行标尺 - 每个色块显示行号
+        ctx.fillStyle = '#f0f0f0';
+        ctx.fillRect(0, rulerHeight, rulerWidth, mosaicHeight);
+        // 标尺分隔线
+        ctx.beginPath();
+        ctx.moveTo(rulerWidth, 0);
+        ctx.lineTo(rulerWidth, mosaicHeight + rulerHeight);
+        ctx.stroke();
+
+        // 动态计算字体大小
+        const rowFontSize = Math.max(6, Math.min(10, mosaicHeight / rows * 0.7));
+        ctx.font = `${rowFontSize}px sans-serif`;
+
+        for (let row = 1; row <= rows; row++) {
+          const y = rulerHeight + (row - 0.5) * gridSize * exportScale;
+          // 刻度线
+          ctx.beginPath();
+          ctx.moveTo(rulerWidth - 5, rulerHeight + (row - 1) * gridSize * exportScale);
+          ctx.lineTo(rulerWidth, rulerHeight + (row - 1) * gridSize * exportScale);
+          ctx.stroke();
+          // 行号（从1开始）
+          ctx.fillStyle = '#666666';
+          ctx.textAlign = 'right';
+          ctx.fillText(row.toString(), rulerWidth - 5, y);
+        }
+
+        // 3. 绘制马赛克主体（使用放大后的格子）
+        // 偏移位置：加上标尺的宽度和高度
+        const offsetX = rulerWidth;
+        const offsetY = rulerHeight;
+
         // 跳过 isRegionMember 的格子（它们会被根格子覆盖）
         for (let row = 0; row < rows; row++) {
           for (let col = 0; col < cols; col++) {
@@ -261,8 +325,8 @@ Page({
             const cellWidth = (cell.width || gridSize) * exportScale;
             const cellHeight = (cell.height || gridSize) * exportScale;
 
-            const x = col * gridSize * exportScale;
-            const y = row * gridSize * exportScale;
+            const x = offsetX + col * gridSize * exportScale;
+            const y = offsetY + row * gridSize * exportScale;
 
             // 绘制色块
             ctx.fillStyle = cell.markHex;
@@ -284,9 +348,11 @@ Page({
         }
         
         // 2. 绘制统计行（底部）- 玻璃拟态圆角按钮样式
-        const statsY = mosaicHeight + 10;
+        // 统计行位置（加上顶部标尺高度）
+        const statsY = rulerHeight + mosaicHeight + 10;
         ctx.fillStyle = '#f8f9fa';
-        ctx.fillRect(0, mosaicHeight, canvasWidth, statsHeight);
+        // 统计行背景（从标尺下方开始）
+        ctx.fillRect(0, rulerHeight + mosaicHeight, canvasWidth, statsHeight);
         
         // 每行10个，与图片等宽
         const itemsPerRow = 10;
@@ -299,7 +365,8 @@ Page({
           
           // 均匀分布，每行等分
           const itemWidth = canvasWidth / itemsPerRow;
-          const x = col * itemWidth + 8;
+          // 统计项从左侧标尺右边开始
+          const x = rulerWidth + col * itemWidth + 8;
           const y = statsY + row * statsItemHeight;
           const btnWidth = itemWidth - 16;
           const btnHeight = statsItemHeight - 5;
@@ -346,7 +413,10 @@ Page({
           ctx.fillText(`${displayCode} (${item.count})`, x + btnWidth / 2, y + btnHeight / 2);
           ctx.shadowColor = 'transparent';
         }
-        
+
+        // 4. 绘制水印 - 多行倾斜覆盖全图
+        this.drawWatermark(ctx, canvasWidth, canvasHeight);
+
         // 导出图片 - Canvas 2D 需要延迟等待渲染完成
         // 延长等待时间到 1 秒，确保大图也能导出成功
         console.log('准备导出，canvas对象:', typeof canvas);
@@ -381,43 +451,58 @@ Page({
     const that = this;
     console.log('准备保存到相册, 文件路径:', tempFilePath);
 
-    // 检查相册权限
+    // 先检查权限状态
     wx.getSetting({
       success(res) {
         console.log('权限设置:', JSON.stringify(res.authSetting));
-        if (!res.authSetting['scope.writePhotosAlbum']) {
-          // 没有权限，请求授权
+        const hasAuth = res.authSetting['scope.writePhotosAlbum'];
+        if (hasAuth) {
+          // 已有权限，直接保存
+          that.doSaveImage(tempFilePath);
+        } else {
+          // 没有权限，先尝试弹出底部授权框
           wx.authorize({
             scope: 'scope.writePhotosAlbum',
             success() {
+              // 用户授权成功，保存图片
               that.doSaveImage(tempFilePath);
             },
             fail(err) {
-              console.error('授权失败:', err);
-              // 用户拒绝，引导去设置页面
+              console.log('授权失败:', err);
+              // 用户拒绝或之前拒绝过，引导去设置页面
               wx.showModal({
                 title: '需要相册权限',
-                content: '保存图片需要相册权限，请在设置中开启',
+                content: '保存图片需要授权访问相册权限',
                 confirmText: '去设置',
                 success(res) {
                   if (res.confirm) {
-                    wx.openSetting();
+                    wx.openSetting({
+                      success(setRes) {
+                        if (setRes.authSetting['scope.writePhotosAlbum']) {
+                          that.doSaveImage(tempFilePath);
+                        } else {
+                          that.setData({ isExporting: false });
+                        }
+                      },
+                      fail() {
+                        that.setData({ isExporting: false });
+                      }
+                    });
+                  } else {
+                    that.setData({ isExporting: false });
                   }
                 },
-                complete() {
+                fail() {
                   that.setData({ isExporting: false });
                 }
               });
             }
           });
-        } else {
-          // 已有权限，直接保存
-          that.doSaveImage(tempFilePath);
         }
       },
       fail(err) {
         console.error('获取设置失败:', err);
-        // 尝试直接保存
+        // 获取设置失败，尝试直接保存
         that.doSaveImage(tempFilePath);
       }
     });
@@ -430,24 +515,75 @@ Page({
       filePath: tempFilePath,
       success() {
         wx.showToast({ title: '保存成功', icon: 'success' });
+        that.setData({ isExporting: false });
       },
       fail(err) {
+        console.error('保存失败:', err);
         // 如果是权限问题，引导去设置
-        if (err.errMsg && err.errMsg.includes('auth deny')) {
+        if (err.errMsg && (err.errMsg.includes('auth deny') || err.errMsg.includes('fail auth deny'))) {
           wx.showModal({
             title: '需要相册权限',
             content: '保存图片需要相册权限，请开启权限后重试',
-            confirmText: '知道了',
-            showCancel: false
+            confirmText: '去设置',
+            success(res) {
+              if (res.confirm) {
+                wx.openSetting();
+              }
+            },
+            complete() {
+              that.setData({ isExporting: false });
+            }
           });
         } else {
-          wx.showToast({ title: '保存失败', icon: 'none' });
+          wx.showToast({ title: '保存失败: ' + (err.errMsg || ''), icon: 'none', duration: 2000 });
+          that.setData({ isExporting: false });
         }
-      },
-      complete() {
-        that.setData({ isExporting: false });
       }
     });
+  },
+
+  // 绘制水印 - 多行倾斜覆盖全图
+  drawWatermark(ctx, canvasWidth, canvasHeight) {
+    const text = '拼豆酥';
+    const fontSize = 24;
+    const angle = -30 * Math.PI / 180; // 倾斜30度
+
+    ctx.save();
+    ctx.globalAlpha = 0.3; // 透明度30%
+    ctx.font = `${fontSize}px sans-serif`;
+    ctx.fillStyle = '#888888';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // 计算倾斜后的文字区域
+    const textWidth = ctx.measureText(text).width;
+
+    // 斜向绘制：计算行列
+    const spacingX = textWidth + 150;
+    const spacingY = fontSize + 80;
+
+    // 整个画布的中心旋转
+    const centerX = canvasWidth / 2;
+    const centerY = canvasHeight / 2;
+
+    // 移动到中心并旋转
+    ctx.translate(centerX, centerY);
+    ctx.rotate(angle);
+    ctx.translate(-centerX, -centerY);
+
+    // 绘制多行水印覆盖全图
+    const rows = Math.ceil(canvasHeight / spacingY) + 2;
+    const cols = Math.ceil(canvasWidth / spacingX) + 2;
+
+    for (let row = -1; row < rows; row++) {
+      for (let col = -1; col < cols; col++) {
+        const x = col * spacingX + (row % 2) * (spacingX / 2);
+        const y = row * spacingY;
+        ctx.fillText(text, x, y);
+      }
+    }
+
+    ctx.restore();
   },
 
   // 回退方案：使用 Canvas 2D API
@@ -500,6 +636,9 @@ Page({
             }
           }
         }
+
+        // 绘制水印
+        this.drawWatermark(ctx, width, height);
 
         // 导出 - Canvas 2D 需要延迟等待渲染完成
         // 延长等待时间到 1 秒，确保大图也能导出成功
