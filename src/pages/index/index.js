@@ -451,59 +451,37 @@ Page({
     const that = this;
     console.log('准备保存到相册, 文件路径:', tempFilePath);
 
-    // 先检查权限状态
-    wx.getSetting({
+    // 直接尝试保存，让系统弹窗来处理权限请求
+    // 如果权限未决定，会弹出系统授权弹窗
+    // 如果用户拒绝，再引导去设置
+    that.doSaveImage(tempFilePath);
+  },
+
+  // 显示权限被拒绝的弹窗
+  showAuthDeniedModal(tempFilePath) {
+    const that = this;
+    wx.showModal({
+      title: '需要相册权限',
+      content: '保存图片需要授权访问相册权限',
+      confirmText: '去设置',
       success(res) {
-        console.log('权限设置:', JSON.stringify(res.authSetting));
-        const hasAuth = res.authSetting['scope.writePhotosAlbum'];
-        if (hasAuth) {
-          // 已有权限，直接保存
-          that.doSaveImage(tempFilePath);
-        } else {
-          // 没有权限，先尝试弹出底部授权框
-          wx.authorize({
-            scope: 'scope.writePhotosAlbum',
+        if (res.confirm) {
+          // 打开系统设置页面
+          wx.openAppAuthorizeSetting({
             success() {
-              // 用户授权成功，保存图片
+              // 用户设置完后，重新尝试保存
               that.doSaveImage(tempFilePath);
             },
-            fail(err) {
-              console.log('授权失败:', err);
-              // 用户拒绝或之前拒绝过，引导去设置页面
-              wx.showModal({
-                title: '需要相册权限',
-                content: '保存图片需要授权访问相册权限',
-                confirmText: '去设置',
-                success(res) {
-                  if (res.confirm) {
-                    wx.openSetting({
-                      success(setRes) {
-                        if (setRes.authSetting['scope.writePhotosAlbum']) {
-                          that.doSaveImage(tempFilePath);
-                        } else {
-                          that.setData({ isExporting: false });
-                        }
-                      },
-                      fail() {
-                        that.setData({ isExporting: false });
-                      }
-                    });
-                  } else {
-                    that.setData({ isExporting: false });
-                  }
-                },
-                fail() {
-                  that.setData({ isExporting: false });
-                }
-              });
+            fail() {
+              that.setData({ isExporting: false });
             }
           });
+        } else {
+          that.setData({ isExporting: false });
         }
       },
-      fail(err) {
-        console.error('获取设置失败:', err);
-        // 获取设置失败，尝试直接保存
-        that.doSaveImage(tempFilePath);
+      fail() {
+        that.setData({ isExporting: false });
       }
     });
   },
@@ -519,21 +497,9 @@ Page({
       },
       fail(err) {
         console.error('保存失败:', err);
-        // 如果是权限问题，引导去设置
+        // 如果是权限问题（auth deny），引导去设置
         if (err.errMsg && (err.errMsg.includes('auth deny') || err.errMsg.includes('fail auth deny'))) {
-          wx.showModal({
-            title: '需要相册权限',
-            content: '保存图片需要相册权限，请开启权限后重试',
-            confirmText: '去设置',
-            success(res) {
-              if (res.confirm) {
-                wx.openSetting();
-              }
-            },
-            complete() {
-              that.setData({ isExporting: false });
-            }
-          });
+          that.showAuthDeniedModal(tempFilePath);
         } else {
           wx.showToast({ title: '保存失败: ' + (err.errMsg || ''), icon: 'none', duration: 2000 });
           that.setData({ isExporting: false });

@@ -32,7 +32,7 @@ page {
    ======================== */
 .main-wrapper {
   width: 95%;
-  height: 98vh;
+  height: 95vh;
   background: var(--bg-card);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);

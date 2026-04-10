@@ -9,13 +9,7 @@
     "navigationBarTitleText": "拼豆马赛克",
     "navigationBarTextStyle": "black"
   },
-  "permission": {
-    "scope.writePhotosAlbum": {
-      "desc": "用于保存生成的马赛克图片"
-    }
-  },
   "requiredBackgroundModes": [],
-  "lazyloadPlaceholderEnable": true,
   "usingComponents": {
     "imagePicker": "/src/components/imagePicker/imagePicker",
     "mosaicCanvas": "/src/components/mosaicCanvas/mosaicCanvas",
