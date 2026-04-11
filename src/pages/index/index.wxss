@@ -33,6 +33,7 @@ page {
 .main-wrapper {
   width: 95%;
   height: 95vh;
+  margin-top: 120rpx;
   background: var(--bg-card);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
@@ -67,6 +68,22 @@ page {
 }
 
 /* ========================
+   顶部固定栏
+   ======================== */
+.top-fixed-bar {
+  width: 95%;
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-card);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  z-index: 1000;
+  padding: 16rpx 0;
+}
+
+/* ========================
    按钮行：宽度90%
    ======================== */
 .button-row {
@@ -74,7 +91,7 @@ page {
   align-items: center;
   justify-content: space-between;
   width: 90%;
-  margin: 16rpx auto 0;
+  margin: 0 auto;
   padding: 12rpx 0;
   position: relative;
   z-index: 1;
@@ -95,6 +112,27 @@ page {
 
 .button-right {
   flex-shrink: 0;
+}
+
+/* 替换按钮 */
+.replace-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12rpx 24rpx;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  border-radius: 8rpx;
+  box-shadow: 0 2rpx 8rpx rgba(245, 158, 11, 0.4);
+}
+
+.replace-btn:active {
+  opacity: 0.8;
+}
+
+.replace-btn-text {
+  color: #fff;
+  font-size: 26rpx;
+  font-weight: 600;
 }
 
 /* 设置项 */

@@ -1,7 +1,7 @@
 <!--pages/index/index.wxml-->
 <view class="container">
-  <!-- 大外框：宽95%，高98% -->
-  <view class="main-wrapper">
+  <!-- 顶部固定按钮行 -->
+  <view class="top-fixed-bar">
     <!-- 按钮行：宽度90% -->
     <view class="button-row">
       <!-- 左侧按钮 -->
@@ -29,10 +29,11 @@
         </view>
       </view>
       
-      <!-- 右侧预留（给保存按钮） -->
-      <view class="button-right" wx:if="{{!mosaicData}}"></view>
     </view>
+  </view>
 
+  <!-- 大外框：宽95%，高98% -->
+  <view class="main-wrapper">
     <!-- 预览区：宽高90% -->
     <view class="preview-area" bindtap="onPreviewAreaClick">
       <mosaicCanvas

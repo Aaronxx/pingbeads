@@ -433,16 +433,16 @@ Page({
 
         // 导出图片 - Canvas 2D 需要延迟等待渲染完成
         // 延长等待时间到 1 秒，确保大图也能导出成功
-        console.log('准备导出，canvas对象:', typeof canvas);
+        
 
         setTimeout(() => {
           const exportOptions = {
             success: (res) => {
-              console.log('导出成功，临时文件路径:', res.tempFilePath);
+              
               that.saveToPhotoAlbum(res.tempFilePath);
             },
             fail: (err) => {
-              console.error('导出失败详细信息:', JSON.stringify(err));
+              
               wx.showToast({ title: '导出失败，请重试' + JSON.stringify(err), icon: 'none' });
               that.setData({ isExporting: false });
             }
@@ -463,7 +463,7 @@ Page({
   // 保存图片到相册（带权限检查）
   saveToPhotoAlbum(tempFilePath) {
     const that = this;
-    console.log('准备保存到相册, 文件路径:', tempFilePath);
+    
 
     // 直接尝试保存，让系统弹窗来处理权限请求
     // 如果权限未决定，会弹出系统授权弹窗
@@ -510,7 +510,7 @@ Page({
         that.setData({ isExporting: false });
       },
       fail(err) {
-        console.error('保存失败:', err);
+        
         // 如果是权限问题（auth deny），引导去设置
         if (err.errMsg && (err.errMsg.includes('auth deny') || err.errMsg.includes('fail auth deny'))) {
           that.showAuthDeniedModal(tempFilePath);
@@ -626,11 +626,11 @@ Page({
           wx.canvasToTempFilePath({
             canvas: canvas,
             success: (res) => {
-              console.log('导出临时文件路径:', res.tempFilePath);
+              
               that.saveToPhotoAlbum(res.tempFilePath);
             },
             fail: (err) => {
-              console.error('导出失败:', err);
+              
               wx.showToast({ title: '导出失败，请重试', icon: 'none' });
               that.setData({ isExporting: false });
             }
@@ -775,7 +775,7 @@ Page({
               that.saveToPhotoAlbum(res.tempFilePath);
             },
             fail: (err) => {
-              console.error('canvasId导出失败:', err);
+              
               if (retryCount < maxRetries) {
                 that.exportWithCanvasId(width, height, retryCount + 1);
               } else {

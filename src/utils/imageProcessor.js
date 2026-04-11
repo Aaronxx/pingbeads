@@ -445,8 +445,8 @@ function generatePlaceholderGrid(cols, rows, gridSize) {
 function aggregateSimilarColors(gridData, rows, cols, targetCount) {
   if (!gridData || targetCount <= 0) return gridData;
 
-  console.log('=== aggregateSimilarColors ===');
-  console.log('targetCount:', targetCount, 'rows:', rows, 'cols:', cols);
+  
+  
 
   // 收集所有格子的主导色 RGB
   const allColors = [];
@@ -465,11 +465,11 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
 
   if (allColors.length === 0) return gridData;
 
-  console.log('Total colors:', allColors.length);
+  
 
   // 如果格子数量已经小于目标数量，不需要聚类
   if (allColors.length <= targetCount) {
-    console.log('Cells already less than target, skip aggregation');
+    
     return gridData;
   }
 
@@ -485,11 +485,11 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
   }
 
   const uniqueColors = Array.from(colorCountMap.values());
-  console.log('Unique RGB colors:', uniqueColors.length);
+  
 
   // 如果唯一颜色数量已经小于等于目标，不需要聚类
   if (uniqueColors.length <= targetCount) {
-    console.log('Unique colors already less than target, skip');
+    
     return gridData;
   }
 
@@ -506,7 +506,7 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
     centers.push({ ...uniqueColors[centers.length].rgb });
   }
 
-  console.log('Initial centers:', centers.length);
+  
 
   // 3. 简化距离计算：使用曼哈顿距离（比欧氏距离快）
   const fastDistance = (c1, c2) => {
@@ -566,7 +566,7 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
   const { fastFindClosestMarkColor } = require('../utils/colorMapper');
   const centerMarkColors = centers.map(center => fastFindClosestMarkColor(center));
 
-  console.log('Cluster centers marked');
+  
 
   // 6. 将每个唯一颜色映射到其所属聚类的 Mark 色号
   // 使用颜色到中心的映射表，避免重复计算
@@ -615,8 +615,8 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
       }
     }
   }
-  console.log('Actual unique Mark codes:', usedCodes.size);
-  console.log('=== aggregateSimilarColors end ===');
+  
+  
   return gridData;
 }
 

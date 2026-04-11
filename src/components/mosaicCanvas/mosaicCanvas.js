@@ -25,6 +25,8 @@ Component({
     offsetX: 0,
     offsetY: 0,
     isNewTouch: true,
+    // 拖动状态：按住时为 true，停止渲染，手指离开时恢复渲染
+    isDragging: false,
     flatCells: [],
     // 不再在此存储大数组，改用普通属性
     cachedWidth: 0,
@@ -40,16 +42,16 @@ Component({
 
   observers: {
     'imagePath': function(newPath) {
-      console.log('=== imagePath observer ===');
-      console.log('newPath:', newPath);
-      console.log('cachedPixelData exists:', !!this.cachedPixelData);
+      
+      
+      
       if (newPath) {
         this.processImage(newPath);
       }
     },
     'regenerateTrigger': function() {
-      console.log('=== regenerateTrigger observer ===');
-      console.log('cachedPixelData exists:', !!this.cachedPixelData);
+      
+      
       // 当触发器变化时，重新生成
       if (this.cachedPixelData && this.cachedWidth > 0) {
         // 设置处理中状态，让用户看到正在重新生成
@@ -61,34 +63,37 @@ Component({
       }
     },
     'gridSize, mergeThreshold, previewQuality': function() {
-      console.log('=== params observer ===');
-      console.log('cachedPixelData exists:', !!this.cachedPixelData);
-      console.log('imagePath:', this.data.imagePath);
+      
+      
+      
 
       if (this.cachedPixelData && this.cachedWidth > 0) {
         // 有缓存数据，使用缓存重新生成
-        console.log('use cache to regenerate');
+        
         this.setData({ isProcessing: true });
         setTimeout(() => {
           this.regenerateFromCache();
         }, 200);
       } else if (this.data.imagePath) {
         // 没有缓存但有图片路径，重新加载图片
-        console.log('reprocess image');
+        
         this.processImage(this.data.imagePath);
       }
     },
     // 监听 scale 变化，重新渲染 Canvas
     'scale': function(newScale) {
-      console.log('=== scale observer ===', newScale);
+      
       // 当 scale 变化时，重新渲染 Canvas
       if (this.cachedGridData && this.cachedGridInfo) {
         const { cols, rows, gridSize } = this.cachedGridInfo;
         this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
       }
     },
-    // 监听偏移变化，重新渲染 Canvas
+    // 监听偏移变化，重新渲染 Canvas（拖动时除外）
     'offsetX,offsetY': function() {
+      // 拖动时只移动视图，不渲染
+      if (this.data.isDragging) return;
+
       if (this.cachedGridData && this.cachedGridInfo) {
         const { cols, rows, gridSize } = this.cachedGridInfo;
         this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
@@ -122,7 +127,7 @@ Component({
 
       // 直接计算统计结果（不传输大量格子数据）
       const stats = this.calculateStats(result.gridData, result.rows, result.cols);
-      console.log('regenerateFromCache - stats:', stats);
+      
 
       this.setData({
         gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
@@ -196,10 +201,10 @@ Component({
     },
 
     processImage(imagePath) {
-      console.log('=== processImage ===');
-      console.log('gridSize:', this.data.gridSize);
-      console.log('mergeThreshold:', this.data.mergeThreshold);
-      console.log('previewQuality:', this.data.previewQuality);
+      
+      
+      
+      
 
       this.setData({ isProcessing: true });
 
@@ -316,7 +321,7 @@ Component({
 
       // 直接计算统计结果
       const stats = this.calculateStats(result.gridData, result.rows, result.cols);
-      console.log('stats:', stats);
+      
 
       this.setData({
         gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
@@ -349,7 +354,7 @@ Component({
 
       // 直接计算统计结果
       const stats = this.calculateStats(result.gridData, result.rows, result.cols);
-      console.log('flatCells count:', stats.totalCount);
+      
 
       this.setData({
         gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
@@ -376,15 +381,16 @@ Component({
     // 渲染马赛克到 Canvas
     renderToCanvas(gridData, cols, rows, gridSize) {
       const that = this;
-      
+      this.isRendering = true;
+
       // 使用组件实例的 createSelectorQuery
       const query = this.createSelectorQuery();
       query.select('#mosaic-render-canvas')
         .fields({ node: true, size: true })
         .exec((res) => {
-          console.log('Canvas query result:', res);
+          
           if (!res[0]) {
-            console.error('Canvas query result empty, retrying...');
+            
             // 重试
             setTimeout(() => {
               that.renderToCanvas(gridData, cols, rows, gridSize);
@@ -392,7 +398,7 @@ Component({
             return;
           }
           if (!res[0].node) {
-            console.error('Canvas node not found, res:', res[0]);
+            
             // 重试
             setTimeout(() => {
               that.renderToCanvas(gridData, cols, rows, gridSize);
@@ -419,15 +425,25 @@ Component({
             canvasHeight = Math.min(res[0].height, MAX_CANVAS_SIZE);
           }
           
-          console.log('Canvas尺寸(来自data):', canvasWidth, 'x', canvasHeight);
-          console.log('Grid尺寸:', cols, 'x', rows, '格子大小:', gridSize);
+          
+          
           
           // 设置 canvas 尺寸 - 应用用户缩放比例以保持高分辨率
           const userScale = that.data.scale || 1;
-          canvas.width = canvasWidth * userScale;
-          canvas.height = canvasHeight * userScale;
+          // 限制 Canvas 最大尺寸为 16384（微信小程序限制）
+          const MAX_CANVAS_DIMENSION = 16384;
+          let scaledWidth = canvasWidth * userScale;
+          let scaledHeight = canvasHeight * userScale;
+          // 如果缩放后超出限制，则缩小比例
+          if (scaledWidth > MAX_CANVAS_DIMENSION || scaledHeight > MAX_CANVAS_DIMENSION) {
+            const scaleRatio = MAX_CANVAS_DIMENSION / Math.max(scaledWidth, scaledHeight);
+            scaledWidth *= scaleRatio;
+            scaledHeight *= scaleRatio;
+          }
+          canvas.width = Math.floor(scaledWidth);
+          canvas.height = Math.floor(scaledHeight);
 
-          console.log('用户缩放:', userScale, '实际Canvas尺寸:', canvas.width, 'x', canvas.height);
+          
           
           // 存储引用
           that.canvasNode = canvas;
@@ -441,7 +457,7 @@ Component({
           const totalGridWidth = cols * gridSize;
           const totalGridHeight = rows * gridSize;
           
-          console.log('总网格尺寸:', totalGridWidth, 'x', totalGridHeight);
+          
           
           // 计算缩放比例，让整个马赛克适应 Canvas
           const scaleX = totalGridWidth > 0 ? canvasWidth / totalGridWidth : 1;
@@ -451,7 +467,7 @@ Component({
           // 叠加用户的缩放比例（已经在上面定义了userScale）
           const scale = baseScale * userScale;
           
-          console.log('缩放比例:', scale);
+          
           
           // 居中偏移 - 使用实际的 Canvas 尺寸
           const actualCanvasWidth = canvas.width;
@@ -462,33 +478,46 @@ Component({
           const offsetX = baseOffsetX + (this.data.offsetX || 0);
           const offsetY = baseOffsetY + (this.data.offsetY || 0);
 
-          console.log('实际Canvas尺寸:', actualCanvasWidth, 'x', actualCanvasHeight);
           
-          console.log('偏移:', offsetX, offsetY);
           
-          // 绘制所有格子（每个格子独立显示）
-          for (let row = 0; row < rows; row++) {
-            for (let col = 0; col < cols; col++) {
+          
+          
+          // 计算可见区域（只渲染可见的格子）
+          const cellSize = gridSize * scale;
+          const buffer = cellSize;
+          const visibleLeft = -buffer;
+          const visibleRight = actualCanvasWidth + buffer;
+          const visibleTop = -buffer;
+          const visibleBottom = actualCanvasHeight + buffer;
+
+          // 计算可见的行列范围
+          const startCol = Math.max(0, Math.floor((visibleLeft - offsetX) / cellSize));
+          const endCol = Math.min(cols - 1, Math.ceil((visibleRight - offsetX) / cellSize));
+          const startRow = Math.max(0, Math.floor((visibleTop - offsetY) / cellSize));
+          const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - offsetY) / cellSize));
+
+          // 绘制可见区域的格子
+          for (let row = startRow; row <= endRow; row++) {
+            for (let col = startCol; col <= endCol; col++) {
               const cell = gridData[row] && gridData[row][col];
-              // 跳过空格子
               if (!cell || !cell.markCode) continue;
 
-              const cellWidth = gridSize * scale;
-              const cellHeight = gridSize * scale;
+              const cellWidth = cellSize;
+              const cellHeight = cellSize;
 
-              const x = offsetX + col * gridSize * scale;
-              const y = offsetY + row * gridSize * scale;
+              const x = offsetX + col * cellSize;
+              const y = offsetY + row * cellSize;
 
               // 绘制色块
               ctx.fillStyle = cell.markHex;
               ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(cellWidth), Math.ceil(cellHeight));
 
-              // 绘制格子边框，让轮廓更清晰
+              // 绘制格子边框
               ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
               ctx.lineWidth = 1;
               ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
 
-              // 绘制色号（根据格子大小）
+              // 绘制色号
               const size = Math.min(cellWidth, cellHeight);
               if (that.data.showCode && size >= 8) {
                 const isLight = that.isLightColor(cell.markHex);
@@ -501,35 +530,43 @@ Component({
             }
           }
 
-          // 绘制参考线（每10行/列一条浅蓝色线）
-          that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale);
+          // 绘制参考线（只绘制可见区域内的）
+          that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow);
+
+          // 渲染完成，释放节流标志
+          that.isRendering = false;
         });
     },
 
-    // 绘制参考线
-    drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale) {
+    // 绘制参考线（只绘制可见区域内的）
+    drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow) {
       const lineSpacing = 10 * gridSize * scale;
-      const lineColor = 'rgba(70, 130, 180, 0.8)'; // 更深更明显的钢蓝色
-      const lineWidth = 3;
+      const lineColor = 'rgba(70, 130, 180, 0.8)';
+      const lineWidth = 1;
+      const cellSize = gridSize * scale;
 
       ctx.strokeStyle = lineColor;
       ctx.lineWidth = lineWidth;
 
-      // 绘制垂直参考线（每10列）
-      for (let col = 10; col < cols; col += 10) {
-        const x = offsetX + col * gridSize * scale;
+      // 计算需要绘制参考线的列（每10列）
+      const firstLineCol = Math.ceil(startCol / 10) * 10;
+      // 绘制垂直参考线（每10列，只画可见的）
+      for (let col = firstLineCol; col <= endCol; col += 10) {
+        const x = offsetX + col * cellSize;
         ctx.beginPath();
-        ctx.moveTo(x, offsetY);
-        ctx.lineTo(x, offsetY + rows * gridSize * scale);
+        ctx.moveTo(x, offsetY + startRow * cellSize);
+        ctx.lineTo(x, offsetY + (endRow + 1) * cellSize);
         ctx.stroke();
       }
 
-      // 绘制水平参考线（每10行）
-      for (let row = 10; row < rows; row += 10) {
-        const y = offsetY + row * gridSize * scale;
+      // 计算需要绘制参考线的行（每10行）
+      const firstLineRow = Math.ceil(startRow / 10) * 10;
+      // 绘制水平参考线（每10行，只画可见的）
+      for (let row = firstLineRow; row <= endRow; row += 10) {
+        const y = offsetY + row * cellSize;
         ctx.beginPath();
-        ctx.moveTo(offsetX, y);
-        ctx.lineTo(offsetX + cols * gridSize * scale, y);
+        ctx.moveTo(offsetX + startCol * cellSize, y);
+        ctx.lineTo(offsetX + (endCol + 1) * cellSize, y);
         ctx.stroke();
       }
     },
@@ -556,7 +593,7 @@ Component({
 
     // 重试渲染（延迟执行）
     renderToCanvasRetry(gridData, cols, rows, gridSize) {
-      console.log('Retry renderToCanvas...');
+      
       this.renderToCanvas(gridData, cols, rows, gridSize);
     },
 
@@ -580,16 +617,25 @@ Component({
     // 记录初始双指距离
     initialTouchDistance: 0,
     initialScale: 1,
+    // 节流标志和渲染队列
+    isRendering: false,
+    pendingRender: null,
+    // 操作间隔控制
+    lastTouchTime: 0,
+    TOUCH_THROTTLE: 20,
 
     handleTouchStart(e) {
-      console.log('=== 触摸开始 ===', 'touches:', e.touches.length, 'isNewTouch:', this.data.isNewTouch);
       if (e.touches.length === 2) {
         // 双指触摸，记录初始距离和缩放
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         this.initialTouchDistance = Math.hypot(dx, dy);
         this.initialScale = this.data.scale;
+        // 双指时结束拖动状态
+        this.setData({ isDragging: false });
       } else if (e.touches.length === 1) {
+        // 开始拖动状态，阻止渲染
+        this.setData({ isDragging: true });
         // 只有新触摸时才重置偏移量
         if (this.data.isNewTouch) {
           this.setData({ lastTouch: e.touches[0], offsetX: 0, offsetY: 0, isNewTouch: false });
@@ -600,6 +646,11 @@ Component({
     },
 
     handleTouchMove(e) {
+      // 拖动时不受 isRendering 节流影响，确保实时更新偏移
+      if (!this.data.isDragging && this.isRendering) {
+        return;
+      }
+
       if (e.touches.length === 2) {
         // 双指缩放
         const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -608,7 +659,7 @@ Component({
 
         if (this.initialTouchDistance > 0) {
           const scaleFactor = currentDistance / this.initialTouchDistance;
-          const newScale = Math.max(0.5, Math.min(80, this.initialScale * scaleFactor));
+          const newScale = Math.max(0.5, Math.min(20, this.initialScale * scaleFactor));
           this.setData({ scale: newScale });
         }
       } else if (e.touches.length === 1 && this.data.lastTouch) {
@@ -617,19 +668,21 @@ Component({
         const deltaX = current.clientX - last.clientX;
         const deltaY = current.clientY - last.clientY;
 
-        console.log('=== 触摸移动 ===', 'scale:', this.data.scale, 'deltaX:', deltaX, 'deltaY:', deltaY);
-
         // 放大后启用平移（任意scale都可以拖动）
         if (this.data.scale > 1.0) {
-          const newOffsetX = this.data.offsetX + deltaX;
-          const newOffsetY = this.data.offsetY + deltaY;
-          console.log('更新偏移:', newOffsetX, newOffsetY);
+          // 限制偏移量范围，防止内存溢出
+          const maxOffset = 2000;
+          let newOffsetX = this.data.offsetX + deltaX;
+          let newOffsetY = this.data.offsetY + deltaY;
+          newOffsetX = Math.max(-maxOffset, Math.min(maxOffset, newOffsetX));
+          newOffsetY = Math.max(-maxOffset, Math.min(maxOffset, newOffsetY));
+
           this.setData({ offsetX: newOffsetX, offsetY: newOffsetY, lastTouch: current });
         } else {
           // 小缩放时上下滑动调整缩放
           let newScale = this.data.scale;
           if (Math.abs(deltaY) > Math.abs(deltaX)) {
-            newScale = Math.max(0.5, Math.min(80, newScale + deltaY * 0.003));
+            newScale = Math.max(0.5, Math.min(20, newScale + deltaY * 0.003));
           }
           this.setData({ scale: newScale, lastTouch: current });
         }
@@ -638,9 +691,30 @@ Component({
 
     handleTouchEnd(e) {
       if (e.touches.length === 0) {
-        this.setData({ lastTouch: null, isNewTouch: true });
+        // 结束拖动状态，触发渲染
+        this.setData({ lastTouch: null, isNewTouch: true, isDragging: false });
         this.initialTouchDistance = 0;
+
+        // 拖动结束后渲染可见区域
+        if (this.cachedGridData && this.cachedGridInfo) {
+          const { cols, rows, gridSize } = this.cachedGridInfo;
+          this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+        }
       }
+    },
+
+    // 延迟渲染，使用 requestAnimationFrame
+    scheduleRender() {
+      if (this.pendingRender) return;
+
+      this.pendingRender = true;
+      wx.nextTick(() => {
+        this.pendingRender = false;
+        if (this.cachedGridData && this.cachedGridInfo) {
+          const { cols, rows, gridSize } = this.cachedGridInfo;
+          this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+        }
+      });
     }
   }
 });

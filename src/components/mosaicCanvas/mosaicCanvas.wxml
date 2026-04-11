@@ -12,7 +12,7 @@
   </view>
 
   <!-- 使用 Canvas 渲染马赛克（解决 DOM 数量限制） -->
-  <view class="canvas-container" style="width: {{canvasWidth}}px; height: {{canvasHeight}}px; transform: scale({{scale}});">
+  <view class="canvas-container" style="width: {{canvasWidth}}px; height: {{canvasHeight}}px; transform: translate({{offsetX}}px, {{offsetY}}px) scale({{scale}});">
     <canvas
       type="2d"
       id="mosaic-render-canvas"

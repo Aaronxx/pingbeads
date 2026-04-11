@@ -29,14 +29,14 @@ Component({
             hasImage: true
           });
           // 触发事件
-          console.log('[ImagePicker] 触发 imageSelected 事件, path:', tempFilePath);
+          
           this.triggerEvent('imageSelected', {
             path: tempFilePath
           });
           wx.showToast({ title: '触发事件', icon: 'none' });
         },
         fail: (err) => {
-          console.error('选择图片失败:', err);
+          
           wx.showToast({
             title: '选择图片失败',
             icon: 'none'
