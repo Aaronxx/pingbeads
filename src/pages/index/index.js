@@ -55,7 +55,17 @@ Page({
     ],
     // 当前选项索引（用于 picker 绑定）
     gridOptionIndex: 3,  // 默认 10
-    thresholdOptionIndex: 2  // 默认 15
+    thresholdOptionIndex: 2,  // 默认 15
+
+    // 替换功能
+    showReplacePanel: false,  // 是否显示替换面板
+    replaceFromCode: '',  // 被替换的色号
+    replaceToCode: '',  // 替换的色号
+    replaceScope: 'all',  // 替换范围：all=全图，visible=可见区域
+
+    // 撤销功能
+    undoStack: [],  // 撤销栈，最多20步
+    canUndo: false  // 是否可以撤销
   },
 
   onLoad() {
@@ -184,6 +194,135 @@ Page({
       mosaicData: null,
       currentStep: 1
     });
+  },
+
+  // 切换替换面板显示
+  toggleReplacePanel() {
+    this.setData({
+      showReplacePanel: !this.data.showReplacePanel
+    });
+  },
+
+  // 被替换色号输入
+  onReplaceFromInput(e) {
+    this.setData({
+      replaceFromCode: e.detail.value
+    });
+  },
+
+  // 替换色号输入
+  onReplaceToInput(e) {
+    this.setData({
+      replaceToCode: e.detail.value
+    });
+  },
+
+  // 替换范围切换
+  onReplaceScopeChange(e) {
+    this.setData({
+      replaceScope: e.detail.value
+    });
+  },
+
+  // 确认替换
+  onReplaceConfirm() {
+    const { replaceFromCode, replaceToCode, replaceScope } = this.data;
+    if (!replaceFromCode || !replaceToCode) {
+      wx.showToast({ title: '请输入色号', icon: 'none' });
+      return;
+    }
+
+    // 解析色号（兼容大小写和前导0）
+    const fromCode = this.parseMarkCode(replaceFromCode);
+    const toCode = this.parseMarkCode(replaceToCode);
+    if (!fromCode || !toCode) {
+      wx.showToast({ title: '色号格式错误', icon: 'none' });
+      return;
+    }
+
+    // 获取马赛克组件
+    const mosaicCanvas = this.selectComponent('#mosaic-canvas');
+    if (!mosaicCanvas) {
+      wx.showToast({ title: '组件异常', icon: 'none' });
+      return;
+    }
+
+    // 获取可见区域信息
+    let visibleRange = null;
+    if (replaceScope === 'visible') {
+      visibleRange = mosaicCanvas.getVisibleRange();
+    }
+
+    // 执行替换
+    const result = mosaicCanvas.replaceColor(fromCode, toCode, replaceScope, visibleRange);
+
+    if (result.success) {
+      // 记录撤销操作
+      this._addUndoOperation({
+        type: 'replace',
+        fromCode: fromCode,
+        toCode: toCode,
+        positions: result.positions,
+        scope: replaceScope
+      });
+
+      wx.showToast({ title: `已替换 ${result.count} 个色块`, icon: 'none' });
+    } else {
+      wx.showToast({ title: result.message || '替换失败', icon: 'none' });
+    }
+  },
+
+  // 添加撤销操作
+  _addUndoOperation(operation) {
+    let { undoStack } = this.data;
+    undoStack.push(operation);
+    // 最多保留20步
+    if (undoStack.length > 20) {
+      undoStack = undoStack.slice(-20);
+    }
+    this.setData({
+      undoStack: undoStack,
+      canUndo: undoStack.length > 0
+    });
+  },
+
+  // 撤销操作
+  onUndo() {
+    const { undoStack } = this.data;
+    if (undoStack.length === 0) {
+      wx.showToast({ title: '没有可撤销的操作', icon: 'none' });
+      return;
+    }
+
+    // 获取最新的操作
+    const lastOperation = undoStack[undoStack.length - 1];
+
+    // 获取马赛克组件
+    const mosaicCanvas = this.selectComponent('#mosaic-canvas');
+    if (!mosaicCanvas) {
+      wx.showToast({ title: '组件异常', icon: 'none' });
+      return;
+    }
+
+    if (lastOperation.type === 'replace') {
+      // 撤销替换：将色块恢复为原来的色号
+      const result = mosaicCanvas.replaceColor(
+        lastOperation.toCode,
+        lastOperation.fromCode,
+        lastOperation.scope,
+        lastOperation.positions
+      );
+
+      if (result.success) {
+        // 移除最新的操作
+        undoStack.pop();
+        this.setData({
+          undoStack: undoStack,
+          canUndo: undoStack.length > 0
+        });
+        wx.showToast({ title: `已撤销 ${result.count} 个色块`, icon: 'none' });
+      }
+    }
   },
 
   // 导出 PNG - 完整导出马赛克图+色号+统计
@@ -353,7 +492,7 @@ Page({
               ctx.font = `bold ${fontSize.toFixed(0)}px sans-serif`;
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
-              ctx.fillText(cell.markCode, x + cellWidth / 2, y + cellHeight / 2);
+              ctx.fillText(this.formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
             }
           }
         }
@@ -712,6 +851,28 @@ Page({
     // 计算亮度
     const brightness = (r * 299 + g * 587 + b * 114) / 1000;
     return brightness > 150;
+  },
+
+  // 格式化色号（去除前导0）
+  formatMarkCode(code) {
+    if (!code) return '';
+    // 匹配字母+数字格式，如 A01, B09, C10 等
+    return code.replace(/^([A-Z])0(\d+)$/, '$1$2');
+  },
+
+  // 解析色号（兼容大小写和前导0）
+  parseMarkCode(input) {
+    if (!input) return null;
+    // 转换为大写并去除空格
+    const normalized = input.toUpperCase().trim();
+    // 匹配格式：字母+数字（如 A1, A01, a1, m9, M09 等）
+    const match = normalized.match(/^([A-Z])(\d+)$/);
+    if (!match) return null;
+    const letter = match[1];
+    const num = parseInt(match[2], 10);
+    // 还原为标准格式（可能需要前导0）
+    const code = num < 10 ? `${letter}0${num}` : `${letter}${num}`;
+    return code;
   },
 
   // 使用 canvasId 导出（真机调试兼容方案）

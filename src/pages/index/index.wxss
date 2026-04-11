@@ -99,6 +99,15 @@ page {
 
 .button-left {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.button-left .setting-items-left {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
 }
 
 .button-center {
@@ -112,27 +121,133 @@ page {
 
 .button-right {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
 }
 
-/* 替换按钮 */
-.replace-btn {
+/* 操作按钮（替换、撤销） */
+.action-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12rpx 24rpx;
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  padding: 10rpx 20rpx;
   border-radius: 8rpx;
-  box-shadow: 0 2rpx 8rpx rgba(245, 158, 11, 0.4);
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.action-btn text {
+  color: #fff;
+}
+
+/* 替换按钮 - 紫色 */
+.replace-btn {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  box-shadow: 0 2rpx 8rpx rgba(139, 92, 246, 0.4);
+}
+
+.replace-btn.active {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
 }
 
 .replace-btn:active {
   opacity: 0.8;
 }
 
-.replace-btn-text {
+/* 撤销按钮 - 浅黄色 */
+.undo-btn {
+  background: linear-gradient(135deg, #fde047 0%, #facc15 100%);
+  box-shadow: 0 2rpx 8rpx rgba(250, 204, 21, 0.4);
+}
+
+.undo-btn text {
+  color: #713f12;
+}
+
+.undo-btn.disabled {
+  opacity: 0.5;
+}
+
+.undo-btn.disabled text {
+  color: #a16207;
+}
+
+.undo-btn:active:not(.disabled) {
+  opacity: 0.8;
+}
+
+/* 替换面板 */
+/* 替换面板 */
+.replace-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 90%;
+  margin: 12rpx auto 0;
+  padding: 16rpx 20rpx;
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  border-radius: 12rpx;
+  gap: 16rpx;
+}
+
+.replace-inputs {
+  display: flex;
+  gap: 12rpx;
+  flex: 1;
+}
+
+.replace-input {
+  flex: 1;
+  height: 60rpx;
+  padding: 0 16rpx;
+  background: #fff;
+  border: 2rpx solid #d1d5db;
+  border-radius: 8rpx;
+  font-size: 26rpx;
+}
+
+.replace-options {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.replace-radio-group {
+  display: flex;
+  gap: 16rpx;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  font-size: 24rpx;
+  color: #374151;
+}
+
+.replace-confirm {
+  flex-shrink: 0;
+}
+
+.confirm-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12rpx 24rpx;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border-radius: 8rpx;
+  box-shadow: 0 2rpx 8rpx rgba(16, 185, 129, 0.4);
+}
+
+.confirm-btn text {
   color: #fff;
   font-size: 26rpx;
   font-weight: 600;
+}
+
+.confirm-btn:active {
+  opacity: 0.8;
 }
 
 /* 设置项 */

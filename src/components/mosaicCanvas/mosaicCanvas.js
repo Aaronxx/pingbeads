@@ -162,14 +162,17 @@ Component({
           const cell = gridData[row] && gridData[row][col];
           if (!cell || !cell.markCode) continue;
           const code = cell.markCode;
-          if (!colorCounts[code]) {
-            colorCounts[code] = {
-              code: cell.markCode,
+          // 使用格式化后的色号作为key（去掉前导0）
+          const formattedCode = this.formatMarkCode(code);
+          if (!colorCounts[formattedCode]) {
+            colorCounts[formattedCode] = {
+              code: formattedCode,
+              originalCode: code,
               hex: cell.markHex || '#000000',
               count: 0
             };
           }
-          colorCounts[code].count++;
+          colorCounts[formattedCode].count++;
           totalCount++;
         }
       }
@@ -388,7 +391,6 @@ Component({
       query.select('#mosaic-render-canvas')
         .fields({ node: true, size: true })
         .exec((res) => {
-          
           if (!res[0]) {
             
             // 重试
@@ -525,7 +527,7 @@ Component({
                 ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(cell.markCode, x + cellWidth / 2, y + cellHeight / 2);
+                ctx.fillText(that.formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
               }
             }
           }
@@ -591,6 +593,28 @@ Component({
       return brightness > 150;
     },
 
+    // 格式化色号（去除前导0）
+    formatMarkCode(code) {
+      if (!code) return '';
+      // 匹配字母+数字格式，如 A01, B09, C10 等
+      return code.replace(/^([A-Z])0(\d+)$/, '$1$2');
+    },
+
+    // 解析色号（兼容大小写和前导0）
+    parseMarkCode(input) {
+      if (!input) return null;
+      // 转换为大写并去除空格
+      const normalized = input.toUpperCase().trim();
+      // 匹配格式：字母+数字（如 A1, A01, a1, m9, M09 等）
+      const match = normalized.match(/^([A-Z])(\d+)$/);
+      if (!match) return null;
+      const letter = match[1];
+      const num = parseInt(match[2], 10);
+      // 还原为标准格式（可能需要前导0）
+      const code = num < 10 ? `${letter}0${num}` : `${letter}${num}`;
+      return code;
+    },
+
     // 重试渲染（延迟执行）
     renderToCanvasRetry(gridData, cols, rows, gridSize) {
       
@@ -607,6 +631,231 @@ Component({
       } else {
         wx.setPageOrientation('portrait');
       }
+    },
+
+    // 获取可见区域范围
+    getVisibleRange() {
+      if (!this.cachedGridData || !this.cachedGridInfo) {
+        return null;
+      }
+      const { cols, rows, gridSize } = this.cachedGridInfo;
+      const scale = this.data.scale || 1;
+      const offsetX = this.data.offsetX || 0;
+      const offsetY = this.data.offsetY || 0;
+
+      const cellSize = gridSize * scale;
+      const canvasWidth = this.data.canvasWidth || 300;
+      const canvasHeight = this.data.canvasHeight || 300;
+
+      // 计算可见区域
+      const buffer = cellSize;
+      const visibleLeft = -buffer;
+      const visibleRight = canvasWidth + buffer;
+      const visibleTop = -buffer;
+      const visibleBottom = canvasHeight + buffer;
+
+      // 计算居中偏移
+      const totalGridWidth = cols * gridSize;
+      const totalGridHeight = rows * gridSize;
+      const baseScaleX = canvasWidth / totalGridWidth;
+      const baseScaleY = canvasHeight / totalGridHeight;
+      const baseScale = Math.min(baseScaleX, baseScaleY, 1);
+      const actualScale = baseScale * scale;
+      const baseOffsetX = (canvasWidth - totalGridWidth * actualScale) / 2;
+      const baseOffsetY = (canvasHeight - totalGridHeight * actualScale) / 2;
+
+      const finalOffsetX = baseOffsetX + offsetX;
+      const finalOffsetY = baseOffsetY + offsetY;
+
+      // 计算可见的行列范围
+      const startCol = Math.max(0, Math.floor((visibleLeft - finalOffsetX) / cellSize));
+      const endCol = Math.min(cols - 1, Math.ceil((visibleRight - finalOffsetX) / cellSize));
+      const startRow = Math.max(0, Math.floor((visibleTop - finalOffsetY) / cellSize));
+      const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - finalOffsetY) / cellSize));
+
+      return {
+        startCol,
+        endCol,
+        startRow,
+        endRow
+      };
+    },
+
+    // 替换颜色
+    replaceColor(fromCode, toCode, scope, positions) {
+      if (!this.cachedGridData || !this.cachedGridInfo) {
+        return { success: false, message: '没有可替换的数据' };
+      }
+
+      const { cols, rows, gridSize } = this.cachedGridInfo;
+      const gridData = this.cachedGridData;
+
+      // 获取替换目标色号的信息
+      const colorPalettes = require('../../data/colorPalettes.js');
+      const colorMapping = colorPalettes.colorMapping;
+      const toColorHex = this._findColorHexByCode(toCode);
+
+      if (!toColorHex) {
+        return { success: false, message: '替换色号不存在' };
+      }
+
+      // 确定需要替换的范围
+      let startCol = 0, endCol = cols - 1, startRow = 0, endRow = rows - 1;
+      let positionList = null;
+
+      if (positions && positions.length > 0) {
+        // 使用指定的位置列表
+        positionList = positions;
+        startCol = Math.min(...positions.map(p => p.col !== undefined ? p.col : p[1]));
+        endCol = Math.max(...positions.map(p => p.col !== undefined ? p.col : p[1]));
+        startRow = Math.min(...positions.map(p => p.row !== undefined ? p.row : p[0]));
+        endRow = Math.max(...positions.map(p => p.row !== undefined ? p.row : p[0]));
+      } else if (scope === 'visible') {
+        const visibleRange = this.getVisibleRange();
+        if (visibleRange) {
+          startCol = visibleRange.startCol;
+          endCol = visibleRange.endCol;
+          startRow = visibleRange.startRow;
+          endRow = visibleRange.endRow;
+        }
+      }
+
+      // 执行替换
+      const replacedPositions = [];
+      let count = 0;
+
+      for (let row = startRow; row <= endRow; row++) {
+        for (let col = startCol; col <= endCol; col++) {
+          const cell = gridData[row] && gridData[row][col];
+          if (!cell || !cell.markCode) continue;
+
+          // 如果指定了位置列表，检查当前位置是否在列表中
+          if (positionList) {
+            const pos = positionList.find(p => (p.row !== undefined ? p.row : p[0]) === row && (p.col !== undefined ? p.col : p[1]) === col);
+            if (!pos) continue;
+          }
+
+          // 检查是否匹配被替换的色号
+          if (cell.markCode === fromCode) {
+            // 保存原始信息用于撤销
+            replacedPositions.push({
+              row,
+              col,
+              oldCode: cell.markCode,
+              oldHex: cell.markHex
+            });
+
+            // 替换
+            cell.markCode = toCode;
+            cell.markHex = toColorHex;
+            count++;
+          }
+        }
+      }
+
+      if (count === 0) {
+        return { success: false, message: '没有找到匹配的色块', count: 0 };
+      }
+
+      // 重新计算统计
+      const stats = this.calculateStats(gridData, rows, cols);
+      this.setData({
+        gridInfo: { cols, rows, gridSize }
+      });
+      this.triggerEvent('statsUpdate', { stats: stats });
+
+      // 重新渲染
+      this.renderToCanvas(gridData, cols, rows, gridSize);
+
+      return {
+        success: true,
+        count,
+        positions: replacedPositions
+      };
+    },
+
+    // 根据色号查找颜色hex
+    _findColorHexByCode(code) {
+      const colorPalettes = require('../../data/colorPalettes.js');
+      const colorMapping = colorPalettes.colorMapping;
+
+      // 遍历 colorMapping 查找匹配的色号
+      for (const hex in colorMapping) {
+        const color = colorMapping[hex];
+        if (color.MARD === code) {
+          return hex;
+        }
+      }
+      return null;
+    },
+
+    // 绘制网格数据到 canvas
+    _drawGrid(ctx, canvas, gridData, cols, rows, gridSize) {
+      const scale = this.data.scale || 1;
+      const offsetX = this.data.offsetX || 0;
+      const offsetY = this.data.offsetY || 0;
+      const canvasWidth = this.data.canvasWidth || 300;
+      const canvasHeight = this.data.canvasHeight || 300;
+
+      const totalGridWidth = cols * gridSize;
+      const totalGridHeight = rows * gridSize;
+      const scaleX = totalGridWidth > 0 ? canvasWidth / totalGridWidth : 1;
+      const scaleY = totalGridHeight > 0 ? canvasHeight / totalGridHeight : 1;
+      const baseScale = Math.min(scaleX, scaleY, 1);
+      const finalScale = baseScale * scale;
+
+      const actualCanvasWidth = canvas.width;
+      const actualCanvasHeight = canvas.height;
+      const baseOffsetX = (actualCanvasWidth - totalGridWidth * finalScale) / 2;
+      const baseOffsetY = (actualCanvasHeight - totalGridHeight * finalScale) / 2;
+      const finalOffsetX = baseOffsetX + offsetX;
+      const finalOffsetY = baseOffsetY + offsetY;
+
+      // 清空画布
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const cellSize = gridSize * finalScale;
+      const buffer = cellSize;
+      const visibleLeft = -buffer;
+      const visibleRight = actualCanvasWidth + buffer;
+      const visibleTop = -buffer;
+      const visibleBottom = actualCanvasHeight + buffer;
+
+      const startCol = Math.max(0, Math.floor((visibleLeft - finalOffsetX) / cellSize));
+      const endCol = Math.min(cols - 1, Math.ceil((visibleRight - finalOffsetX) / cellSize));
+      const startRow = Math.max(0, Math.floor((visibleTop - finalOffsetY) / cellSize));
+      const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - finalOffsetY) / cellSize));
+
+      for (let row = startRow; row <= endRow; row++) {
+        for (let col = startCol; col <= endCol; col++) {
+          const cell = gridData[row] && gridData[row][col];
+          if (!cell || !cell.markCode) continue;
+
+          const cellWidth = cellSize;
+          const cellHeight = cellSize;
+          const x = finalOffsetX + col * cellSize;
+          const y = finalOffsetY + row * cellSize;
+
+          ctx.fillStyle = cell.markHex;
+          ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(cellWidth), Math.ceil(cellHeight));
+
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
+
+          const size = Math.min(cellWidth, cellHeight);
+          if (this.data.showCode && size >= 8) {
+            const isLight = this.isLightColor(cell.markHex);
+            ctx.fillStyle = isLight ? '#333333' : '#ffffff';
+            ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(this.formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
+          }
+        }
+      }
+
     },
 
     handleCellTap(e) {
