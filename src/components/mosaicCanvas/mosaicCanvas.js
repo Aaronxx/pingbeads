@@ -500,7 +500,38 @@ Component({
               }
             }
           }
+
+          // 绘制参考线（每10行/列一条浅蓝色线）
+          that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale);
         });
+    },
+
+    // 绘制参考线
+    drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale) {
+      const lineSpacing = 10 * gridSize * scale;
+      const lineColor = 'rgba(70, 130, 180, 0.8)'; // 更深更明显的钢蓝色
+      const lineWidth = 3;
+
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = lineWidth;
+
+      // 绘制垂直参考线（每10列）
+      for (let col = 10; col < cols; col += 10) {
+        const x = offsetX + col * gridSize * scale;
+        ctx.beginPath();
+        ctx.moveTo(x, offsetY);
+        ctx.lineTo(x, offsetY + rows * gridSize * scale);
+        ctx.stroke();
+      }
+
+      // 绘制水平参考线（每10行）
+      for (let row = 10; row < rows; row += 10) {
+        const y = offsetY + row * gridSize * scale;
+        ctx.beginPath();
+        ctx.moveTo(offsetX, y);
+        ctx.lineTo(offsetX + cols * gridSize * scale, y);
+        ctx.stroke();
+      }
     },
 
     // 判断颜色是否为浅色

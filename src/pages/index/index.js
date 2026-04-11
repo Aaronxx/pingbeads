@@ -62,6 +62,17 @@ Page({
     // 页面加载
   },
 
+  // 预览区点击事件（未选择图片时触发选择图片）
+  onPreviewAreaClick() {
+    if (!this.data.imagePath) {
+      // 触发 imagePicker 组件的选择图片功能
+      const imagePicker = this.selectComponent('#image-picker');
+      if (imagePicker && imagePicker.chooseImage) {
+        imagePicker.chooseImage();
+      }
+    }
+  },
+
   // 图片选择回调
   onImageSelected(e) {
     const { path } = e.detail;
@@ -346,7 +357,10 @@ Page({
             }
           }
         }
-        
+
+        // 绘制参考线（每10行/列一条浅蓝色线）
+        this.drawExportGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize * exportScale);
+
         // 2. 绘制统计行（底部）- 玻璃拟态圆角按钮样式
         // 统计行位置（加上顶部标尺高度）
         const statsY = rulerHeight + mosaicHeight + 10;
@@ -631,6 +645,34 @@ Page({
       title: 'Mark 色彩马赛克 - 图片转珠子图案',
       path: '/pages/index/index'
     };
+  },
+
+  // 绘制导出图片的参考线
+  drawExportGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize) {
+    const lineSpacing = 10 * gridSize;
+    const lineColor = 'rgba(70, 130, 180, 0.8)'; // 更深更明显的钢蓝色
+    const lineWidth = 3;
+
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = lineWidth;
+
+    // 绘制垂直参考线（每10列）
+    for (let col = 10; col < cols; col += 10) {
+      const x = offsetX + col * gridSize;
+      ctx.beginPath();
+      ctx.moveTo(x, offsetY);
+      ctx.lineTo(x, offsetY + rows * gridSize);
+      ctx.stroke();
+    }
+
+    // 绘制水平参考线（每10行）
+    for (let row = 10; row < rows; row += 10) {
+      const y = offsetY + row * gridSize;
+      ctx.beginPath();
+      ctx.moveTo(offsetX, y);
+      ctx.lineTo(offsetX + cols * gridSize, y);
+      ctx.stroke();
+    }
   },
 
   // 绘制圆角矩形

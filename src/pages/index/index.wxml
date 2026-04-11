@@ -6,7 +6,7 @@
     <view class="button-row">
       <!-- 左侧按钮 -->
       <view class="button-left">
-        <imagePicker bind:imageSelected="onImageSelected" bind:imageCleared="onImageCleared" />
+        <imagePicker id="image-picker" bind:imageSelected="onImageSelected" bind:imageCleared="onImageCleared" />
       </view>
       
       <!-- 中间设置 -->
@@ -34,7 +34,7 @@
     </view>
 
     <!-- 预览区：宽高90% -->
-    <view class="preview-area">
+    <view class="preview-area" bindtap="onPreviewAreaClick">
       <mosaicCanvas
         wx:if="{{imagePath}}"
         id="mosaic-canvas"
