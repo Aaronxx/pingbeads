@@ -1063,12 +1063,8 @@ Component({
       } else if (e.touches.length === 1) {
         // 开始拖动状态，阻止渲染
         this.setData({ isDragging: true });
-        // 只有新触摸时才重置偏移量
-        if (this.data.isNewTouch) {
-          this.setData({ lastTouch: e.touches[0], offsetX: 0, offsetY: 0, isNewTouch: false });
-        } else {
-          this.setData({ lastTouch: e.touches[0] });
-        }
+        // 记录触摸位置，不重置偏移量，避免画面跳动
+        this.setData({ lastTouch: e.touches[0], isNewTouch: false });
       }
     },
 
