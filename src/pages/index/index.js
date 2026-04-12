@@ -59,9 +59,10 @@ Page({
 
     // 替换功能
     showReplacePanel: false,  // 是否显示替换面板
+    replaceRegionCode: '',  // 大区编号（如 A1）
     replaceFromCode: '',  // 被替换的色号
     replaceToCode: '',  // 替换的色号
-    replaceScope: 'all',  // 替换范围：all=全图，visible=可见区域
+    replaceScope: 'all',  // 替换范围：region=大区，all=全图
 
     // 撤销功能
     undoStack: [],  // 撤销栈，最多20步
@@ -217,6 +218,13 @@ Page({
     });
   },
 
+  // 大区编号输入
+  onReplaceRegionInput(e) {
+    this.setData({
+      replaceRegionCode: e.detail.value
+    });
+  },
+
   // 替换范围切换
   onReplaceScopeChange(e) {
     this.setData({
@@ -226,9 +234,17 @@ Page({
 
   // 确认替换
   onReplaceConfirm() {
-    const { replaceFromCode, replaceToCode, replaceScope } = this.data;
+    const { replaceRegionCode, replaceFromCode, replaceToCode, replaceScope } = this.data;
+
+    // 检查色号是否输入
     if (!replaceFromCode || !replaceToCode) {
       wx.showToast({ title: '请输入色号', icon: 'none' });
+      return;
+    }
+
+    // 检查大区编号（如果是选择大区替换）
+    if (replaceScope === 'region' && !replaceRegionCode) {
+      wx.showToast({ title: '请输入大区编号', icon: 'none' });
       return;
     }
 
@@ -247,14 +263,14 @@ Page({
       return;
     }
 
-    // 获取可见区域信息
-    let visibleRange = null;
-    if (replaceScope === 'visible') {
-      visibleRange = mosaicCanvas.getVisibleRange();
+    let result;
+    if (replaceScope === 'region') {
+      // 大区替换
+      result = mosaicCanvas.replaceByRegion(replaceRegionCode, fromCode, toCode);
+    } else {
+      // 全图替换
+      result = mosaicCanvas.replaceColor(fromCode, toCode, 'all', null);
     }
-
-    // 执行替换
-    const result = mosaicCanvas.replaceColor(fromCode, toCode, replaceScope, visibleRange);
 
     if (result.success) {
       // 记录撤销操作

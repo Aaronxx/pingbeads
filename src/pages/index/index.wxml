@@ -55,10 +55,13 @@
             <text>全图</text>
           </label>
           <label class="radio-label">
-            <radio value="visible" checked="{{replaceScope === 'visible'}}" color="#4CAF50" />
-            <text>可见区域</text>
+            <radio value="region" checked="{{replaceScope === 'region'}}" color="#4CAF50" />
+            <text>大区</text>
           </label>
         </radio-group>
+      </view>
+      <view class="replace-region-input" wx:if="{{replaceScope === 'region'}}">
+        <input class="replace-input region-input" placeholder="大区编号（如 A1）" value="{{replaceRegionCode}}" bindinput="onReplaceRegionInput" />
       </view>
       <view class="replace-confirm">
         <view class="confirm-btn" bindtap="onReplaceConfirm">

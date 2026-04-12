@@ -32,7 +32,7 @@ page {
    ======================== */
 .main-wrapper {
   width: 95%;
-  height: 95vh;
+  height: 80vh;
   margin-top: 120rpx;
   background: var(--bg-card);
   border-radius: var(--radius-lg);
@@ -181,14 +181,19 @@ page {
 /* 替换面板 */
 .replace-panel {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   width: 90%;
   margin: 12rpx auto 0;
   padding: 16rpx 20rpx;
   background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
   border-radius: 12rpx;
-  gap: 16rpx;
+  gap: 12rpx;
+}
+
+.replace-hint {
+  font-size: 24rpx;
+  color: #6b7280;
+  text-align: left;
 }
 
 .replace-inputs {
@@ -205,6 +210,14 @@ page {
   border: 2rpx solid #d1d5db;
   border-radius: 8rpx;
   font-size: 26rpx;
+}
+
+.region-input {
+  border-color: #3b82f6;
+}
+
+.replace-region-input {
+  display: flex;
 }
 
 .replace-options {

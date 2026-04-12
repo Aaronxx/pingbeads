@@ -2,6 +2,68 @@
 const { processSimple, aggregateSimilarColors } = require('../../utils/imageProcessor');
 const { findClosestMarkColor } = require('../../utils/colorMapper');
 
+// 大区常量：每个大区包含 10x10 个色块
+const REGION_SIZE = 10;
+
+// 生成列编号：A, B, ..., Z, AA, AB, ...
+function getColCode(colIndex) {
+  let code = '';
+  while (colIndex >= 0) {
+    code = String.fromCharCode(65 + (colIndex % 26)) + code;
+    colIndex = Math.floor(colIndex / 26) - 1;
+  }
+  return code;
+}
+
+// 解析大区编号（如 B1）-> 起始行列
+function parseRegionCode(code) {
+  if (!code) return null;
+  // 提取列字母和行数字（不区分大小写）
+  const match = code.toUpperCase().match(/^([A-Z]+)(\d+)$/);
+  if (!match) return null;
+
+  const colLetters = match[1];
+  const rowNum = parseInt(match[2], 10);
+
+  // 转换列字母为列索引（从 0 开始）
+  let colIndex = 0;
+  for (let i = 0; i < colLetters.length; i++) {
+    colIndex = colIndex * 26 + (colLetters.charCodeAt(i) - 64);
+  }
+  colIndex -= 1; // 转为从 0 开始
+
+  // 行号从 1 开始，转换为从 0 开始
+  const rowIndex = rowNum - 1;
+
+  return { colIndex, rowIndex };
+}
+
+// 获取大区内的所有色块位置
+function getRegionCells(regionCode, cols, rows) {
+  const parsed = parseRegionCode(regionCode);
+  if (!parsed) return [];
+
+  const { colIndex, rowIndex } = parsed;
+
+  // 计算大区起始行列（每个大区 REGION_SIZE 个色块）
+  const regionStartCol = colIndex * REGION_SIZE;
+  const regionStartRow = rowIndex * REGION_SIZE;
+
+  // 检查是否超出范围
+  if (regionStartCol >= cols || regionStartRow >= rows) {
+    return [];
+  }
+
+  const positions = [];
+  // 遍历大区内的所有色块
+  for (let row = regionStartRow; row < regionStartRow + REGION_SIZE && row < rows; row++) {
+    for (let col = regionStartCol; col < regionStartCol + REGION_SIZE && col < cols; col++) {
+      positions.push({ row, col });
+    }
+  }
+  return positions;
+}
+
 Component({
   properties: {
     imagePath: { type: String, value: '' },
@@ -535,6 +597,9 @@ Component({
           // 绘制参考线（只绘制可见区域内的）
           that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow);
 
+          // 绘制大区水印（只绘制可见区域内的）
+          that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow);
+
           // 渲染完成，释放节流标志
           that.isRendering = false;
         });
@@ -571,6 +636,49 @@ Component({
         ctx.lineTo(offsetX + (endCol + 1) * cellSize, y);
         ctx.stroke();
       }
+    },
+
+    // 绘制大区水印（只绘制可见区域内的）
+    drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow) {
+      const cellSize = gridSize * scale;
+      const regionPixelSize = REGION_SIZE * cellSize; // 大区像素尺寸
+
+      // 计算大区编号范围（从 0 开始）
+      const regionStartCol = Math.floor(startCol / REGION_SIZE);
+      const regionEndCol = Math.ceil(endCol / REGION_SIZE);
+      const regionStartRow = Math.floor(startRow / REGION_SIZE);
+      const regionEndRow = Math.ceil(endRow / REGION_SIZE);
+
+      // 大区数量
+      const totalRegionCols = Math.ceil(cols / REGION_SIZE);
+      const totalRegionRows = Math.ceil(rows / REGION_SIZE);
+
+      // 字体大小：大区尺寸的 40%
+      const fontSize = Math.max(8, regionPixelSize * 0.4);
+
+      ctx.save();
+      ctx.globalAlpha = 0.35; // 透明度 35%
+      ctx.font = `${fontSize}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#333333';
+
+      // 遍历可见的大区
+      for (let regionRow = regionStartRow; regionRow < regionEndRow && regionRow < totalRegionRows; regionRow++) {
+        for (let regionCol = regionStartCol; regionCol < regionEndCol && regionCol < totalRegionCols; regionCol++) {
+          // 计算大区中心位置
+          const regionCenterX = offsetX + (regionCol * REGION_SIZE + REGION_SIZE / 2) * cellSize;
+          const regionCenterY = offsetY + (regionRow * REGION_SIZE + REGION_SIZE / 2) * cellSize;
+
+          // 生成大区编号：列编号 + 行号（从 1 开始）
+          const colCode = getColCode(regionCol);
+          const regionCode = colCode + (regionRow + 1);
+
+          ctx.fillText(regionCode, regionCenterX, regionCenterY);
+        }
+      }
+
+      ctx.restore();
     },
 
     // 判断颜色是否为浅色
@@ -787,6 +895,76 @@ Component({
         }
       }
       return null;
+    },
+
+    // 大区替换：替换指定大区内的指定色号
+    replaceByRegion(regionCode, fromCode, toCode) {
+      if (!this.cachedGridData || !this.cachedGridInfo) {
+        return { success: false, message: '没有可替换的数据' };
+      }
+
+      const { cols, rows, gridSize } = this.cachedGridInfo;
+      const gridData = this.cachedGridData;
+
+      // 获取目标大区内的所有色块位置
+      const positions = getRegionCells(regionCode, cols, rows);
+
+      if (positions.length === 0) {
+        return { success: false, message: '大区编号无效或超出范围' };
+      }
+
+      // 获取替换目标色号的信息
+      const toColorHex = this._findColorHexByCode(toCode);
+
+      if (!toColorHex) {
+        return { success: false, message: '替换色号不存在' };
+      }
+
+      // 执行替换
+      const replacedPositions = [];
+      let count = 0;
+
+      for (let i = 0; i < positions.length; i++) {
+        const { row, col } = positions[i];
+        const cell = gridData[row] && gridData[row][col];
+        if (!cell || !cell.markCode) continue;
+
+        // 检查是否匹配被替换的色号
+        if (cell.markCode === fromCode) {
+          // 保存原始信息用于撤销
+          replacedPositions.push({
+            row,
+            col,
+            oldCode: cell.markCode,
+            oldHex: cell.markHex
+          });
+
+          // 替换
+          cell.markCode = toCode;
+          cell.markHex = toColorHex;
+          count++;
+        }
+      }
+
+      if (count === 0) {
+        return { success: false, message: '该大区内没有匹配的色块', count: 0 };
+      }
+
+      // 重新计算统计
+      const stats = this.calculateStats(gridData, rows, cols);
+      this.setData({
+        gridInfo: { cols, rows, gridSize }
+      });
+      this.triggerEvent('statsUpdate', { stats: stats });
+
+      // 重新渲染
+      this.renderToCanvas(gridData, cols, rows, gridSize);
+
+      return {
+        success: true,
+        count,
+        positions: replacedPositions
+      };
     },
 
     // 绘制网格数据到 canvas
