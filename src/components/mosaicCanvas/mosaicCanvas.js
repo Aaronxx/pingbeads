@@ -1,5 +1,5 @@
 // components/mosaicCanvas/mosaicCanvas.js
-const { processSimple, aggregateSimilarColors } = require('../../utils/imageProcessor');
+const { processSimple, aggregateSimilarColors, processWithSmartRegions } = require('../../utils/imageProcessor');
 const { findClosestMarkColor } = require('../../utils/colorMapper');
 
 // 大区常量：每个大区包含 10x10 个色块
@@ -69,6 +69,8 @@ Component({
     imagePath: { type: String, value: '' },
     gridSize: { type: Number, value: 10 },
     mergeThreshold: { type: Number, value: 5 },
+    // 处理模式: 'normal' | 'smart' - smart 模式会保留黑色边界并合并色块
+    processMode: { type: String, value: 'normal' },
     highlightCode: { type: String, value: null },
     showCode: { type: Boolean, value: false },
     scale: { type: Number, value: 1 },
@@ -97,7 +99,10 @@ Component({
 
   // 使用普通属性存储大数组，避免通过 setData 传输
   cachedPixelData: null,
-  
+
+  // 智能模式下的色段数据
+  cachedSegments: null,
+
   // Canvas 渲染相关
   canvasCtx: null,
   canvasNode: null,
@@ -124,10 +129,10 @@ Component({
         }, 200);
       }
     },
-    'gridSize, mergeThreshold, previewQuality': function() {
-      
-      
-      
+    'gridSize, mergeThreshold, previewQuality, processMode': function() {
+
+
+
 
       if (this.cachedPixelData && this.cachedWidth > 0) {
         // 有缓存数据，使用缓存重新生成
@@ -144,9 +149,12 @@ Component({
     },
     // 监听 scale 变化，重新渲染 Canvas
     'scale': function(newScale) {
-      
+
       // 当 scale 变化时，重新渲染 Canvas
-      if (this.cachedGridData && this.cachedGridInfo) {
+      // 智能模式使用 cachedSegments
+      if (this.data.processMode === 'mosaic' && this.cachedSegments) {
+        this.renderSegmentsToCanvas(this.cachedSegments, this.cachedSegmentsWidth, this.cachedSegmentsHeight);
+      } else if (this.cachedGridData && this.cachedGridInfo) {
         const { cols, rows, gridSize } = this.cachedGridInfo;
         this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
       }
@@ -156,7 +164,10 @@ Component({
       // 拖动时只移动视图，不渲染
       if (this.data.isDragging) return;
 
-      if (this.cachedGridData && this.cachedGridInfo) {
+      // 智能模式使用 cachedSegments
+      if (this.data.processMode === 'mosaic' && this.cachedSegments) {
+        this.renderSegmentsToCanvas(this.cachedSegments, this.cachedSegmentsWidth, this.cachedSegmentsHeight);
+      } else if (this.cachedGridData && this.cachedGridInfo) {
         const { cols, rows, gridSize } = this.cachedGridInfo;
         this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
       }
@@ -184,12 +195,47 @@ Component({
 
       const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
 
-      // 传入 mergeThreshold 参数，在颜色映射阶段进行颜色聚合
-      const result = processSimple(pixelData, cachedWidth, cachedHeight, qualityGridSize, this.data.mergeThreshold);
+      // 根据处理模式选择不同的处理方法
+      let result;
+      if (this.data.processMode === 'mosaic') {
+        // 智能模式：扫描线识别马赛克色块
+        result = processWithSmartRegions(pixelData, cachedWidth, cachedHeight, qualityGridSize);
+
+        // 保存色块区域数据
+        this.cachedSegments = result.segments;
+        this.cachedSegmentsWidth = cachedWidth;
+        this.cachedSegmentsHeight = cachedHeight;
+        this.cachedSegmentsGridSize = qualityGridSize;
+
+        // 直接计算统计结果（基于 segments）
+        const stats = this.calculateStatsFromSegments(result.segments);
+
+        this.setData({
+          gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
+          isProcessing: false
+        });
+
+        // 触发统计更新事件
+        this.triggerEvent('statsUpdate', { stats: stats });
+
+        // 渲染到 Canvas（智能模式直接渲染 segments）
+        setTimeout(() => {
+          this.renderSegmentsToCanvas(result.segments, cachedWidth, cachedHeight);
+        }, 100);
+
+        // 触发完成事件
+        this.triggerEvent('mosaicGenerated', {
+          gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize }
+        });
+        return;
+      } else {
+        // 普通模式：传入 mergeThreshold 参数，在颜色映射阶段进行颜色聚合
+        result = processSimple(pixelData, cachedWidth, cachedHeight, qualityGridSize, this.data.mergeThreshold);
+      }
 
       // 直接计算统计结果（不传输大量格子数据）
       const stats = this.calculateStats(result.gridData, result.rows, result.cols);
-      
+
 
       this.setData({
         gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
@@ -214,7 +260,7 @@ Component({
       });
     },
 
-    // 计算统计结果
+    // 计算统计结果（基于 gridData）
     calculateStats(gridData, rows, cols) {
       const colorCounts = {};
       let totalCount = 0;
@@ -246,8 +292,60 @@ Component({
       };
     },
 
-    // 获取 gridData（供导出使用）
+    // 计算统计结果（基于 segments 数组）
+    calculateStatsFromSegments(segments) {
+      const colorCounts = {};
+      let totalCount = 0;
+
+      for (const segment of segments) {
+        if (!segment.markCode) continue;
+        const code = segment.markCode;
+        // 使用格式化后的色号作为key（去掉前导0）
+        const formattedCode = this.formatMarkCode(code);
+        if (!colorCounts[formattedCode]) {
+          colorCounts[formattedCode] = {
+            code: formattedCode,
+            originalCode: code,
+            hex: segment.markHex || '#000000',
+            count: 0
+          };
+        }
+        // 每个 segment 算一个色块
+        colorCounts[formattedCode].count++;
+        totalCount++;
+      }
+
+      return {
+        colorCount: Object.keys(colorCounts).length,
+        totalCount: totalCount,
+        sortedByCount: Object.values(colorCounts).sort((a, b) => b.count - a.count)
+      };
+    },
+
+    // 获取导出数据（供导出使用）
     getExportData() {
+      // 智能模式返回 segments 数据
+      if (this.data.processMode === 'mosaic' && this.cachedSegments) {
+        // 计算 segments 的行列数
+        let maxCol = 0, maxRow = 0;
+        for (const seg of this.cachedSegments) {
+          if (seg.col !== undefined) {
+            maxCol = Math.max(maxCol, seg.col);
+            maxRow = Math.max(maxRow, seg.row);
+          }
+        }
+        const cols = maxCol + 1;
+        const rows = maxRow + 1;
+        const gridSize = this.cachedSegmentsGridSize || 10;
+
+        return {
+          gridInfo: { cols, rows, gridSize },
+          gridData: null,
+          segments: this.cachedSegments,
+          imageWidth: this.cachedSegmentsWidth,
+          imageHeight: this.cachedSegmentsHeight
+        };
+      }
       return {
         gridInfo: this.cachedGridInfo,
         gridData: this.cachedGridData
@@ -381,12 +479,46 @@ Component({
       this.setData({ isProcessing: false });
 
       const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
-      // 传入 mergeThreshold 参数
-      const result = processSimple(null, width, height, qualityGridSize, this.data.mergeThreshold);
+
+      // 根据处理模式选择不同的处理方法
+      let result;
+      if (this.data.processMode === 'mosaic') {
+        result = processWithSmartRegions(null, width, height, qualityGridSize);
+
+        // 保存色块区域数据
+        this.cachedSegments = result.segments;
+        this.cachedSegmentsWidth = width;
+        this.cachedSegmentsHeight = height;
+        this.cachedSegmentsGridSize = qualityGridSize;
+
+        // 直接计算统计结果（基于 segments）
+        const stats = this.calculateStatsFromSegments(result.segments);
+
+        this.setData({
+          gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize },
+          isProcessing: false
+        });
+
+        // 触发统计更新事件
+        this.triggerEvent('statsUpdate', { stats: stats });
+
+        // 渲染到 Canvas（智能模式直接渲染 regions）
+        setTimeout(() => {
+          this.renderSegmentsToCanvas(result.segments, width, height);
+        }, 100);
+
+        this.triggerEvent('mosaicGenerated', {
+          gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize }
+        });
+        return;
+      } else {
+        // 传入 mergeThreshold 参数
+        result = processSimple(null, width, height, qualityGridSize, this.data.mergeThreshold);
+      }
 
       // 直接计算统计结果
       const stats = this.calculateStats(result.gridData, result.rows, result.cols);
-      
+
 
       this.setData({
         gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
@@ -414,12 +546,46 @@ Component({
       this.setData({ isProcessing: true });
 
       const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
-      // 传入 mergeThreshold 参数，在颜色映射阶段进行颜色聚合
-      const result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold);
+
+      // 根据处理模式选择不同的处理方法
+      let result;
+      if (this.data.processMode === 'mosaic') {
+        result = processWithSmartRegions(pixelData, width, height, qualityGridSize);
+
+        // 保存色块区域数据
+        this.cachedSegments = result.segments;
+        this.cachedSegmentsWidth = width;
+        this.cachedSegmentsHeight = height;
+        this.cachedSegmentsGridSize = qualityGridSize;
+
+        // 直接计算统计结果（基于 segments）
+        const stats = this.calculateStatsFromSegments(result.segments);
+
+        this.setData({
+          gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize },
+          isProcessing: false
+        });
+
+        // 触发统计更新事件
+        this.triggerEvent('statsUpdate', { stats: stats });
+
+        // 渲染到 Canvas（智能模式直接渲染 regions）
+        setTimeout(() => {
+          this.renderSegmentsToCanvas(result.segments, width, height);
+        }, 100);
+
+        this.triggerEvent('mosaicGenerated', {
+          gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize }
+        });
+        return;
+      } else {
+        // 传入 mergeThreshold 参数，在颜色映射阶段进行颜色聚合
+        result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold);
+      }
 
       // 直接计算统计结果
       const stats = this.calculateStats(result.gridData, result.rows, result.cols);
-      
+
 
       this.setData({
         gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
@@ -725,8 +891,152 @@ Component({
 
     // 重试渲染（延迟执行）
     renderToCanvasRetry(gridData, cols, rows, gridSize) {
-      
+
       this.renderToCanvas(gridData, cols, rows, gridSize);
+    },
+
+    // 渲染智能模式的色段到 Canvas
+    renderSegmentsToCanvas(segments, imageWidth, imageHeight) {
+      const that = this;
+      this.isRendering = true;
+
+      // 使用组件实例的 createSelectorQuery
+      const query = this.createSelectorQuery();
+      query.select('#mosaic-render-canvas')
+        .fields({ node: true, size: true })
+        .exec((res) => {
+          if (!res[0] || !res[0].node) {
+            // 重试
+            setTimeout(() => {
+              that.renderSegmentsToCanvas(segments, imageWidth, imageHeight);
+            }, 200);
+            return;
+          }
+
+          const canvas = res[0].node;
+          const ctx = canvas.getContext('2d');
+
+          // 使用组件 data 中的尺寸
+          let canvasWidth = that.data.canvasWidth || 300;
+          let canvasHeight = that.data.canvasHeight || 300;
+
+          // 使用 Canvas 极限尺寸 4096
+          const MAX_CANVAS_SIZE = 4096;
+          canvasWidth = Math.min(canvasWidth, MAX_CANVAS_SIZE);
+          canvasHeight = Math.min(canvasHeight, MAX_CANVAS_SIZE);
+
+          // 设置 canvas 尺寸
+          const userScale = that.data.scale || 1;
+          const MAX_CANVAS_DIMENSION = 16384;
+          let scaledWidth = canvasWidth * userScale;
+          let scaledHeight = canvasHeight * userScale;
+          if (scaledWidth > MAX_CANVAS_DIMENSION || scaledHeight > MAX_CANVAS_DIMENSION) {
+            const scaleRatio = MAX_CANVAS_DIMENSION / Math.max(scaledWidth, scaledHeight);
+            scaledWidth *= scaleRatio;
+            scaledHeight *= scaleRatio;
+          }
+          canvas.width = Math.floor(scaledWidth);
+          canvas.height = Math.floor(scaledHeight);
+
+          // 存储引用
+          that.canvasNode = canvas;
+          that.canvasCtx = ctx;
+
+          // 清空画布
+          ctx.fillStyle = '#f0f0f0';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          // 计算缩放比例，让整个图案适应 Canvas
+          const scaleX = imageWidth > 0 ? canvasWidth / imageWidth : 1;
+          const scaleY = imageHeight > 0 ? canvasHeight / imageHeight : 1;
+          const baseScale = Math.min(scaleX, scaleY, 1);
+          const scale = baseScale * userScale;
+
+          // 居中偏移
+          const actualCanvasWidth = canvas.width;
+          const actualCanvasHeight = canvas.height;
+          const totalSegmentWidth = imageWidth * scale;
+          const totalSegmentHeight = imageHeight * scale;
+          const baseOffsetX = (actualCanvasWidth - totalSegmentWidth) / 2;
+          const baseOffsetY = (actualCanvasHeight - totalSegmentHeight) / 2;
+          const offsetX = baseOffsetX + (this.data.offsetX || 0);
+          const offsetY = baseOffsetY + (this.data.offsetY || 0);
+
+          // 计算可见区域
+          const buffer = 50;
+          const visibleLeft = -buffer;
+          const visibleRight = actualCanvasWidth + buffer;
+          const visibleTop = -buffer;
+          const visibleBottom = actualCanvasHeight + buffer;
+
+          // 渲染色段（紧密排列，无间隙）
+          for (const segment of segments) {
+            const x = offsetX + segment.x * scale;
+            const y = offsetY + segment.y * scale;
+            const width = segment.width * scale;
+            const height = segment.height * scale;
+
+            // 跳过不可见的区域
+            if (x + width < visibleLeft || x > visibleRight ||
+                y + height < visibleTop || y > visibleBottom) {
+              continue;
+            }
+
+            // 绘制色段（紧密排列，不留间隙）
+            ctx.fillStyle = segment.markHex || '#cccccc';
+            ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(width), Math.ceil(height));
+
+            // 绘制色号（如果色段足够大）
+            const size = Math.min(width, height);
+            if (that.data.showCode && size >= 8) {
+              const isLight = that.isLightColor(segment.markHex);
+              ctx.fillStyle = isLight ? '#333333' : '#ffffff';
+              ctx.font = `${Math.max(8, size * 0.3)}px sans-serif`;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(that.formatMarkCode(segment.markCode), x + width / 2, y + height / 2);
+            }
+          }
+
+          // 智能模式：计算网格信息并绘制参考线和大区编号
+          if (segments.length > 0) {
+            // 从 segments 推断网格信息
+            let maxCol = 0, maxRow = 0;
+            let gridSizeW = 0, gridSizeH = 0;
+            let sampleCount = 0;
+            for (const seg of segments) {
+              if (seg.col !== undefined) {
+                maxCol = Math.max(maxCol, seg.col);
+                maxRow = Math.max(maxRow, seg.row);
+              }
+              // 采样计算网格大小
+              if (sampleCount < 10 && seg.width > 0 && seg.height > 0) {
+                gridSizeW = (gridSizeW * sampleCount + seg.width) / (sampleCount + 1);
+                gridSizeH = (gridSizeH * sampleCount + seg.height) / (sampleCount + 1);
+                sampleCount++;
+              }
+            }
+            const cols = maxCol + 1;
+            const rows = maxRow + 1;
+            const gridSize = Math.round((gridSizeW + gridSizeH) / 2) || 10;
+
+            // 计算可见的行列范围
+            const cellSize = gridSize * scale;
+            const startCol = Math.max(0, Math.floor((visibleLeft - offsetX) / cellSize));
+            const endCol = Math.min(cols - 1, Math.ceil((visibleRight - offsetX) / cellSize));
+            const startRow = Math.max(0, Math.floor((visibleTop - offsetY) / cellSize));
+            const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - offsetY) / cellSize));
+
+            // 绘制参考线
+            that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow);
+
+            // 绘制大区编号
+            that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow);
+          }
+
+          // 渲染完成
+          that.isRendering = false;
+        });
     },
 
     toggleFullscreen() {
@@ -791,6 +1101,12 @@ Component({
 
     // 替换颜色
     replaceColor(fromCode, toCode, scope, positions) {
+      // 马赛克模式使用 cachedSegments
+      if (this.data.processMode === 'mosaic' && this.cachedSegments) {
+        return this._replaceColorInSegments(fromCode, toCode, scope, positions);
+      }
+
+      // 卡通模式使用 cachedGridData
       if (!this.cachedGridData || !this.cachedGridInfo) {
         return { success: false, message: '没有可替换的数据' };
       }
@@ -872,8 +1188,10 @@ Component({
       });
       this.triggerEvent('statsUpdate', { stats: stats });
 
-      // 重新渲染
-      this.renderToCanvas(gridData, cols, rows, gridSize);
+      // 重新渲染 - 使用 setTimeout 确保 Canvas 准备好
+      setTimeout(() => {
+        this.renderToCanvas(gridData, cols, rows, gridSize);
+      }, 50);
 
       return {
         success: true,
@@ -897,8 +1215,183 @@ Component({
       return null;
     },
 
+    // 马赛克模式：在 segments 中替换颜色
+    _replaceColorInSegments(fromCode, toCode, scope, positions) {
+      const segments = this.cachedSegments;
+      if (!segments || segments.length === 0) {
+        return { success: false, message: '没有可替换的数据' };
+      }
+
+      // 获取替换目标色号的信息
+      const toColorHex = this._findColorHexByCode(toCode);
+      if (!toColorHex) {
+        return { success: false, message: '替换色号不存在' };
+      }
+
+      // 计算行列数
+      let maxCol = 0, maxRow = 0;
+      for (const seg of segments) {
+        if (seg.col !== undefined) {
+          maxCol = Math.max(maxCol, seg.col);
+          maxRow = Math.max(maxRow, seg.row);
+        }
+      }
+      const cols = maxCol + 1;
+      const rows = maxRow + 1;
+      const gridSize = this.cachedSegmentsGridSize || 10;
+
+      // 确定需要替换的范围
+      let startCol = 0, endCol = cols - 1, startRow = 0, endRow = rows - 1;
+      let positionList = null;
+
+      if (positions && positions.length > 0) {
+        positionList = positions;
+        startCol = Math.min(...positions.map(p => p.col !== undefined ? p.col : p[1]));
+        endCol = Math.max(...positions.map(p => p.col !== undefined ? p.col : p[1]));
+        startRow = Math.min(...positions.map(p => p.row !== undefined ? p.row : p[0]));
+        endRow = Math.max(...positions.map(p => p.row !== undefined ? p.row : p[0]));
+      }
+
+      // 执行替换
+      const replacedPositions = [];
+      let count = 0;
+
+      for (const segment of segments) {
+        const { col, row } = segment;
+        if (col === undefined || row === undefined) continue;
+
+        // 检查是否在替换范围内
+        if (col < startCol || col > endCol || row < startRow || row > endRow) continue;
+
+        // 如果指定了位置列表，检查当前位置是否在列表中
+        if (positionList) {
+          const pos = positionList.find(p => (p.row !== undefined ? p.row : p[0]) === row && (p.col !== undefined ? p.col : p[1]) === col);
+          if (!pos) continue;
+        }
+
+        // 检查是否匹配被替换的色号
+        if (segment.markCode === fromCode) {
+          replacedPositions.push({
+            row,
+            col,
+            oldCode: segment.markCode,
+            oldHex: segment.markHex
+          });
+
+          // 替换
+          segment.markCode = toCode;
+          segment.markHex = toColorHex;
+          count++;
+        }
+      }
+
+      if (count === 0) {
+        return { success: false, message: '没有找到匹配的色块', count: 0 };
+      }
+
+      // 重新计算统计
+      const stats = this.calculateStatsFromSegments(segments);
+      this.triggerEvent('statsUpdate', { stats: stats });
+
+      // 重新渲染 - 使用 setTimeout 确保 Canvas 准备好
+      setTimeout(() => {
+        this.renderSegmentsToCanvas(segments, this.cachedSegmentsWidth, this.cachedSegmentsHeight);
+      }, 50);
+
+      return {
+        success: true,
+        count,
+        positions: replacedPositions
+      };
+    },
+
+    // 马赛克模式：大区替换
+    _replaceByRegionInSegments(regionCode, fromCode, toCode) {
+      const segments = this.cachedSegments;
+      if (!segments || segments.length === 0) {
+        return { success: false, message: '没有可替换的数据' };
+      }
+
+      // 计算行列数
+      let maxCol = 0, maxRow = 0;
+      for (const seg of segments) {
+        if (seg.col !== undefined) {
+          maxCol = Math.max(maxCol, seg.col);
+          maxRow = Math.max(maxRow, seg.row);
+        }
+      }
+      const cols = maxCol + 1;
+      const rows = maxRow + 1;
+
+      // 获取目标大区内的所有色块位置
+      const positions = getRegionCells(regionCode, cols, rows);
+
+      if (positions.length === 0) {
+        return { success: false, message: '大区编号无效或超出范围' };
+      }
+
+      // 获取替换目标色号的信息
+      const toColorHex = this._findColorHexByCode(toCode);
+      if (!toColorHex) {
+        return { success: false, message: '替换色号不存在' };
+      }
+
+      // 执行替换
+      const replacedPositions = [];
+      let count = 0;
+
+      for (const segment of segments) {
+        const { col, row } = segment;
+        if (col === undefined || row === undefined) continue;
+
+        // 检查是否在大区内
+        const pos = positions.find(p => p.row === row && p.col === col);
+        if (!pos) continue;
+
+        // 检查是否匹配被替换的色号
+        if (segment.markCode === fromCode) {
+          replacedPositions.push({
+            row,
+            col,
+            oldCode: segment.markCode,
+            oldHex: segment.markHex
+          });
+
+          // 替换
+          segment.markCode = toCode;
+          segment.markHex = toColorHex;
+          count++;
+        }
+      }
+
+      if (count === 0) {
+        return { success: false, message: '该大区内没有匹配的色块', count: 0 };
+      }
+
+      // 重新计算统计
+      const stats = this.calculateStatsFromSegments(segments);
+      this.triggerEvent('statsUpdate', { stats: stats });
+
+      // 重新渲染 - 使用 setTimeout 确保 Canvas 准备好
+      setTimeout(() => {
+        this.renderSegmentsToCanvas(segments, this.cachedSegmentsWidth, this.cachedSegmentsHeight);
+      }, 50);
+
+      return {
+        success: true,
+        count,
+        positions: replacedPositions
+      };
+    },
+
     // 大区替换：替换指定大区内的指定色号
     replaceByRegion(regionCode, fromCode, toCode) {
+      // 马赛克模式使用 cachedSegments
+      if (this.data.processMode === 'mosaic' && this.cachedSegments) {
+        return this._replaceByRegionInSegments(regionCode, fromCode, toCode);
+      }
+
+      // 卡通模式使用 cachedGridData
       if (!this.cachedGridData || !this.cachedGridInfo) {
         return { success: false, message: '没有可替换的数据' };
       }
@@ -1119,7 +1612,10 @@ Component({
         this.initialTouchDistance = 0;
 
         // 拖动结束后渲染可见区域
-        if (this.cachedGridData && this.cachedGridInfo) {
+        // 智能模式使用 cachedSegments
+        if (this.data.processMode === 'mosaic' && this.cachedSegments) {
+          this.renderSegmentsToCanvas(this.cachedSegments, this.cachedSegmentsWidth, this.cachedSegmentsHeight);
+        } else if (this.cachedGridData && this.cachedGridInfo) {
           const { cols, rows, gridSize } = this.cachedGridInfo;
           this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
         }
@@ -1133,7 +1629,10 @@ Component({
       this.pendingRender = true;
       wx.nextTick(() => {
         this.pendingRender = false;
-        if (this.cachedGridData && this.cachedGridInfo) {
+        // 智能模式使用 cachedSegments
+        if (this.data.processMode === 'mosaic' && this.cachedSegments) {
+          this.renderSegmentsToCanvas(this.cachedSegments, this.cachedSegmentsWidth, this.cachedSegmentsHeight);
+        } else if (this.cachedGridData && this.cachedGridInfo) {
           const { cols, rows, gridSize } = this.cachedGridInfo;
           this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
         }

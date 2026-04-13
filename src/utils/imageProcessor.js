@@ -620,12 +620,430 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
   return gridData;
 }
 
+/**
+ * 智能色块处理 - 保留黑色边界 + 区域合并
+ * 适用于马赛克原图，识别色块并合并相近颜色
+ */
+
+/**
+ * 智能处理图像 - 保留边界 + 区域合并
+ * @param {Uint8ClampedArray} pixelData - 像素数据
+ * @param {number} width - 图像宽度
+ * @param {number} height - 图像高度
+ * @param {number} gridSize - 网格大小
+ * @param {object} options - 选项
+ *   - mergeThreshold: 颜色相似度阈值 (10-50)，越小越严格
+ *   - preserveBlack: 是否保留黑色边界，默认true
+ *   - blackThreshold: 黑色判定阈值，默认50
+ */
+/**
+ * 自动检测图像的色块大小
+ * 扫描图像的多条水平线和垂直线（舍弃最外圈），记录颜色变化点
+ * 计算相邻变化点之间的距离，取众数得到色块大小
+ * @param {Uint8ClampedArray} pixelData - 像素数据
+ * @param {number} width - 图像宽度
+ * @param {number} height - 图像高度
+ * @returns {object} 检测结果，包含色块大小和有效范围
+ */
+function autoDetectBlockSize(pixelData, width, height) {
+  try {
+  // 辅助函数：获取像素颜色
+  function getPixelColor(x, y) {
+    if (x < 0 || x >= width || y < 0 || y >= height) return null;
+    const idx = (y * width + x) * 4;
+    return { r: pixelData[idx], g: pixelData[idx + 1], b: pixelData[idx + 2] };
+  }
+
+  // 辅助函数：判断两个颜色是否相似（使用欧氏距离，更准确）
+  // 容差越大，越容易将相近颜色视为相同，可过滤掉原图中的参考线等噪点
+  function isSameColor(c1, c2, tolerance = 50) {
+    if (!c1 || !c2) return false;
+    const dist = Math.sqrt(
+      Math.pow(c1.r - c2.r, 2) +
+      Math.pow(c1.g - c2.g, 2) +
+      Math.pow(c1.b - c2.b, 2)
+    );
+    return dist <= tolerance;
+  }
+
+  // 辅助函数：找中位数
+  function findMedian(arr) {
+    if (!arr || arr.length === 0) return 0;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+  }
+
+  // 辅助函数：找众数
+  function findMode(arr) {
+    if (!arr || arr.length === 0) return 0;
+    const counts = {};
+    let maxCount = 0;
+    let mode = arr[0];
+    for (const v of arr) {
+      counts[v] = (counts[v] || 0) + 1;
+      if (counts[v] > maxCount) {
+        maxCount = counts[v];
+        mode = v;
+      }
+    }
+    return mode;
+  }
+
+  // 收集所有距离值和变化点数量
+  const hDistances = [];
+  const vDistances = [];
+  const hChangesCounts = []; // 每条水平线的变化点数量
+  const vChangesCounts = []; // 每条垂直线的变化点数量
+
+  // 扫描多条水平线（扫描整行，从0到width-1）
+  const hScanCount = 20;
+  for (let i = 0; i < hScanCount; i++) {
+    const y = Math.floor(height * i / (hScanCount - 1));
+    const changes = [];
+
+    // 从左到右扫描整行
+    let prevColor = getPixelColor(0, y);
+    for (let x = 1; x < width; x++) {
+      const currColor = getPixelColor(x, y);
+      if (!isSameColor(prevColor, currColor)) {
+        changes.push(x);
+        prevColor = currColor;
+      }
+    }
+
+    // 记录变化点数量（用于计算网格数）
+    hChangesCounts.push(changes.length);
+
+    // 计算相邻变化点之间的距离
+    for (let i = 1; i < changes.length; i++) {
+      const dist = changes[i] - changes[i - 1];
+      // 保留合理范围的值
+      if (dist >= 5 && dist <= 20) {
+        hDistances.push(dist);
+      }
+    }
+  }
+
+  // 扫描多条垂直线（扫描整列，从0到height-1）
+  const vScanCount = 20;
+  for (let i = 0; i < vScanCount; i++) {
+    const x = Math.floor(width * i / (vScanCount - 1));
+    const changes = [];
+
+    // 从上到下扫描整列
+    let prevColor = getPixelColor(x, 0);
+    for (let y = 1; y < height; y++) {
+      const currColor = getPixelColor(x, y);
+      if (!isSameColor(prevColor, currColor)) {
+        changes.push(y);
+        prevColor = currColor;
+      }
+    }
+
+    // 记录变化点数量
+    vChangesCounts.push(changes.length);
+
+    // 计算相邻变化点之间的距离
+    for (let i = 1; i < changes.length; i++) {
+      const dist = changes[i] - changes[i - 1];
+      // 保留合理范围的值
+      if (dist >= 5 && dist <= 20) {
+        vDistances.push(dist);
+      }
+    }
+  }
+
+  // 取众数作为色块大小
+  const hMode = findMode(hDistances) || 10;
+  const vMode = findMode(vDistances) || 10;
+
+  // 色块大小 = 相邻距离的众数
+  let blockSize = (hMode + vMode) / 2;
+  if (!blockSize || blockSize === 0) blockSize = 10;
+
+  const primarySize = blockSize;
+
+  // 网格数 = 变化点数量 + 1（直接数出来！）
+  // 取多条扫描线的中位数并取整
+  let hColsMode = Math.floor(findMedian(hChangesCounts)) || 100;
+  let vRowsMode = Math.floor(findMedian(vChangesCounts)) || 100;
+
+  const cols = hColsMode + 1;
+  const rows = vRowsMode + 1;
+
+  // 有效范围：整张图
+  const validStartX = 0;
+  const validStartY = 0;
+  const validEndX = width;
+  const validEndY = height;
+
+  const validWidth = validEndX - validStartX;
+  const validHeight = validEndY - validStartY;
+
+  const result = {
+    primarySize: primarySize,
+    secondarySize: null,
+    // 原始检测值
+    rawBlockSize: (hMode + vMode) / 2,
+    hMode,
+    vMode,
+    hColsMode,
+    vRowsMode,
+    validRange: {
+      startX: validStartX,
+      endX: validEndX,
+      startY: validStartY,
+      endY: validEndY,
+      width: validWidth,
+      height: validHeight,
+      cols,
+      rows
+    },
+    debug: {
+      hDistancesCount: hDistances.length,
+      vDistancesCount: vDistances.length,
+      hChangesCounts,
+      vChangesCounts,
+      hMode,
+      vMode,
+      hColsMode,
+      vRowsMode,
+      cols: cols,
+      rows: rows
+    }
+  };
+  return result;
+  } catch (e) {
+    // 返回默认值
+    return {
+      primarySize: 10,
+      secondarySize: null,
+      rawBlockSize: 10,
+      hMode: 10,
+      vMode: 10,
+      hColsMode: 136,
+      vRowsMode: 148,
+      validRange: {
+        startX: 0,
+        endX: width,
+        startY: 0,
+        endY: height,
+        width: width,
+        height: height,
+        cols: 136,
+        rows: 148
+      },
+      debug: {}
+    };
+  }
+}
+
+/**
+ * 智能处理图像 - 网格化 + 主导色识别
+ * 使用网格划分图像，每个网格识别主导色
+ * 智能判断是否为纯色区域，不过滤黑色（保留原色）
+ * @param {Uint8ClampedArray} pixelData - 像素数据
+ * @param {number} width - 图像宽度
+ * @param {number} height - 图像高度
+ * @param {number} gridSize - 网格大小
+ * @param {object} options - 选项
+ */
+function processWithSmartRegions(pixelData, width, height, gridSize, options = {}) {
+
+  // 导入颜色查找函数
+  const { fastFindClosestMarkColor: findMark } = require('../utils/colorMapper');
+
+  // 如果没有像素数据，返回空结果
+  if (!pixelData || pixelData.length === 0) {
+    return {
+      segments: [],
+      segmentCount: 0,
+      gridData: [],
+      cols: 1,
+      rows: 1,
+      gridSize: 1,
+      width,
+      height
+    };
+  }
+
+  // 自动检测色块大小和有效范围
+  const { primarySize, secondarySize, rawBlockSize, hMode, vMode, hColsMode, vRowsMode, validRange, debug } = autoDetectBlockSize(pixelData, width, height);
+  const actualGridSize = primarySize || gridSize; // 使用检测值或回退到预设值
+
+  // 使用检测到的有效范围
+  const startX = validRange.startX;
+  const startY = validRange.startY;
+  const cols = validRange.cols;
+  const rows = validRange.rows;
+
+  // 大区检测暂时禁用，等采样方法稳定后再启用
+  let largeRegionSize = null;
+
+  // 获取指定像素的颜色
+  function getPixelColor(x, y) {
+    if (x < 0 || x >= width || y < 0 || y >= height) return null;
+    const idx = (y * width + x) * 4;
+    return {
+      r: pixelData[idx],
+      g: pixelData[idx + 1],
+      b: pixelData[idx + 2]
+    };
+  }
+
+  // 计算颜色距离
+  function colorDistance(c1, c2) {
+    if (!c1 || !c2) return Infinity;
+    return Math.sqrt(
+      Math.pow(c1.r - c2.r, 2) +
+      Math.pow(c1.g - c2.g, 2) +
+      Math.pow(c1.b - c2.b, 2)
+    );
+  }
+
+  // 存储色块数据
+  const segments = [];
+  let segmentId = 0;
+
+  // 遍历每个网格（从有效范围开始）
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      // 计算网格在原图上的位置（使用有效范围偏移）
+      const cellStartX = startX + col * actualGridSize;
+      const cellStartY = startY + row * actualGridSize;
+      const endX = Math.min(cellStartX + actualGridSize, startX + cols * actualGridSize);
+      const endY = Math.min(cellStartY + actualGridSize, startY + rows * actualGridSize);
+
+      // 边界检查
+      if (cellStartX >= width || cellStartY >= height) {
+        continue;
+      }
+
+      // 收集网格内所有像素的颜色
+      const colors = [];
+      let totalCount = 0;
+
+      for (let y = cellStartY; y < endY; y++) {
+        for (let x = cellStartX; x < endX; x++) {
+          const color = getPixelColor(x, y);
+          if (color) {
+            colors.push(color);
+            totalCount++;
+          }
+        }
+      }
+
+      // 如果没有有效颜色，使用默认灰色
+      if (colors.length === 0) {
+        const markColor = findMark({ r: 128, g: 128, b: 128 });
+        segments.push({
+          id: segmentId++,
+          x: cellStartX,
+          y: cellStartY,
+          width: endX - cellStartX,
+          height: endY - cellStartY,
+          col: col,
+          row: row,
+          avgColor: { r: 128, g: 128, b: 128 },
+          markCode: markColor.code,
+          markHex: markColor.hex,
+          markRgb: markColor.rgb
+        });
+        continue;
+      }
+
+      // 计算平均颜色
+      let sumR = 0, sumG = 0, sumB = 0;
+      for (const c of colors) {
+        sumR += c.r;
+        sumG += c.g;
+        sumB += c.b;
+      }
+
+      const avgColor = {
+        r: Math.round(sumR / colors.length),
+        g: Math.round(sumG / colors.length),
+        b: Math.round(sumB / colors.length)
+      };
+
+      // 判断是否为纯色区域（计算颜色方差）
+      let maxDist = 0;
+      for (const c of colors) {
+        const dist = colorDistance(c, avgColor);
+        if (dist > maxDist) maxDist = dist;
+      }
+
+      // 如果颜色变化太大，可能是混合区域，使用主导色
+      let finalColor = avgColor;
+      if (maxDist > 30) {
+        // 找到主导色（出现最多的颜色）
+        const colorCount = {};
+        for (const c of colors) {
+          // 将颜色量化到 16 级，减少噪声
+          const key = `${Math.round(c.r / 16) * 16},${Math.round(c.g / 16) * 16},${Math.round(c.b / 16) * 16}`;
+          colorCount[key] = (colorCount[key] || 0) + 1;
+        }
+
+        // 找到出现最多的颜色
+        let maxCount = 0;
+        for (const key in colorCount) {
+          if (colorCount[key] > maxCount) {
+            maxCount = colorCount[key];
+            const [r, g, b] = key.split(',').map(Number);
+            finalColor = { r, g, b };
+          }
+        }
+      }
+
+      // 映射到 MARD 色号
+      const markColor = findMark(finalColor);
+
+      segments.push({
+        id: segmentId++,
+        x: cellStartX,
+        y: cellStartY,
+        width: endX - cellStartX,
+        height: endY - cellStartY,
+        col: col,
+        row: row,
+        avgColor: finalColor,
+        markCode: markColor.code,
+        markHex: markColor.hex,
+        markRgb: markColor.rgb
+      });
+    }
+  }
+
+  // 返回网格化的色块数据
+  return {
+    segments: segments,
+    segmentCount: segments.length,
+    // 兼容旧代码
+    gridData: [],
+    cols: cols,
+    rows: rows,
+    gridSize: actualGridSize,
+    // 双层分界线检测结果
+    detectedBlockSize: primarySize, // 小色块大小
+    largeRegionSize: largeRegionSize, // 8*8 或 10*10 的大区尺寸
+    hasLargeRegions: !!largeRegionSize,
+    width,
+    height
+  };
+}
+
+// 快速颜色查找（内部使用）
+let fastFindClosestMarkColor;
+
 module.exports = {
   kMeansClustering,
   medianCut,
   processImageData,
   processSimple,
   aggregateSimilarColors,
+  processWithSmartRegions,
+  autoDetectBlockSize,
   colorDistance,
   simpleBlur,
   floydSteinbergDithering

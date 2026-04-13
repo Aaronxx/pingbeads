@@ -15,8 +15,10 @@ Page({
     showCode: true,
     // 网格大小
     gridSize: 10,
-    // 颜色合并阈值
+    // 色彩阈值
     mergeThreshold: 15,
+    // 处理模式: 'cartoon' | 'mosaic' - cartoon=卡通(普通模式), mosaic=马赛克(智能模式)
+    processMode: 'cartoon',
     // 预览质量: 1=低(快速), 2=中, 3=高(精细)
     previewQuality: 2,
     // 导出 canvas 尺寸
@@ -48,10 +50,10 @@ Page({
     thresholdOptions: [
       { name: '不合并', value: 0 },
       { name: '5', value: 5 },
+      { name: '10', value: 10 },
       { name: '15', value: 15 },
-      { name: '30', value: 30 },
-      { name: '50', value: 50 },
-      { name: '100', value: 100 }
+      { name: '20', value: 20 },
+      { name: '30', value: 30 }
     ],
     // 当前选项索引（用于 picker 绑定）
     gridOptionIndex: 3,  // 默认 10
@@ -192,6 +194,22 @@ Page({
     this.setData({
       mergeThreshold: newThreshold,
       thresholdOptionIndex: index,
+      mosaicData: null,
+      currentStep: 1
+    });
+  },
+
+  // 切换处理模式：卡通/马赛克
+  toggleProcessMode() {
+    // 导出中禁止调整
+    if (this.data.isExporting) {
+      wx.showToast({ title: '导出中，请稍候', icon: 'none' });
+      return;
+    }
+
+    const newMode = this.data.processMode === 'cartoon' ? 'mosaic' : 'cartoon';
+    this.setData({
+      processMode: newMode,
       mosaicData: null,
       currentStep: 1
     });
@@ -369,12 +387,17 @@ Page({
     const exportData = mosaicCanvas.getExportData();
     const { cols, rows, gridSize } = exportData.gridInfo;
     const gridData = exportData.gridData;
+    const segments = exportData.segments;
 
-    if (!gridData) {
+    // 智能模式或普通模式都需要有数据
+    if (!gridData && !segments) {
       wx.showToast({ title: '请先生成马赛克', icon: 'none' });
       this.setData({ isExporting: false });
       return;
     }
+
+    // 检查是否为智能模式
+    const isMosaicMode = !!segments;
 
     // 直接从 flatCells 获取统计结果
     const stats = this.data.flatCells || { sortedByCount: [] };
@@ -480,35 +503,66 @@ Page({
         const offsetX = rulerWidth;
         const offsetY = rulerHeight;
 
-        // 跳过 isRegionMember 的格子（它们会被根格子覆盖）
-        for (let row = 0; row < rows; row++) {
-          for (let col = 0; col < cols; col++) {
-            const cell = gridData[row] && gridData[row][col];
-            // 跳过无效格子或区域成员格子
-            if (!cell || !cell.markCode || cell.isRegionMember) continue;
+        if (isMosaicMode && segments) {
+          // 智能模式：直接绘制 segments
+          const imageWidth = exportData.imageWidth || cols;
+          const imageHeight = exportData.imageHeight || rows;
+          const segScaleX = mosaicWidth / imageWidth;
+          const segScaleY = mosaicHeight / imageHeight;
 
-            // 使用格子的实际宽高（合并后），并进行缩放
-            const cellWidth = (cell.width || gridSize) * exportScale;
-            const cellHeight = (cell.height || gridSize) * exportScale;
+          for (const segment of segments) {
+            const x = offsetX + segment.x * segScaleX;
+            const y = offsetY + segment.y * segScaleY;
+            const width = segment.width * segScaleX;
+            const height = segment.height * segScaleY;
 
-            const x = offsetX + col * gridSize * exportScale;
-            const y = offsetY + row * gridSize * exportScale;
+            // 绘制色段
+            ctx.fillStyle = segment.markHex || '#cccccc';
+            ctx.fillRect(x, y, width, height);
 
-            // 绘制色块
-            ctx.fillStyle = cell.markHex;
-            ctx.fillRect(x, y, cellWidth, cellHeight);
-
-            // 绘制色号（根据实际的格子大小调整字号）
-            if (cellWidth >= 15 && cellHeight >= 15) {
-              // 根据色块颜色自动选择文字颜色
-              const isLight = this.isLightColor(cell.markHex);
+            // 绘制色号
+            if (width >= 15 && height >= 15) {
+              const isLight = this.isLightColor(segment.markHex);
               ctx.fillStyle = isLight ? '#333' : '#fff';
-              // 使用实际的 cellWidth 来计算字号，确保文字适应格子大小
-              const fontSize = Math.max(8, Math.min(cellWidth, cellHeight) * 0.35);
+              const fontSize = Math.max(8, Math.min(width, height) * 0.35);
               ctx.font = `bold ${fontSize.toFixed(0)}px sans-serif`;
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
-              ctx.fillText(this.formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
+              ctx.fillText(this.formatMarkCode(segment.markCode), x + width / 2, y + height / 2);
+            }
+          }
+        } else {
+          // 普通模式：使用 gridData 绘制
+          // 跳过 isRegionMember 的格子（它们会被根格子覆盖）
+          for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < cols; col++) {
+              const cell = gridData[row] && gridData[row][col];
+              // 跳过无效格子或区域成员格子
+              if (!cell || !cell.markCode || cell.isRegionMember) continue;
+
+              // 使用格子的实际宽高（合并后），并进行缩放
+              const cellWidth = (cell.width || gridSize) * exportScale;
+              const cellHeight = (cell.height || gridSize) * exportScale;
+
+              const x = offsetX + col * gridSize * exportScale;
+              const y = offsetY + row * gridSize * exportScale;
+
+              // 绘制色块
+              ctx.fillStyle = cell.markHex;
+              ctx.fillRect(x, y, cellWidth, cellHeight);
+
+              // 绘制色号（根据实际的格子大小调整字号）
+              if (cellWidth >= 15 && cellHeight >= 15) {
+                // 根据色块颜色自动选择文字颜色
+                const isLight = this.isLightColor(cell.markHex);
+                ctx.fillStyle = isLight ? '#333' : '#fff';
+                // 使用实际的 cellWidth 来计算字号，确保文字适应格子大小
+                const fontSize = Math.max(8, Math.min(cellWidth, cellHeight) * 0.35);
+                ctx.font = `bold ${fontSize.toFixed(0)}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
+              }
             }
           }
         }

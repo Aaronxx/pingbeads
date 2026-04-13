@@ -4,11 +4,18 @@
   <view class="top-fixed-bar">
     <!-- 按钮行：宽度90% -->
     <view class="button-row">
-      <!-- 左侧按钮：选择图片 + 设置 -->
+      <!-- 左侧按钮：选择图片 + 原图模式 + 设置 -->
       <view class="button-left">
         <imagePicker id="image-picker" bind:imageSelected="onImageSelected" bind:imageCleared="onImageCleared" />
-        <!-- 左侧设置：网格和合并 -->
-        <view class="setting-items-left" wx:if="{{imagePath}}">
+        <!-- 原图模式切换 -->
+        <view class="setting-item" wx:if="{{imagePath}}">
+          <view class="picker-box mode-switch {{processMode === 'mosaic' ? 'active' : ''}}" bindtap="toggleProcessMode">
+            <text class="picker-label">原图</text>
+            <text class="picker-value">{{processMode === 'mosaic' ? '马赛克' : '卡通'}}</text>
+          </view>
+        </view>
+        <!-- 左侧设置：网格和色彩（仅卡通模式显示） -->
+        <view class="setting-items-left" wx:if="{{imagePath && processMode === 'cartoon'}}">
           <view class="setting-item">
             <picker mode="selector" range="{{gridOptions}}" range-key="name" value="{{gridOptionIndex}}" bindchange="onGridSizeChange">
               <view class="picker-box">
@@ -20,7 +27,7 @@
           <view class="setting-item">
             <picker mode="selector" range="{{thresholdOptions}}" range-key="name" value="{{thresholdOptionIndex}}" bindchange="onThresholdChange">
               <view class="picker-box">
-                <text class="picker-label">合并</text>
+                <text class="picker-label">色彩</text>
                 <text class="picker-value">{{thresholdOptions[thresholdOptionIndex].name}}</text>
               </view>
             </picker>
@@ -81,6 +88,7 @@
         imagePath="{{imagePath}}"
         gridSize="{{gridSize}}"
         mergeThreshold="{{mergeThreshold}}"
+        processMode="{{processMode}}"
         highlightCode="{{highlightCode}}"
         showCode="{{showCode}}"
         previewQuality="{{previewQuality}}"

@@ -291,6 +291,20 @@ page {
   min-width: 80rpx;
 }
 
+/* 智能模式切换按钮 */
+.picker-box.mode-switch {
+  background: linear-gradient(135deg, #e0e0e0 0%, #d0d0d0 100%);
+}
+
+.picker-box.mode-switch.active {
+  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+}
+
+.picker-box.mode-switch.active .picker-label,
+.picker-box.mode-switch.active .picker-value {
+  color: #fff;
+}
+
 .picker-label {
   font-size: 18rpx;
   color: var(--text-muted);
