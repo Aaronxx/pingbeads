@@ -362,7 +362,7 @@ Page({
   // 导出 PNG - 完整导出马赛克图+色号+统计
   exportPNG() {
     if (!this.data.mosaicData) {
-      wx.showToast({ title: '请先生成马赛克', icon: 'none' });
+      wx.showToast({ title: '请先生成拼豆图纸', icon: 'none' });
       return;
     }
 
@@ -385,13 +385,14 @@ Page({
     }
 
     const exportData = mosaicCanvas.getExportData();
+
     const { cols, rows, gridSize } = exportData.gridInfo;
     const gridData = exportData.gridData;
     const segments = exportData.segments;
 
     // 智能模式或普通模式都需要有数据
     if (!gridData && !segments) {
-      wx.showToast({ title: '请先生成马赛克', icon: 'none' });
+      wx.showToast({ title: '请先生成拼豆图纸', icon: 'none' });
       this.setData({ isExporting: false });
       return;
     }
@@ -401,23 +402,31 @@ Page({
 
     // 直接从 flatCells 获取统计结果
     const stats = this.data.flatCells || { sortedByCount: [] };
-    
-    // 增大分辨率：导出时使用更大的格子
-    // 限制最大导出尺寸在 4096 像素内，避免 Canvas 2D 导出失败
-    const exportScale = 2;  // 放大2倍，保证在尺寸限制内
-    const exportGridSize = gridSize * exportScale;
-    
-    // 计算尺寸
-    const mosaicWidth = cols * exportGridSize;
-    const mosaicHeight = rows * exportGridSize;
-    
-    // 统计行：显示所有颜色，按数量排序
+
+    // 统计行：显示所有颜色，按数量排序（需要先计算statsHeight）
     const statsList = stats.sortedByCount;
     const itemsPerRow = 10;  // 每行10个，与图片等宽
     const statsItemHeight = 50; // 统计项高度
     const statsItemCount = statsList.length;
     const statsRowCount = Math.ceil(statsItemCount / itemsPerRow);
     const statsHeight = statsItemHeight * statsRowCount + 20;
+
+    // 增大分辨率：导出时使用更大的格子
+    // 动态计算放大倍数，限制最大导出尺寸在 4000 像素内，避免 Canvas 2D 导出失败
+    const maxExportDimension = 4000;
+    const baseWidth = cols * gridSize + 40; // 加上左侧标尺
+    const baseHeight = rows * gridSize + 30 + statsHeight; // 加上顶部标尺和统计行
+
+    // 计算合适的放大倍数，确保最长边不超过限制
+    const scaleX = maxExportDimension / baseWidth;
+    const scaleY = maxExportDimension / baseHeight;
+    const exportScale = Math.min(2, Math.max(1, Math.min(scaleX, scaleY)));
+
+    const exportGridSize = gridSize * exportScale;
+
+    // 计算尺寸
+    const mosaicWidth = cols * exportGridSize;
+    const mosaicHeight = rows * exportGridSize;
 
     // 标尺区域尺寸
     const rulerWidth = 40;   // 左侧标尺宽度
@@ -521,10 +530,11 @@ Page({
             ctx.fillRect(x, y, width, height);
 
             // 绘制色号
-            if (width >= 15 && height >= 15) {
+            if (width >= 8 && height >= 8) {
               const isLight = this.isLightColor(segment.markHex);
               ctx.fillStyle = isLight ? '#333' : '#fff';
-              const fontSize = Math.max(8, Math.min(width, height) * 0.35);
+              // 马赛克模式：色块通常较小，使用更大的比例和更小的最小值
+              const fontSize = Math.max(4, Math.min(width, height) * 0.35);
               ctx.font = `bold ${fontSize.toFixed(0)}px sans-serif`;
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
@@ -552,7 +562,7 @@ Page({
               ctx.fillRect(x, y, cellWidth, cellHeight);
 
               // 绘制色号（根据实际的格子大小调整字号）
-              if (cellWidth >= 15 && cellHeight >= 15) {
+              if (cellWidth >= 8 && cellHeight >= 8) {
                 // 根据色块颜色自动选择文字颜色
                 const isLight = this.isLightColor(cell.markHex);
                 ctx.fillStyle = isLight ? '#333' : '#fff';
@@ -641,17 +651,13 @@ Page({
         this.drawWatermark(ctx, canvasWidth, canvasHeight);
 
         // 导出图片 - Canvas 2D 需要延迟等待渲染完成
-        // 延长等待时间到 1 秒，确保大图也能导出成功
-        
-
+        // 延长等待时间到 3 秒，确保大图也能导出成功
         setTimeout(() => {
           const exportOptions = {
             success: (res) => {
-              
               that.saveToPhotoAlbum(res.tempFilePath);
             },
             fail: (err) => {
-              
               wx.showToast({ title: '导出失败，请重试' + JSON.stringify(err), icon: 'none' });
               that.setData({ isExporting: false });
             }
@@ -664,8 +670,13 @@ Page({
             exportOptions.canvasId = that.data.canvasId;
           }
 
-          wx.canvasToTempFilePath(exportOptions, that);
-        }, 3000); // 1秒等待
+          try {
+            wx.canvasToTempFilePath(exportOptions, that);
+          } catch (e) {
+            wx.showToast({ title: '导出失败，请重试', icon: 'none' });
+            that.setData({ isExporting: false });
+          }
+        }, 3000); // 3秒等待
       });
   },
 
@@ -792,7 +803,7 @@ Page({
     const gridData = exportData.gridData;
 
     if (!gridData) {
-      wx.showToast({ title: '请先生成马赛克', icon: 'none' });
+      wx.showToast({ title: '请先生成拼豆图纸', icon: 'none' });
       this.setData({ isExporting: false });
       return;
     }
@@ -830,28 +841,26 @@ Page({
         this.drawWatermark(ctx, width, height);
 
         // 导出 - Canvas 2D 需要延迟等待渲染完成
-        // 延长等待时间到 1 秒，确保大图也能导出成功
+        // 延长等待时间到 3 秒，确保大图也能导出成功
         setTimeout(() => {
           wx.canvasToTempFilePath({
             canvas: canvas,
             success: (res) => {
-              
               that.saveToPhotoAlbum(res.tempFilePath);
             },
             fail: (err) => {
-              
               wx.showToast({ title: '导出失败，请重试', icon: 'none' });
               that.setData({ isExporting: false });
             }
           }, that);
-        }, 3000); // 1秒等待
+        }, 3000); // 3秒等待
       });
   },
 
   // 分享给好友
   onShareAppMessage() {
     return {
-      title: 'Mark 色彩马赛克 - 图片转珠子图案',
+      title: '卡通/马赛克图转拼豆图纸',
       path: '/pages/index/index'
     };
   },
@@ -965,7 +974,7 @@ Page({
       const gridData = exportData.gridData;
       
       if (!gridData) {
-        wx.showToast({ title: '请先生成马赛克', icon: 'none' });
+        wx.showToast({ title: '请先生成拼豆图纸', icon: 'none' });
         that.setData({ isExporting: false });
         return;
       }

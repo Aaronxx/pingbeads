@@ -57,7 +57,7 @@ D:\workspace\pinbeans\miniprogram\
 
 ## 项目概述
 
-这是一个微信小程序，用于将普通图片转换为 Mark（拼豆/米珠）色彩的马赛克图案。用户可以选择图片，调整参数，生成马赛克预览，并导出颜色清单用于购买珠子。
+这是一个微信小程序，用于将普通图片转换为 Mark（拼豆/米珠）色彩的马赛克图案。用户可以选择图片，调整参数，生成拼豆图纸预览，并导出颜色清单用于购买珠子。
 
 ### 核心功能
 1. **图片选择** - 从相册或相机选择图片
@@ -82,7 +82,7 @@ miniprogram/
 │   │   └── statsCalculator.js # 统计计算
 │   ├── components/
 │   │   ├── imagePicker/       # 图片选择组件
-│   │   ├── mosaicCanvas/      # 马赛克画布组件
+│   │   ├── mosaicCanvas/      # 拼豆图纸画布组件
 │   │   └── colorStats/         # 颜色统计组件
 │   └── pages/
 │       └── index/              # 主页面
@@ -187,7 +187,7 @@ function rgbToMark(r, g, b) {
 
 **文件位置**: `src/utils/imageProcessor.js`
 
-**功能**: 处理图像像素，生成马赛克数据（当前未被主要组件使用，仅供参考）
+**功能**: 处理图像像素，生成拼豆图纸数据（当前未被主要组件使用，仅供参考）
 
 **核心函数**:
 
@@ -201,7 +201,7 @@ const qr = Math.floor(r / 8) * 8;
 ```
 
 #### generateMosaic(options)
-生成马赛克图像数据
+生成拼豆图纸数据
 ```javascript
 /**
  * @param {Object} options
@@ -240,7 +240,7 @@ function generateMosaic(options) {
 #### calculateStats(mosaicData)
 ```javascript
 /**
- * @param {Object} mosaicData - 马赛克数据对象
+ * @param {Object} mosaicData - 拼豆图纸数据对象
  * @returns {Object}
  * {
  *   colorCount: number,      // 颜色种类数
@@ -338,7 +338,7 @@ Component({
   canvasWidth: 300,
   canvasHeight: 300,
   isProcessing: false,
-  gridInfo: null,         // 马赛克数据 {gridData, cols, rows, gridSize}
+  gridInfo: null,         // 拼豆图纸数据 {gridData, cols, rows, gridSize}
   isFullscreen: false,
   scale: 1,
   flatCells: []           // 扁平化的格子数组，用于渲染
@@ -348,7 +348,7 @@ Component({
 **核心方法**:
 
 ##### processImage(imagePath)
-处理图片，生成马赛克
+处理图片，生成拼豆图纸
 ```javascript
 processImage(imagePath) {
   // 1. 调用 wx.getImageInfo 获取图片信息
@@ -363,7 +363,7 @@ processImage(imagePath) {
 2. **节点查询** - 使用 wx.createSelectorQuery
 
 ##### generateMosaicPseudo(srcWidth, srcHeight, destWidth, destHeight, gridSize)
-**当前使用的主要方法** - 由于微信小程序 Canvas 2D API 限制无法获取真实像素数据，使用伪随机算法生成马赛克
+**当前使用的主要方法** - 由于微信小程序 Canvas 2D API 限制无法获取真实像素数据，使用伪随机算法生成拼豆图纸
 
 ```javascript
 generateMosaicPseudo(srcWidth, srcHeight, destWidth, destHeight, gridSize) {
@@ -420,7 +420,7 @@ mergeRegions(gridData, rows, cols, threshold) {
         bindtouchmove="handleTouchMove"
         bindtouchend="handleTouchEnd">
 
-    <!-- 马赛克格子 -->
+    <!-- 拼豆图纸格子 -->
     <view class="mosaic-grid">
       <view wx:for="{{flatCells}}" wx:key="index"
             style="left: {{item.x}}px; top: {{item.y}}px; width: {{gridInfo.gridSize}}px; height: {{gridInfo.gridSize}}px; background-color: {{item.markHex}};"
@@ -443,7 +443,7 @@ mergeRegions(gridData, rows, cols, threshold) {
 ```javascript
 Component({
   properties: {
-    mosaicData: Object,    // 马赛克数据
+    mosaicData: Object,    // 拼豆图纸数据
     highlightCode: String  // 高亮色号
   },
 
@@ -495,7 +495,7 @@ Component({
 data: {
   currentStep: 1,          // 当前步骤
   imagePath: '',           // 图片路径
-  mosaicData: null,        // 马赛克数据
+  mosaicData: null,        // 拼豆图纸数据
   highlightCode: null,     // 高亮色号
   showCode: false,         // 是否显示色号
   gridSize: 10,           // 网格大小
@@ -534,7 +534,7 @@ tryGetPixels() 尝试获取像素数据
     ↓
 失败 → generateMosaicWithImage()
     ↓
-generateMosaicPseudo() 伪随机生成马赛克
+generateMosaicPseudo() 伪随机生成拼豆图纸
     ↓
 mergeRegions() 颜色合并
     ↓
@@ -562,7 +562,7 @@ calculateStats() 计算统计
 - `wx.canvasGetImageData` 需要同源图片
 - `OffscreenCanvas.getImageData` 在小程序中支持有限
 
-**当前解决方案**: 使用伪随机算法生成马赛克（基于图片尺寸的 seed）
+**当前解决方案**: 使用伪随机算法生成拼豆图纸（基于图片尺寸的 seed）
 
 **改进方向**:
 - 将图片先保存到本地临时文件再读取

@@ -199,7 +199,14 @@ Component({
       let result;
       if (this.data.processMode === 'mosaic') {
         // 智能模式：扫描线识别马赛克色块
-        result = processWithSmartRegions(pixelData, cachedWidth, cachedHeight, qualityGridSize);
+        try {
+          result = processWithSmartRegions(pixelData, cachedWidth, cachedHeight, qualityGridSize);
+        } catch (e) {
+          console.error('马赛克模式处理失败:', e);
+          wx.showToast({ title: '处理失败，请重试', icon: 'none' });
+          this.setData({ isProcessing: false });
+          return;
+        }
 
         // 保存色块区域数据
         this.cachedSegments = result.segments;
@@ -550,7 +557,14 @@ Component({
       // 根据处理模式选择不同的处理方法
       let result;
       if (this.data.processMode === 'mosaic') {
-        result = processWithSmartRegions(pixelData, width, height, qualityGridSize);
+        try {
+          result = processWithSmartRegions(pixelData, width, height, qualityGridSize);
+        } catch (e) {
+          console.error('马赛克模式处理失败:', e);
+          wx.showToast({ title: '处理失败，请重试', icon: 'none' });
+          this.setData({ isProcessing: false });
+          return;
+        }
 
         // 保存色块区域数据
         this.cachedSegments = result.segments;

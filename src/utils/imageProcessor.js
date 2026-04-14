@@ -643,9 +643,12 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
  * @param {Uint8ClampedArray} pixelData - 像素数据
  * @param {number} width - 图像宽度
  * @param {number} height - 图像高度
+ * @param {object} options - 选项
+ *   - tolerance: 颜色相似度容差，默认25
  * @returns {object} 检测结果，包含色块大小和有效范围
  */
-function autoDetectBlockSize(pixelData, width, height) {
+function autoDetectBlockSize(pixelData, width, height, options = {}) {
+  const defaultTolerance = options.tolerance !== undefined ? options.tolerance : 25;
   try {
   // 辅助函数：获取像素颜色
   function getPixelColor(x, y) {
@@ -655,8 +658,10 @@ function autoDetectBlockSize(pixelData, width, height) {
   }
 
   // 辅助函数：判断两个颜色是否相似（使用欧氏距离，更准确）
-  // 容差越大，越容易将相近颜色视为相同，可过滤掉原图中的参考线等噪点
-  function isSameColor(c1, c2, tolerance = 50) {
+  // 容差越小，对颜色变化越敏感
+  // 容差25：适合大多数马赛克图（包括有/无分界线）
+  // 容差50：适合有明显黑色分界线的马赛克原图
+  function isSameColor(c1, c2, tolerance = defaultTolerance) {
     if (!c1 || !c2) return false;
     const dist = Math.sqrt(
       Math.pow(c1.r - c2.r, 2) +
@@ -690,6 +695,26 @@ function autoDetectBlockSize(pixelData, width, height) {
     return mode;
   }
 
+  // 判断是否有分界线：采样检测是否有大量接近黑色的像素（分界线通常是黑色）
+  let darkPixelCount = 0;
+  let sampleCount = 0;
+  for (let y = 0; y < Math.min(height, 50); y += 5) {
+    for (let x = 0; x < Math.min(width, 100); x += 5) {
+      const idx = (y * width + x) * 4;
+      const r = pixelData[idx];
+      const g = pixelData[idx + 1];
+      const b = pixelData[idx + 2];
+      // 检测接近黑色的像素（RGB都小于50）
+      if (r < 50 && g < 50 && b < 50) {
+        darkPixelCount++;
+      }
+      sampleCount++;
+    }
+  }
+  const darkPixelRatio = sampleCount > 0 ? darkPixelCount / sampleCount : 0;
+  // 如果有大量黑色像素，说明有分界线
+  const hasGridLines = darkPixelRatio > 0.05; // 超过5%的黑色像素
+
   // 收集所有距离值和变化点数量
   const hDistances = [];
   const vDistances = [];
@@ -697,7 +722,8 @@ function autoDetectBlockSize(pixelData, width, height) {
   const vChangesCounts = []; // 每条垂直线的变化点数量
 
   // 扫描多条水平线（扫描整行，从0到width-1）
-  const hScanCount = 20;
+  // 增加扫描线数量到30，提高检测准确性
+  const hScanCount = 30;
   for (let i = 0; i < hScanCount; i++) {
     const y = Math.floor(height * i / (hScanCount - 1));
     const changes = [];
@@ -718,15 +744,15 @@ function autoDetectBlockSize(pixelData, width, height) {
     // 计算相邻变化点之间的距离
     for (let i = 1; i < changes.length; i++) {
       const dist = changes[i] - changes[i - 1];
-      // 保留合理范围的值
-      if (dist >= 5 && dist <= 20) {
+      // 扩大范围以适应不同大小的格子（3-50像素）
+      if (dist >= 3 && dist <= 50) {
         hDistances.push(dist);
       }
     }
   }
 
   // 扫描多条垂直线（扫描整列，从0到height-1）
-  const vScanCount = 20;
+  const vScanCount = 30;
   for (let i = 0; i < vScanCount; i++) {
     const x = Math.floor(width * i / (vScanCount - 1));
     const changes = [];
@@ -747,8 +773,8 @@ function autoDetectBlockSize(pixelData, width, height) {
     // 计算相邻变化点之间的距离
     for (let i = 1; i < changes.length; i++) {
       const dist = changes[i] - changes[i - 1];
-      // 保留合理范围的值
-      if (dist >= 5 && dist <= 20) {
+      // 扩大范围以适应不同大小的格子（3-50像素）
+      if (dist >= 3 && dist <= 50) {
         vDistances.push(dist);
       }
     }
@@ -758,9 +784,9 @@ function autoDetectBlockSize(pixelData, width, height) {
   const hMode = findMode(hDistances) || 10;
   const vMode = findMode(vDistances) || 10;
 
-  // 色块大小 = 相邻距离的众数
-  let blockSize = (hMode + vMode) / 2;
-  if (!blockSize || blockSize === 0) blockSize = 10;
+  // 限制色块大小在合理范围（5-30像素）
+  // 限制色块大小在合理范围（8-30像素）
+  const blockSize = Math.max(8, Math.min(30, Math.round((hMode + vMode) / 2)));
 
   const primarySize = blockSize;
 
@@ -790,6 +816,7 @@ function autoDetectBlockSize(pixelData, width, height) {
     vMode,
     hColsMode,
     vRowsMode,
+    hasGridLines,
     validRange: {
       startX: validStartX,
       endX: validEndX,
@@ -824,6 +851,7 @@ function autoDetectBlockSize(pixelData, width, height) {
       vMode: 10,
       hColsMode: 136,
       vRowsMode: 148,
+      hasGridLines: false,
       validRange: {
         startX: 0,
         endX: width,
@@ -869,14 +897,26 @@ function processWithSmartRegions(pixelData, width, height, gridSize, options = {
   }
 
   // 自动检测色块大小和有效范围
-  const { primarySize, secondarySize, rawBlockSize, hMode, vMode, hColsMode, vRowsMode, validRange, debug } = autoDetectBlockSize(pixelData, width, height);
+  const { primarySize, secondarySize, rawBlockSize, hMode, vMode, hColsMode, vRowsMode, hasGridLines, validRange, debug } = autoDetectBlockSize(pixelData, width, height);
   const actualGridSize = primarySize || gridSize; // 使用检测值或回退到预设值
+
+
+  // 根据是否有分界线选择不同的计算方法
+  let cols, rows;
+  if (hasGridLines) {
+    // 有分界线：使用扫描线算法检测到的格子数量
+    cols = validRange.cols;
+    rows = validRange.rows;
+  } else {
+    // 无分界线：直接用格子大小除图像尺寸
+    cols = Math.ceil(width / actualGridSize);
+    rows = Math.ceil(height / actualGridSize);
+  }
 
   // 使用检测到的有效范围
   const startX = validRange.startX;
   const startY = validRange.startY;
-  const cols = validRange.cols;
-  const rows = validRange.rows;
+
 
   // 大区检测暂时禁用，等采样方法稳定后再启用
   let largeRegionSize = null;
@@ -936,7 +976,10 @@ function processWithSmartRegions(pixelData, width, height, gridSize, options = {
 
       // 如果没有有效颜色，使用默认灰色
       if (colors.length === 0) {
-        const markColor = findMark({ r: 128, g: 128, b: 128 });
+        let markColor = findMark({ r: 128, g: 128, b: 128 });
+        if (!markColor || !markColor.code) {
+          markColor = { code: 'M001', hex: '#CCCCCC', rgb: { r: 204, g: 204, b: 204 } };
+        }
         segments.push({
           id: segmentId++,
           x: cellStartX,
@@ -997,7 +1040,11 @@ function processWithSmartRegions(pixelData, width, height, gridSize, options = {
       }
 
       // 映射到 MARD 色号
-      const markColor = findMark(finalColor);
+      let markColor = findMark(finalColor);
+      // 防御：如果找不到颜色，使用默认值
+      if (!markColor || !markColor.code) {
+        markColor = { code: 'M001', hex: '#CCCCCC', rgb: { r: 204, g: 204, b: 204 } };
+      }
 
       segments.push({
         id: segmentId++,

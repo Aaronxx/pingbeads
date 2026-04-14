@@ -100,7 +100,7 @@
       <!-- 空状态 -->
       <view wx:else class="placeholder">
         <text class="placeholder-icon">🎨</text>
-        <text class="placeholder-text">选择图片生成马赛克</text>
+        <text class="placeholder-text">选择图片生成拼豆图纸</text>
       </view>
     </view>
   </view>
