@@ -1947,21 +1947,12 @@ function convertSegmentsToGridData(segments, cols, rows, gridSize) {
 }
 
 module.exports = {
-  kMeansClustering,
-  medianCut,
-  processImageData,
   processSimple,
-  aggregateSimilarColors,
   processWithSmartRegions,
-  autoDetectBlockSize,
   colorDistance,
-  simpleBlur,
-  floydSteinbergDithering,
-  detectEdgeColor,
   detectEdgeColorFromGrid,
   detectEdgeColorFromSegments,
   filterEdgeSegments,
-  findCropBoundary,
   filterEdgeBlocks,
   cropMosaicData,
   findCropBoundaryFromGrid,

@@ -1,6 +1,5 @@
 // components/mosaicCanvas/mosaicCanvas.js
-const { processSimple, aggregateSimilarColors, processWithSmartRegions, detectEdgeColor, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, findCropBoundary, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData } = require('../../utils/imageProcessor');
-const { findClosestMarkColor } = require('../../utils/colorMapper');
+const { processSimple, processWithSmartRegions, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData } = require('../../utils/imageProcessor');
 
 // 大区常量：每个大区包含 10x10 个色块
 const REGION_SIZE = 10;
@@ -148,7 +147,7 @@ Component({
       }
     },
     // 监听 scale 变化，重新渲染 Canvas
-    'scale': function(newScale) {
+    'scale': function() {
 
       // 当 scale 变化时，重新渲染 Canvas
       // 使用 cachedGridData 渲染
@@ -229,7 +228,6 @@ Component({
             }
           }
         }
-        console.log('[马赛克裁剪] rows:', result.rows, 'cols:', result.cols, 'edgeCount:', edgeCount, 'nonEdgeCount:', nonEdgeCount);
 
         if (nonEdgeCount > 0) {
           hasExistingIsEdge = edgeCount > 0;
@@ -237,13 +235,11 @@ Component({
 
         if (hasExistingIsEdge) {
           const contentBoundary = findCropBoundaryFromGrid(gridData, result.rows, result.cols);
-          console.log('[马赛克裁剪] contentBoundary:', contentBoundary);
           if (contentBoundary.hasContent) {
             const cropResult = cropMosaicData(
               { gridData: gridData, rows: result.rows, cols: result.cols, gridSize: result.gridSize },
               contentBoundary
             );
-            console.log('[马赛克裁剪] cropResult:', cropResult.rows, 'x', cropResult.cols);
             if (cropResult.gridData) {
               gridData.splice(0, gridData.length, ...cropResult.gridData);
               result.rows = cropResult.rows;
@@ -493,7 +489,7 @@ Component({
         success(res) {
           const systemInfo = wx.getSystemInfoSync();
           const maxPreviewWidth = systemInfo.windowWidth * 0.81;
-          
+
           let displayWidth = maxPreviewWidth;
           let displayHeight = (res.height / res.width) * displayWidth;
           
@@ -552,8 +548,6 @@ Component({
     },
 
     processPixelDataFallback(imagePath, width, height, gridSize) {
-      const that = this;
-      
       const query = wx.createSelectorQuery();
       query.select('#pixel-canvas')
         .fields({ node: true, size: true })
@@ -596,8 +590,6 @@ Component({
 
       // 尝试获取像素数据进行边缘检测
       let pixelData = this.getCachedPixelData();
-      const pixelWidth = this.cachedWidth || width;
-      const pixelHeight = this.cachedHeight || height;
 
       // 根据处理模式选择不同的处理方法
       let result;
@@ -629,7 +621,6 @@ Component({
             }
           }
         }
-        console.log('[马赛克裁剪] rows:', result.rows, 'cols:', result.cols, 'edgeCount:', edgeCount, 'nonEdgeCount:', nonEdgeCount);
 
         if (nonEdgeCount > 0) {
           hasExistingIsEdge = edgeCount > 0;
@@ -637,13 +628,11 @@ Component({
 
         if (hasExistingIsEdge) {
           const contentBoundary = findCropBoundaryFromGrid(gridData, result.rows, result.cols);
-          console.log('[马赛克裁剪] contentBoundary:', contentBoundary);
           if (contentBoundary.hasContent) {
             const cropResult = cropMosaicData(
               { gridData: gridData, rows: result.rows, cols: result.cols, gridSize: result.gridSize },
               contentBoundary
             );
-            console.log('[马赛克裁剪] cropResult:', cropResult.rows, 'x', cropResult.cols);
             if (cropResult.gridData) {
               gridData.splice(0, gridData.length, ...cropResult.gridData);
               result.rows = cropResult.rows;
@@ -773,7 +762,7 @@ Component({
       });
     },
 
-    processPixelData(pixelData, width, height, gridSize) {
+    processPixelData(pixelData, width, height) {
       this.setData({ isProcessing: true });
 
       const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
@@ -815,7 +804,6 @@ Component({
             }
           }
         }
-        console.log('[马赛克裁剪] rows:', result.rows, 'cols:', result.cols, 'edgeCount:', edgeCount, 'nonEdgeCount:', nonEdgeCount);
 
         if (nonEdgeCount > 0) {
           hasExistingIsEdge = edgeCount > 0;
@@ -823,13 +811,11 @@ Component({
 
         if (hasExistingIsEdge) {
           const contentBoundary = findCropBoundaryFromGrid(gridData, result.rows, result.cols);
-          console.log('[马赛克裁剪] contentBoundary:', contentBoundary);
           if (contentBoundary.hasContent) {
             const cropResult = cropMosaicData(
               { gridData: gridData, rows: result.rows, cols: result.cols, gridSize: result.gridSize },
               contentBoundary
             );
-            console.log('[马赛克裁剪] cropResult:', cropResult.rows, 'x', cropResult.cols);
             if (cropResult.gridData) {
               gridData.splice(0, gridData.length, ...cropResult.gridData);
               result.rows = cropResult.rows;
@@ -1123,7 +1109,6 @@ Component({
 
     // 绘制参考线（只绘制可见区域内的）
     drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow) {
-      const lineSpacing = 10 * gridSize * scale;
       const lineColor = 'rgba(70, 130, 180, 0.8)';
       const lineWidth = 1;
       const cellSize = gridSize * scale;
@@ -1476,8 +1461,6 @@ Component({
       const gridData = this.cachedGridData;
 
       // 获取替换目标色号的信息
-      const colorPalettes = require('../../data/colorPalettes.js');
-      const colorMapping = colorPalettes.colorMapping;
       const toColorHex = this._findColorHexByCode(toCode);
 
       if (!toColorHex) {

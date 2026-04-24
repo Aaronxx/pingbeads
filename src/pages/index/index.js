@@ -130,7 +130,7 @@ Page({
 
   // 点击颜色色号回调
   onCodeClick(e) {
-    const { code, hex } = e.detail;
+    const { code } = e.detail;
     this.setData({ highlightCode: code });
   },
 
@@ -686,7 +686,7 @@ Page({
             success: (res) => {
               that.saveToPhotoAlbum(res.tempFilePath);
             },
-            fail: (err) => {
+            fail: () => {
               wx.showToast({ title: '导出失败，请重试' + JSON.stringify(err), icon: 'none' });
               that.setData({ isExporting: false });
             }
@@ -828,7 +828,8 @@ Page({
     }
 
     const exportData = mosaicCanvas.getExportData();
-    const { rows, cols, gridSize } = exportData.gridInfo;
+    const { rows, cols } = exportData.gridInfo;
+    const gridSize = exportData.gridInfo.gridSize || 10;
     const gridData = exportData.gridData;
 
     if (!gridData) {
@@ -877,7 +878,7 @@ Page({
             success: (res) => {
               that.saveToPhotoAlbum(res.tempFilePath);
             },
-            fail: (err) => {
+            fail: () => {
               wx.showToast({ title: '导出失败，请重试', icon: 'none' });
               that.setData({ isExporting: false });
             }
@@ -896,7 +897,6 @@ Page({
 
   // 绘制导出图片的参考线
   drawExportGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize) {
-    const lineSpacing = 10 * gridSize;
     const lineColor = 'rgba(70, 130, 180, 0.8)'; // 更深更明显的钢蓝色
     const lineWidth = 3;
 
@@ -999,7 +999,7 @@ Page({
       }
       
       const exportData = mosaicCanvas.getExportData();
-      const { rows, cols, gridSize } = exportData.gridInfo;
+      const { rows, cols } = exportData.gridInfo;
       const gridData = exportData.gridData;
       
       if (!gridData) {
@@ -1043,7 +1043,7 @@ Page({
             success: (res) => {
               that.saveToPhotoAlbum(res.tempFilePath);
             },
-            fail: (err) => {
+            fail: () => {
               
               if (retryCount < maxRetries) {
                 that.exportWithCanvasId(width, height, retryCount + 1);
