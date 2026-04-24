@@ -829,7 +829,6 @@ Page({
 
     const exportData = mosaicCanvas.getExportData();
     const { rows, cols } = exportData.gridInfo;
-    const gridSize = exportData.gridInfo.gridSize || 10;
     const gridData = exportData.gridData;
 
     if (!gridData) {
@@ -979,8 +978,7 @@ Page({
     const letter = match[1];
     const num = parseInt(match[2], 10);
     // 还原为标准格式（可能需要前导0）
-    const code = num < 10 ? `${letter}0${num}` : `${letter}${num}`;
-    return code;
+    return num < 10 ? `${letter}0${num}` : `${letter}${num}`;
   },
 
   // 使用 canvasId 导出（真机调试兼容方案）

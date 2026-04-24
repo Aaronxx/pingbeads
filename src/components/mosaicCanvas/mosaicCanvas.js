@@ -488,9 +488,8 @@ Component({
         src: imagePath,
         success(res) {
           const systemInfo = wx.getSystemInfoSync();
-          const maxPreviewWidth = systemInfo.windowWidth * 0.81;
 
-          let displayWidth = maxPreviewWidth;
+          let displayWidth = systemInfo.windowWidth * 0.81;
           let displayHeight = (res.height / res.width) * displayWidth;
           
           const maxHeight = systemInfo.windowHeight * 0.6;
@@ -583,7 +582,7 @@ Component({
         });
     },
 
-    processWithSimpleAlgorithm(width, height, gridSize) {
+    processWithSimpleAlgorithm(width, height, _gridSize) {
       this.setData({ isProcessing: false });
 
       const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
@@ -1220,8 +1219,7 @@ Component({
       const letter = match[1];
       const num = parseInt(match[2], 10);
       // 还原为标准格式（可能需要前导0）
-      const code = num < 10 ? `${letter}0${num}` : `${letter}${num}`;
-      return code;
+      return num < 10 ? `${letter}0${num}` : `${letter}${num}`;
     },
 
     // 重试渲染（延迟执行）

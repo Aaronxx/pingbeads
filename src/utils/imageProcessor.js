@@ -510,7 +510,7 @@ function autoDetectBlockSize(pixelData, width, height, options = {}) {
   const validWidth = validEndX - validStartX;
   const validHeight = validEndY - validStartY;
 
-  const result = {
+  return {
     primarySize: primarySize,
     secondarySize: null,
     // 原始检测值
@@ -543,7 +543,6 @@ function autoDetectBlockSize(pixelData, width, height, options = {}) {
       rows: rows
     }
   };
-  return result;
   } catch (e) {
     // 返回默认值
     return {
@@ -1401,7 +1400,7 @@ function processWithSmartRegions(pixelData, width, height, gridSize) {
     // 双层分界线检测结果
     detectedBlockSize: primarySize, // 小色块大小
     largeRegionSize: largeRegionSize, // 8*8 或 10*10 的大区尺寸
-    hasLargeRegions: !!largeRegionSize,
+    hasLargeRegions: false,
     width,
     height
   };
