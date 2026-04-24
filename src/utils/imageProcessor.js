@@ -1802,6 +1802,52 @@ function processWithSmartRegions(pixelData, width, height, gridSize, options = {
 // 快速颜色查找（内部使用）
 let fastFindClosestMarkColor;
 
+/**
+ * 将 segments 数组转换为 2D 网格 gridData
+ * 用于马赛克模式复用卡通模式的渲染代码
+ * @param {Array} segments - 色段数组
+ * @param {number} cols - 列数
+ * @param {number} rows - 行数
+ * @param {number} gridSize - 网格大小
+ * @returns {Array} 2D 网格数据
+ */
+function convertSegmentsToGridData(segments, cols, rows, gridSize) {
+  // 创建空的 2D 网格
+  const gridData = [];
+  for (let r = 0; r < rows; r++) {
+    gridData[r] = [];
+    for (let c = 0; c < cols; c++) {
+      gridData[r][c] = null;
+    }
+  }
+
+  // 将 segments 转换为 gridData
+  for (const seg of segments) {
+    if (seg.col !== undefined && seg.row !== undefined) {
+      const col = seg.col;
+      const row = seg.row;
+
+      if (row >= 0 && row < rows && col >= 0 && col < cols) {
+        gridData[row][col] = {
+          x: seg.x,
+          y: seg.y,
+          width: seg.width,
+          height: seg.height,
+          col: col,
+          row: row,
+          originalRgb: seg.avgColor,
+          markCode: seg.markCode,
+          markHex: seg.markHex,
+          markRgb: seg.markRgb,
+          isEdge: seg.isEdge || false
+        };
+      }
+    }
+  }
+
+  return gridData;
+}
+
 module.exports = {
   kMeansClustering,
   medianCut,
@@ -1819,5 +1865,6 @@ module.exports = {
   filterEdgeSegments,
   findCropBoundary,
   filterEdgeBlocks,
-  cropMosaicData
+  cropMosaicData,
+  convertSegmentsToGridData
 };
