@@ -1054,81 +1054,93 @@ function detectEdgeColorFromSegments(segments, cols, rows, threshold = 50) {
  */
 function filterEdgeSegments(segments, cols, rows, edgeColor, diffThreshold = 25) {
   if (!segments || !edgeColor) {
-    return { segments, cols, rows, cropped: false };
+    return { segments, cols, rows, cropped: false, marked: false };
   }
 
-  // 收集非边缘的 segments（主体内容）
-  const innerSegments = segments.filter(seg => {
-    if (seg.col === undefined || seg.row === undefined) return false;
-    return seg.col >= 2 && seg.col < cols - 2 && seg.row >= 2 && seg.row < rows - 2;
-  });
+  // 将 segments 转换为 2D 数组
+  const segGrid = [];
+  for (let r = 0; r < rows; r++) {
+    segGrid[r] = [];
+    for (let c = 0; c < cols; c++) {
+      segGrid[r][c] = null;
+    }
+  }
 
-  // 计算主体内容的边界
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const seg of innerSegments) {
-    if (seg.avgColor) {
-      const dist = colorDistance(seg.avgColor, edgeColor);
-      if (dist > diffThreshold) {
-        // 这是一个与边缘颜色不同的主体像素
-        minX = Math.min(minX, seg.x);
-        minY = Math.min(minY, seg.y);
-        maxX = Math.max(maxX, seg.x + seg.width);
-        maxY = Math.max(maxY, seg.y + seg.height);
+  for (const seg of segments) {
+    if (seg.col !== undefined && seg.row !== undefined) {
+      segGrid[seg.row][seg.col] = seg;
+    }
+  }
+
+  // 使用连通性判断：只有通过边缘颜色连接到图片边缘的 segments 才标记为 isEdge
+  // 1. 找出所有在边缘上且与边缘颜色相同的 segments 作为起点
+  // 2. 使用 BFS 找到所有连通的与边缘颜色相同的 segments
+  // 3. 只有这些连通的 segments 才标记为 isEdge
+
+  // 创建访问标记数组
+  const visited = [];
+  for (let r = 0; r < rows; r++) {
+    visited[r] = [];
+    for (let c = 0; c < cols; c++) {
+      visited[r][c] = false;
+    }
+  }
+
+  // BFS 队列
+  const queue = [];
+
+  // 将所有边缘上与边缘颜色相同的 segments 加入队列
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      // 只检查边缘行和列
+      if (row !== 0 && row !== rows - 1 && col !== 0 && col !== cols - 1) continue;
+
+      const seg = segGrid[row] && segGrid[row][col];
+      if (!seg || !seg.avgColor) continue;
+
+      const isSameAsEdge = colorDistance(seg.avgColor, edgeColor) <= diffThreshold;
+
+      if (isSameAsEdge && !visited[row][col]) {
+        visited[row][col] = true;
+        queue.push({ row, col });
       }
     }
   }
 
-  // 如果没有找到主体内容，不裁剪
-  if (minX === Infinity) {
-    return { segments, cols, rows, cropped: false };
+  // BFS 遍历所有连通的与边缘颜色相同的 segments
+  const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  while (queue.length > 0) {
+    const { row, col } = queue.shift();
+
+    for (const [dr, dc] of directions) {
+      const newRow = row + dr;
+      const newCol = col + dc;
+
+      if (newRow < 0 || newRow >= rows || newCol < 0 || newCol >= cols) continue;
+      if (visited[newRow][newCol]) continue;
+
+      const seg = segGrid[newRow] && segGrid[newRow][newCol];
+      if (!seg || !seg.avgColor) continue;
+
+      const isSameAsEdge = colorDistance(seg.avgColor, edgeColor) <= diffThreshold;
+
+      if (isSameAsEdge) {
+        visited[newRow][newCol] = true;
+        queue.push({ row: newRow, col: newCol });
+      }
+    }
   }
 
-  // 过滤掉边缘 segments（只保留主体内容）
-  // 计算主体内容在原始网格中的位置
-  const minCol = Math.floor(minX / (maxX / cols));
-  const minRow = Math.floor(minY / (maxY / rows));
-  const maxCol = Math.ceil(maxX / (maxX / cols));
-  const maxRow = Math.ceil(maxY / (maxY / rows));
-
-  const newCols = maxCol - minCol;
-  const newRows = maxRow - minRow;
-
-  // 过滤并重新映射坐标
-  const croppedSegments = [];
+  // 标记所有连通的 segments 为 isEdge
+  let hasMarked = false;
   for (const seg of segments) {
-    if (seg.col === undefined || seg.row === undefined) continue;
-
-    const segRight = seg.x + seg.width;
-    const segBottom = seg.y + seg.height;
-
-    // 检查是否在主体内容之外
-    const isOutsideContent = segRight <= minX || seg.x >= maxX || segBottom <= minY || seg.y >= maxY;
-
-    // 检查颜色是否与边缘颜色相似
-    let isEdge = false;
-    if (isOutsideContent && seg.avgColor) {
-      const dist = colorDistance(seg.avgColor, edgeColor);
-      isEdge = dist <= diffThreshold;
-    }
-
-    // 只保留非边缘的 segments
-    if (!isEdge) {
-      // 重新计算相对坐标
-      const newSeg = { ...seg };
-      newSeg.x = (seg.col - minCol) * (seg.width);
-      newSeg.y = (seg.row - minRow) * (seg.height);
-      newSeg.col = seg.col - minCol;
-      newSeg.row = seg.row - minRow;
-      croppedSegments.push(newSeg);
+    if (seg.row !== undefined && seg.col !== undefined) {
+      seg.isEdge = visited[seg.row][seg.col];
+      if (seg.isEdge) hasMarked = true;
     }
   }
 
-  return {
-    segments: croppedSegments,
-    cols: newCols,
-    rows: newRows,
-    cropped: true
-  };
+  return { segments, cols, rows, cropped: false, marked: hasMarked };
 }
 
 /**
