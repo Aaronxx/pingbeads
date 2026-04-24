@@ -259,15 +259,10 @@ Component({
           boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
         }
       } else {
-        // 卡通模式：使用基于原始像素的检测
-        edgeDetection = detectEdgeColor(pixelData, cachedWidth, cachedHeight, 3, 30);
-        // 卡通模式需要计算精确边界
+        // 卡通模式：使用基于网格的检测，与马赛克模式一致
+        edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
         if (edgeDetection && edgeDetection.hasEdge) {
-          boundary = findCropBoundary(pixelData, cachedWidth, cachedHeight, edgeDetection.edgeColor);
-          // 如果边界检测失败，但检测到了边缘颜色，仍然使用默认边界
-          if (!boundary.hasEdge) {
-            boundary = { hasEdge: true, top: 0, bottom: cachedHeight, left: 0, right: cachedWidth };
-          }
+          boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
         }
       }
 
@@ -598,14 +593,10 @@ Component({
             boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
           }
         } else if (pixelData && width > 0 && height > 0) {
-          // 卡通模式：使用基于原始像素的检测
-          edgeDetection = detectEdgeColor(pixelData, width, height, 3, 30);
+          // 卡通模式：使用基于网格的检测，与马赛克模式一致
+          edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
           if (edgeDetection && edgeDetection.hasEdge) {
-            boundary = findCropBoundary(pixelData, width, height, edgeDetection.edgeColor);
-            // 如果边界检测失败，但检测到了边缘颜色，仍然使用默认边界
-            if (!boundary.hasEdge) {
-              boundary = { hasEdge: true, top: 0, bottom: height, left: 0, right: width };
-            }
+            boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
           }
         }
 
@@ -717,14 +708,10 @@ Component({
             boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
           }
         } else if (pixelData && width > 0 && height > 0) {
-          // 卡通模式：使用基于原始像素的检测
-          edgeDetection = detectEdgeColor(pixelData, width, height, 3, 30);
+          // 卡通模式：使用基于网格的检测，与马赛克模式一致
+          edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
           if (edgeDetection && edgeDetection.hasEdge) {
-            boundary = findCropBoundary(pixelData, width, height, edgeDetection.edgeColor);
-            // 如果边界检测失败，但检测到了边缘颜色，仍然使用默认边界
-            if (!boundary.hasEdge) {
-              boundary = { hasEdge: true, top: 0, bottom: height, left: 0, right: width };
-            }
+            boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
           }
         }
 
