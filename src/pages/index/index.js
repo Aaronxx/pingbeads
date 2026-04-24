@@ -512,10 +512,39 @@ Page({
         const offsetX = rulerWidth;
         const offsetY = rulerHeight;
 
-        if (isMosaicMode && segments) {
-          // 智能模式：直接绘制 segments
-          const imageWidth = exportData.imageWidth || cols;
-          const imageHeight = exportData.imageHeight || rows;
+        if (isMosaicMode && gridData) {
+          // 智能模式：使用裁剪后的 gridData 绘制
+          for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < cols; col++) {
+              const cell = gridData[row] && gridData[row][col];
+              // 跳过无效格子或边缘底色格子
+              if (!cell || !cell.markCode || cell.isEdge) continue;
+
+              const x = offsetX + col * gridSize * exportScale;
+              const y = offsetY + row * gridSize * exportScale;
+              const width = (cell.width || gridSize) * exportScale;
+              const height = (cell.height || gridSize) * exportScale;
+
+              // 绘制色块
+              ctx.fillStyle = cell.markHex || '#cccccc';
+              ctx.fillRect(x, y, width, height);
+
+              // 绘制色号（降低阈值到 4 像素，确保小图也能显示色号）
+              if (width >= 4 && height >= 4) {
+                const isLight = this.isLightColor(cell.markHex);
+                ctx.fillStyle = isLight ? '#333' : '#fff';
+                const fontSize = Math.max(4, Math.min(width, height) * 0.35);
+                ctx.font = `bold ${fontSize.toFixed(0)}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.formatMarkCode(cell.markCode), x + width / 2, y + height / 2);
+              }
+            }
+          }
+        } else if (isMosaicMode && segments) {
+          // 智能模式：直接绘制 segments（降级处理）
+          const imageWidth = cols * gridSize;
+          const imageHeight = rows * gridSize;
           const segScaleX = mosaicWidth / imageWidth;
           const segScaleY = mosaicHeight / imageHeight;
 
@@ -529,8 +558,8 @@ Page({
             ctx.fillStyle = segment.markHex || '#cccccc';
             ctx.fillRect(x, y, width, height);
 
-            // 绘制色号
-            if (width >= 8 && height >= 8) {
+            // 绘制色号（降低阈值到 4 像素，确保小图也能显示色号）
+            if (width >= 4 && height >= 4) {
               const isLight = this.isLightColor(segment.markHex);
               ctx.fillStyle = isLight ? '#333' : '#fff';
               // 马赛克模式：色块通常较小，使用更大的比例和更小的最小值
@@ -561,8 +590,8 @@ Page({
               ctx.fillStyle = cell.markHex;
               ctx.fillRect(x, y, cellWidth, cellHeight);
 
-              // 绘制色号（根据实际的格子大小调整字号）
-              if (cellWidth >= 8 && cellHeight >= 8) {
+              // 绘制色号（根据实际的格子大小调整字号，降低阈值到 4 像素）
+              if (cellWidth >= 4 && cellHeight >= 4) {
                 // 根据色块颜色自动选择文字颜色
                 const isLight = this.isLightColor(cell.markHex);
                 ctx.fillStyle = isLight ? '#333' : '#fff';
@@ -586,19 +615,19 @@ Page({
         ctx.fillStyle = '#f8f9fa';
         // 统计行背景（从标尺下方开始）
         ctx.fillRect(0, rulerHeight + mosaicHeight, canvasWidth, statsHeight);
-        
+
         // 每行10个，与图片等宽
         const itemsPerRow = 10;
-        
+
         // 绘制统计项：玻璃拟态圆角按钮样式
         for (let i = 0; i < statsItemCount; i++) {
           const item = statsList[i];
           const row = Math.floor(i / itemsPerRow);
           const col = i % itemsPerRow;
-          
-          // 均匀分布，每行等分
-          const itemWidth = canvasWidth / itemsPerRow;
-          // 统计项从左侧标尺右边开始
+
+          // 均匀分布，基于马赛克图宽度（不含标尺）
+          const itemWidth = mosaicWidth / itemsPerRow;
+          // 统计项从标尺右侧开始
           const x = rulerWidth + col * itemWidth + 8;
           const y = statsY + row * statsItemHeight;
           const btnWidth = itemWidth - 16;
