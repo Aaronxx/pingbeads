@@ -1,5 +1,5 @@
 // components/mosaicCanvas/mosaicCanvas.js
-const { processSimple, aggregateSimilarColors, processWithSmartRegions, detectEdgeColor, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, findCropBoundary, filterEdgeBlocks, cropMosaicData, convertSegmentsToGridData } = require('../../utils/imageProcessor');
+const { processSimple, aggregateSimilarColors, processWithSmartRegions, detectEdgeColor, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, findCropBoundary, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData } = require('../../utils/imageProcessor');
 const { findClosestMarkColor } = require('../../utils/colorMapper');
 
 // 大区常量：每个大区包含 10x10 个色块
@@ -205,13 +205,52 @@ Component({
         }
 
         // 马赛克模式的边缘底色检测与标记（需要在统计和渲染之前执行）
-        const edgeDetection = detectEdgeColorFromSegments(result.segments, result.cols, result.rows);
+        const edgeDetection = detectEdgeColorFromSegments(result.segments, result.cols, result.rows, 30);
         if (edgeDetection && edgeDetection.hasEdge) {
-          filterEdgeSegments(result.segments, result.cols, result.rows, edgeDetection.edgeColor);
+          filterEdgeSegments(result.segments, result.cols, result.rows, edgeDetection.edgeColor, 25);
         }
 
         // 将 segments 转换为 2D gridData，复用卡通模式的渲染逻辑
         const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows, result.gridSize);
+
+        // 马赛克模式：检查 isEdge 标记并进行裁剪
+        let hasExistingIsEdge = false;
+        let edgeCount = 0;
+        let nonEdgeCount = 0;
+        for (let r = 0; r < result.rows; r++) {
+          for (let c = 0; c < result.cols; c++) {
+            const cell = gridData[r] && gridData[r][c];
+            if (cell) {
+              if (cell.isEdge) {
+                edgeCount++;
+              } else {
+                nonEdgeCount++;
+              }
+            }
+          }
+        }
+        console.log('[马赛克裁剪] rows:', result.rows, 'cols:', result.cols, 'edgeCount:', edgeCount, 'nonEdgeCount:', nonEdgeCount);
+
+        if (nonEdgeCount > 0) {
+          hasExistingIsEdge = edgeCount > 0;
+        }
+
+        if (hasExistingIsEdge) {
+          const contentBoundary = findCropBoundaryFromGrid(gridData, result.rows, result.cols);
+          console.log('[马赛克裁剪] contentBoundary:', contentBoundary);
+          if (contentBoundary.hasContent) {
+            const cropResult = cropMosaicData(
+              { gridData: gridData, rows: result.rows, cols: result.cols, gridSize: result.gridSize },
+              contentBoundary
+            );
+            console.log('[马赛克裁剪] cropResult:', cropResult.rows, 'x', cropResult.cols);
+            if (cropResult.gridData) {
+              gridData.splice(0, gridData.length, ...cropResult.gridData);
+              result.rows = cropResult.rows;
+              result.cols = cropResult.cols;
+            }
+          }
+        }
 
         // 保存数据
         this.cachedSegments = result.segments;
@@ -251,16 +290,36 @@ Component({
       // 根据模式选择检测方式：马赛克模式用网格数据，卡通模式用原始像素
       let edgeDetection = null;
       let boundary = { hasEdge: false };
+
+      // 检查是否已有 isEdge 标记（马赛克模式从 segments 转换而来）
+      let hasExistingIsEdge = false;
       if (this.data.processMode === 'mosaic') {
-        // 马赛克模式：使用基于网格的检测（避免网格线干扰）
-        // 降低阈值到 30% 以提高检测灵敏度
-        edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
-        // 马赛克模式使用简化逻辑
-        if (edgeDetection && edgeDetection.hasEdge) {
+        for (let r = 0; r < result.rows; r++) {
+          for (let c = 0; c < result.cols; c++) {
+            const cell = result.gridData[r] && result.gridData[r][c];
+            if (cell && cell.isEdge) {
+              hasExistingIsEdge = true;
+              break;
+            }
+          }
+          if (hasExistingIsEdge) break;
+        }
+      }
+
+      if (this.data.processMode === 'mosaic') {
+        // 马赛克模式：如果已有 isEdge 标记，直接使用；否则重新检测
+        if (hasExistingIsEdge) {
+          edgeDetection = { hasEdge: true, edgeColor: null };
           boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
+        } else {
+          // 降低阈值到 30% 以提高检测灵敏度
+          edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
+          if (edgeDetection && edgeDetection.hasEdge) {
+            boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
+          }
         }
       } else {
-        // 卡通模式：使用基于网格的检测，与马赛克模式一致
+        // 卡通模式：使用基于网格的检测
         edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
         if (edgeDetection && edgeDetection.hasEdge) {
           boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
@@ -271,7 +330,19 @@ Component({
         // 边缘底色检测与裁剪
         const cropResult = filterEdgeBlocks(result.gridData, result.rows, result.cols, qualityGridSize, edgeDetection.edgeColor, boundary);
         if (cropResult.marked) {
-          // 标记完成
+          // 标记完成后，查找主体边界并裁剪
+          const contentBoundary = findCropBoundaryFromGrid(result.gridData, result.rows, result.cols);
+          if (contentBoundary.hasContent) {
+            const finalCropResult = cropMosaicData(
+              { gridData: result.gridData, rows: result.rows, cols: result.cols, gridSize: qualityGridSize },
+              contentBoundary
+            );
+            if (finalCropResult.gridData) {
+              result.gridData = finalCropResult.gridData;
+              result.rows = finalCropResult.rows;
+              result.cols = finalCropResult.cols;
+            }
+          }
         }
       }
 
@@ -534,13 +605,52 @@ Component({
         result = processWithSmartRegions(null, width, height, qualityGridSize);
 
         // 马赛克模式的边缘底色检测与标记（需要在统计和渲染之前执行）
-        const edgeDetection = detectEdgeColorFromSegments(result.segments, result.cols, result.rows);
+        const edgeDetection = detectEdgeColorFromSegments(result.segments, result.cols, result.rows, 30);
         if (edgeDetection && edgeDetection.hasEdge) {
-          filterEdgeSegments(result.segments, result.cols, result.rows, edgeDetection.edgeColor);
+          filterEdgeSegments(result.segments, result.cols, result.rows, edgeDetection.edgeColor, 25);
         }
 
         // 将 segments 转换为 2D gridData，复用卡通模式的渲染逻辑
         const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows, result.gridSize);
+
+        // 马赛克模式：检查 isEdge 标记并进行裁剪
+        let hasExistingIsEdge = false;
+        let edgeCount = 0;
+        let nonEdgeCount = 0;
+        for (let r = 0; r < result.rows; r++) {
+          for (let c = 0; c < result.cols; c++) {
+            const cell = gridData[r] && gridData[r][c];
+            if (cell) {
+              if (cell.isEdge) {
+                edgeCount++;
+              } else {
+                nonEdgeCount++;
+              }
+            }
+          }
+        }
+        console.log('[马赛克裁剪] rows:', result.rows, 'cols:', result.cols, 'edgeCount:', edgeCount, 'nonEdgeCount:', nonEdgeCount);
+
+        if (nonEdgeCount > 0) {
+          hasExistingIsEdge = edgeCount > 0;
+        }
+
+        if (hasExistingIsEdge) {
+          const contentBoundary = findCropBoundaryFromGrid(gridData, result.rows, result.cols);
+          console.log('[马赛克裁剪] contentBoundary:', contentBoundary);
+          if (contentBoundary.hasContent) {
+            const cropResult = cropMosaicData(
+              { gridData: gridData, rows: result.rows, cols: result.cols, gridSize: result.gridSize },
+              contentBoundary
+            );
+            console.log('[马赛克裁剪] cropResult:', cropResult.rows, 'x', cropResult.cols);
+            if (cropResult.gridData) {
+              gridData.splice(0, gridData.length, ...cropResult.gridData);
+              result.rows = cropResult.rows;
+              result.cols = cropResult.cols;
+            }
+          }
+        }
 
         // 保存数据
         this.cachedSegments = result.segments;
@@ -579,15 +689,36 @@ Component({
       try {
         let edgeDetection = null;
         let boundary = { hasEdge: false };
+
+        // 检查是否已有 isEdge 标记（马赛克模式从 segments 转换而来）
+        let hasExistingIsEdge = false;
         if (this.data.processMode === 'mosaic') {
-          // 马赛克模式：使用基于网格的检测
-          // 降低阈值到 30% 以提高检测灵敏度
-          edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
-          if (edgeDetection && edgeDetection.hasEdge) {
+          for (let r = 0; r < result.rows; r++) {
+            for (let c = 0; c < result.cols; c++) {
+              const cell = result.gridData[r] && result.gridData[r][c];
+              if (cell && cell.isEdge) {
+                hasExistingIsEdge = true;
+                break;
+              }
+            }
+            if (hasExistingIsEdge) break;
+          }
+        }
+
+        if (this.data.processMode === 'mosaic') {
+          // 马赛克模式：如果已有 isEdge 标记，直接使用；否则重新检测
+          if (hasExistingIsEdge) {
+            edgeDetection = { hasEdge: true, edgeColor: null };
             boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
+          } else {
+            // 降低阈值到 30% 以提高检测灵敏度
+            edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
+            if (edgeDetection && edgeDetection.hasEdge) {
+              boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
+            }
           }
         } else if (pixelData && width > 0 && height > 0) {
-          // 卡通模式：使用基于网格的检测，与马赛克模式一致
+          // 卡通模式：使用基于网格的检测
           edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
           if (edgeDetection && edgeDetection.hasEdge) {
             boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
@@ -597,11 +728,17 @@ Component({
         if (edgeDetection && edgeDetection.hasEdge) {
           const cropResult = filterEdgeBlocks(result.gridData, result.rows, result.cols, qualityGridSize, edgeDetection.edgeColor, boundary);
           if (cropResult.marked) {
-            let edgeCellCount = 0;
-            for (let r = 0; r < result.rows; r++) {
-              for (let c = 0; c < result.cols; c++) {
-                const cell = result.gridData[r] && result.gridData[r][c];
-                if (cell && cell.isEdge) edgeCellCount++;
+            // 标记完成后，查找主体边界并裁剪
+            const contentBoundary = findCropBoundaryFromGrid(result.gridData, result.rows, result.cols);
+            if (contentBoundary.hasContent) {
+              const finalCropResult = cropMosaicData(
+                { gridData: result.gridData, rows: result.rows, cols: result.cols, gridSize: qualityGridSize },
+                contentBoundary
+              );
+              if (finalCropResult.gridData) {
+                result.gridData = finalCropResult.gridData;
+                result.rows = finalCropResult.rows;
+                result.cols = finalCropResult.cols;
               }
             }
           }
@@ -654,13 +791,52 @@ Component({
         }
 
         // 马赛克模式的边缘底色检测与标记（需要在统计和渲染之前执行）
-        const edgeDetection = detectEdgeColorFromSegments(result.segments, result.cols, result.rows);
+        const edgeDetection = detectEdgeColorFromSegments(result.segments, result.cols, result.rows, 30);
         if (edgeDetection && edgeDetection.hasEdge) {
-          filterEdgeSegments(result.segments, result.cols, result.rows, edgeDetection.edgeColor);
+          filterEdgeSegments(result.segments, result.cols, result.rows, edgeDetection.edgeColor, 25);
         }
 
         // 将 segments 转换为 2D gridData，复用卡通模式的渲染逻辑
         const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows, result.gridSize);
+
+        // 马赛克模式：检查 isEdge 标记并进行裁剪
+        let hasExistingIsEdge = false;
+        let edgeCount = 0;
+        let nonEdgeCount = 0;
+        for (let r = 0; r < result.rows; r++) {
+          for (let c = 0; c < result.cols; c++) {
+            const cell = gridData[r] && gridData[r][c];
+            if (cell) {
+              if (cell.isEdge) {
+                edgeCount++;
+              } else {
+                nonEdgeCount++;
+              }
+            }
+          }
+        }
+        console.log('[马赛克裁剪] rows:', result.rows, 'cols:', result.cols, 'edgeCount:', edgeCount, 'nonEdgeCount:', nonEdgeCount);
+
+        if (nonEdgeCount > 0) {
+          hasExistingIsEdge = edgeCount > 0;
+        }
+
+        if (hasExistingIsEdge) {
+          const contentBoundary = findCropBoundaryFromGrid(gridData, result.rows, result.cols);
+          console.log('[马赛克裁剪] contentBoundary:', contentBoundary);
+          if (contentBoundary.hasContent) {
+            const cropResult = cropMosaicData(
+              { gridData: gridData, rows: result.rows, cols: result.cols, gridSize: result.gridSize },
+              contentBoundary
+            );
+            console.log('[马赛克裁剪] cropResult:', cropResult.rows, 'x', cropResult.cols);
+            if (cropResult.gridData) {
+              gridData.splice(0, gridData.length, ...cropResult.gridData);
+              result.rows = cropResult.rows;
+              result.cols = cropResult.cols;
+            }
+          }
+        }
 
         // 保存数据
         this.cachedSegments = result.segments;
@@ -699,15 +875,36 @@ Component({
       try {
         let edgeDetection = null;
         let boundary = { hasEdge: false };
+
+        // 检查是否已有 isEdge 标记（马赛克模式从 segments 转换而来）
+        let hasExistingIsEdge = false;
         if (this.data.processMode === 'mosaic') {
-          // 马赛克模式：使用基于网格的检测
-          // 降低阈值到 30% 以提高检测灵敏度
-          edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
-          if (edgeDetection && edgeDetection.hasEdge) {
+          for (let r = 0; r < result.rows; r++) {
+            for (let c = 0; c < result.cols; c++) {
+              const cell = result.gridData[r] && result.gridData[r][c];
+              if (cell && cell.isEdge) {
+                hasExistingIsEdge = true;
+                break;
+              }
+            }
+            if (hasExistingIsEdge) break;
+          }
+        }
+
+        if (this.data.processMode === 'mosaic') {
+          // 马赛克模式：如果已有 isEdge 标记，直接使用；否则重新检测
+          if (hasExistingIsEdge) {
+            edgeDetection = { hasEdge: true, edgeColor: null };
             boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
+          } else {
+            // 降低阈值到 30% 以提高检测灵敏度
+            edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
+            if (edgeDetection && edgeDetection.hasEdge) {
+              boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
+            }
           }
         } else if (pixelData && width > 0 && height > 0) {
-          // 卡通模式：使用基于网格的检测，与马赛克模式一致
+          // 卡通模式：使用基于网格的检测
           edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
           if (edgeDetection && edgeDetection.hasEdge) {
             boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
@@ -717,11 +914,17 @@ Component({
         if (edgeDetection && edgeDetection.hasEdge) {
           const cropResult = filterEdgeBlocks(result.gridData, result.rows, result.cols, qualityGridSize, edgeDetection.edgeColor, boundary);
           if (cropResult.marked) {
-            let edgeCellCount = 0;
-            for (let r = 0; r < result.rows; r++) {
-              for (let c = 0; c < result.cols; c++) {
-                const cell = result.gridData[r] && result.gridData[r][c];
-                if (cell && cell.isEdge) edgeCellCount++;
+            // 标记完成后，查找主体边界并裁剪
+            const contentBoundary = findCropBoundaryFromGrid(result.gridData, result.rows, result.cols);
+            if (contentBoundary.hasContent) {
+              const finalCropResult = cropMosaicData(
+                { gridData: result.gridData, rows: result.rows, cols: result.cols, gridSize: qualityGridSize },
+                contentBoundary
+              );
+              if (finalCropResult.gridData) {
+                result.gridData = finalCropResult.gridData;
+                result.rows = finalCropResult.rows;
+                result.cols = finalCropResult.cols;
               }
             }
           }

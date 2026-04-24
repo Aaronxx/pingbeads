@@ -1538,26 +1538,121 @@ function filterEdgeBlocks(gridData, rows, cols, gridSize, edgeColor, boundary, d
 }
 
 /**
+ * 从 isEdge 标记查找主体内容的边界
+ * 从四边向中心扫描，找到第一行/列包含非 isEdge 格子位置
+ * @param {Array} gridData - 网格数据 2D 数组
+ * @param {number} rows - 行数
+ * @param {number} cols - 列数
+ * @returns {object} 主体边界 { top, bottom, left, right, hasContent }
+ */
+function findCropBoundaryFromGrid(gridData, rows, cols) {
+  // 1. 从上往下扫描，找到第一行包含非 isEdge 格子
+  let top = -1;
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const cell = gridData[row] && gridData[row][col];
+      if (cell && !cell.isEdge) {
+        top = row;
+        break;
+      }
+    }
+    if (top >= 0) break;
+  }
+
+  // 2. 从下往上扫描，找到最后一行包含非 isEdge 格子
+  let bottom = -1;
+  for (let row = rows - 1; row >= 0; row--) {
+    for (let col = 0; col < cols; col++) {
+      const cell = gridData[row] && gridData[row][col];
+      if (cell && !cell.isEdge) {
+        bottom = row;
+        break;
+      }
+    }
+    if (bottom >= 0) break;
+  }
+
+  // 3. 从左往右扫描，找到第一列包含非 isEdge 格子
+  let left = -1;
+  for (let col = 0; col < cols; col++) {
+    for (let row = 0; row < rows; row++) {
+      const cell = gridData[row] && gridData[row][col];
+      if (cell && !cell.isEdge) {
+        left = col;
+        break;
+      }
+    }
+    if (left >= 0) break;
+  }
+
+  // 4. 从右往左扫描，找到最后一列包含非 isEdge 格子
+  let right = -1;
+  for (let col = cols - 1; col >= 0; col--) {
+    for (let row = 0; row < rows; row++) {
+      const cell = gridData[row] && gridData[row][col];
+      if (cell && !cell.isEdge) {
+        right = col;
+        break;
+      }
+    }
+    if (right >= 0) break;
+  }
+
+  // 检查是否找到主体内容
+  if (top < 0 || bottom < 0 || left < 0 || right < 0) {
+    return { top: 0, bottom: rows, left: 0, right: cols, hasContent: false };
+  }
+
+  // 确保边界有效
+  if (top > bottom || left > right) {
+    return { top: 0, bottom: rows, left: 0, right: cols, hasContent: false };
+  }
+
+  // 返回裁剪边界（+1 是因为 bottom 和 right 是闭区间）
+  return { top, bottom: bottom + 1, left, right: right + 1, hasContent: true };
+}
+
+/**
  * 裁剪马赛克数据
  * @param {object} mosaicData - 马赛克数据 { gridData, rows, cols, gridSize }
- * @param {object} boundary - 裁剪边界 { top, bottom, left, right }
+ * @param {object} boundary - 裁剪边界 { top, bottom, left, right, hasContent }
  * @returns {object} 裁剪后的马赛克数据
  */
 function cropMosaicData(mosaicData, boundary) {
-  if (!boundary.hasEdge) {
+  if (!boundary.hasContent) {
     return mosaicData;
   }
 
   const { gridData, rows, cols, gridSize } = mosaicData;
   const { top, bottom, left, right } = boundary;
 
-  // 计算裁剪后的行列数
-  const cropCols = Math.ceil(right / gridSize) - Math.floor(left / gridSize);
-  const cropRows = Math.ceil(bottom / gridSize) - Math.floor(top / gridSize);
+  // 判断 boundary 是像素坐标还是单元格索引
+  // 如果 right <= cols 且 bottom <= rows，说明是单元格索引
+  // 注意：right = cols 表示第 cols 列（最后一列+1），也是有效的单元格索引
+  const isCellIndex = right <= cols && bottom <= rows;
 
-  // 重新计算网格起始位置
-  const startCol = Math.floor(left / gridSize);
-  const startRow = Math.floor(top / gridSize);
+  let cropCols, cropRows, startCol, startRow;
+
+  if (isCellIndex) {
+    // 单元格索引（来自 findCropBoundaryFromGrid）
+    startCol = left;
+    startRow = top;
+    cropCols = right - left;
+    cropRows = bottom - top;
+  } else {
+    // 像素坐标（原有逻辑）
+    cropCols = Math.ceil(right / gridSize) - Math.floor(left / gridSize);
+    cropRows = Math.ceil(bottom / gridSize) - Math.floor(top / gridSize);
+    startCol = Math.floor(left / gridSize);
+    startRow = Math.floor(top / gridSize);
+  }
+
+  // 边界检查
+  if (startCol < 0) startCol = 0;
+  if (startRow < 0) startRow = 0;
+  if (cropCols <= 0 || cropRows <= 0) {
+    return mosaicData;
+  }
 
   const newGridData = [];
 
@@ -1572,6 +1667,9 @@ function cropMosaicData(mosaicData, boundary) {
         // 更新坐标为裁剪后的位置
         cell.x = col * gridSize;
         cell.y = row * gridSize;
+        // 更新行列索引
+        cell.col = col;
+        cell.row = row;
         newGridData[row][col] = cell;
       }
     }
@@ -1866,5 +1964,6 @@ module.exports = {
   findCropBoundary,
   filterEdgeBlocks,
   cropMosaicData,
+  findCropBoundaryFromGrid,
   convertSegmentsToGridData
 };
