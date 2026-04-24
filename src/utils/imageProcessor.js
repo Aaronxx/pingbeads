@@ -1,16 +1,11 @@
 /**
- * 图像处理模块 - 支持多种颜色量化算法
- * 
- * 算法说明：
- * 1. K-means: K均值聚类，适合保留主色调
- * 2. Median Cut: 中位切分，快速但效果一般
- * 3. Octree: 八叉树，平衡速度和效果
- * 4. 抖动 (Dithering): 使用误差扩散保留细节
+ * 图像处理模块 - 网格化 + 主导色识别
+ *
+ * 主要功能：
+ * 1. processSimple: 简化版网格处理
+ * 2. processWithSmartRegions: 智能区域处理（自动检测格子大小）
+ * 3. 边缘检测与裁剪
  */
-
-// findClosestMarkColor 在 colorMapper 中实现
-const colorMapper = require('../utils/colorMapper');
-const findClosestMarkColor = colorMapper.findClosestMarkColor;
 
 /**
  * 计算颜色距离 (欧氏距离)
@@ -496,9 +491,7 @@ function autoDetectBlockSize(pixelData, width, height, options = {}) {
 
   // 限制色块大小在合理范围（5-30像素）
   // 限制色块大小在合理范围（8-30像素）
-  const blockSize = Math.max(8, Math.min(30, Math.round((hMode + vMode) / 2)));
-
-  const primarySize = blockSize;
+  const primarySize = Math.max(8, Math.min(30, Math.round((hMode + vMode) / 2)));
 
   // 网格数 = 变化点数量 + 1（直接数出来！）
   // 取多条扫描线的中位数并取整
@@ -760,6 +753,7 @@ function detectEdgeColorFromSegments(segments, cols, rows, threshold = 50) {
  * @param {number} cols - 列数
  * @param {number} rows - 行数
  * @param {object} edgeColor - 边缘底色
+ * @param {number} diffThreshold - 颜色差异阈值，默认25
  * @returns {object} 裁剪后的结果 { segments, cols, rows, cropped: boolean }
  */
 function filterEdgeSegments(segments, cols, rows, edgeColor, diffThreshold = 25) {
@@ -853,10 +847,6 @@ function filterEdgeSegments(segments, cols, rows, edgeColor, diffThreshold = 25)
   return { segments, cols, rows, cropped: false, marked: hasMarked };
 }
 
-/**
- * 检测边缘底色（基于原始像素）
- * 扫描图像四边，判断是否为单一颜色（>50%同一颜色）
- * @param {Uint8ClampedArray} pixelData - 像素数据
 /**
  * 标记边缘底色色块
  * @param {Array} gridData - 马赛克网格数据
@@ -982,14 +972,6 @@ function filterEdgeBlocks(gridData, rows, cols, gridSize, edgeColor, boundary, d
   }
 
   // 有边界坐标（卡通模式），使用完整逻辑
-  const { top, bottom, left, right } = boundary;
-
-  // 计算主体内容的行列范围
-  const startCol = Math.floor(left / gridSize);
-  const endCol = Math.ceil(right / gridSize);
-  const startRow = Math.floor(top / gridSize);
-  const endRow = Math.ceil(bottom / gridSize);
-
   // 不裁剪，只标记边缘格子
   // 使用连通性判断：只有通过边缘颜色连接到图片边缘的格子才不显示色号
   // 1. 找出所有在边缘上且与边缘颜色相同的格子作为起点
@@ -1221,9 +1203,8 @@ function cropMosaicData(mosaicData, boundary) {
  * @param {number} width - 图像宽度
  * @param {number} height - 图像高度
  * @param {number} gridSize - 网格大小
- * @param {object} options - 选项
  */
-function processWithSmartRegions(pixelData, width, height, gridSize, options = {}) {
+function processWithSmartRegions(pixelData, width, height, gridSize) {
 
   // 导入颜色查找函数
   const { fastFindClosestMarkColor: findMark } = require('../utils/colorMapper');
@@ -1243,7 +1224,7 @@ function processWithSmartRegions(pixelData, width, height, gridSize, options = {
   }
 
   // 自动检测色块大小和有效范围
-  const { primarySize, secondarySize, rawBlockSize, hMode, vMode, hColsMode, vRowsMode, hasGridLines, validRange, debug } = autoDetectBlockSize(pixelData, width, height);
+  const { primarySize, hasGridLines, validRange } = autoDetectBlockSize(pixelData, width, height);
   const actualGridSize = primarySize || gridSize; // 使用检测值或回退到预设值
 
 
@@ -1426,19 +1407,15 @@ function processWithSmartRegions(pixelData, width, height, gridSize, options = {
   };
 }
 
-// 快速颜色查找（内部使用）
-let fastFindClosestMarkColor;
-
 /**
  * 将 segments 数组转换为 2D 网格 gridData
  * 用于马赛克模式复用卡通模式的渲染代码
  * @param {Array} segments - 色段数组
  * @param {number} cols - 列数
  * @param {number} rows - 行数
- * @param {number} gridSize - 网格大小
  * @returns {Array} 2D 网格数据
  */
-function convertSegmentsToGridData(segments, cols, rows, gridSize) {
+function convertSegmentsToGridData(segments, cols, rows) {
   // 创建空的 2D 网格
   const gridData = [];
   for (let r = 0; r < rows; r++) {

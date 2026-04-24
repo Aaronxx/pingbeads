@@ -210,7 +210,7 @@ Component({
         }
 
         // 将 segments 转换为 2D gridData，复用卡通模式的渲染逻辑
-        const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows, result.gridSize);
+        const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows);
 
         // 马赛克模式：检查 isEdge 标记并进行裁剪
         let hasExistingIsEdge = false;
@@ -603,7 +603,7 @@ Component({
         }
 
         // 将 segments 转换为 2D gridData，复用卡通模式的渲染逻辑
-        const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows, result.gridSize);
+        const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows);
 
         // 马赛克模式：检查 isEdge 标记并进行裁剪
         let hasExistingIsEdge = false;
@@ -786,7 +786,7 @@ Component({
         }
 
         // 将 segments 转换为 2D gridData，复用卡通模式的渲染逻辑
-        const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows, result.gridSize);
+        const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows);
 
         // 马赛克模式：检查 isEdge 标记并进行裁剪
         let hasExistingIsEdge = false;
