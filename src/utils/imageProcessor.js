@@ -868,6 +868,713 @@ function autoDetectBlockSize(pixelData, width, height, options = {}) {
 }
 
 /**
+ * 从网格数据中检测边缘底色
+ * 基于马赛克化后的网格数据进行检测，避免网格线干扰
+ * @param {Array} gridData - 马赛克网格数据
+ * @param {number} rows - 行数
+ * @param {number} cols - 列数
+ * @param {number} gridSize - 网格大小
+ * @param {number} threshold - 颜色占比阈值，默认50%
+ * @returns {object} 边缘底色信息 { edgeColor: {r,g,b}, hasEdge: boolean }
+ */
+function detectEdgeColorFromGrid(gridData, rows, cols, gridSize, threshold = 50) {
+  // 统计边缘格子颜色
+  const countEdgeCellColor = (isHorizontal, isStart) => {
+    const colorCounts = {};
+    let total = 0;
+
+    // 扫描边缘的格子
+    const edgeCount = isHorizontal ? cols : rows;
+    const scanCount = isHorizontal ? Math.min(3, rows) : Math.min(3, cols);
+
+    for (let i = 0; i < edgeCount; i++) {
+      const row = isHorizontal ? (isStart ? i : rows - 1 - i) : i;
+      const col = isHorizontal ? i : (isStart ? i : cols - 1 - i);
+
+      // 扫描边缘附近的几个格子
+      for (let j = 0; j < scanCount; j++) {
+        const scanRow = isHorizontal ? (isStart ? j : rows - 1 - j) : row;
+        const scanCol = isHorizontal ? col : (isStart ? j : cols - 1 - j);
+
+        if (scanRow >= 0 && scanRow < rows && scanCol >= 0 && scanCol < cols) {
+          const cell = gridData[scanRow] && gridData[scanRow][scanCol];
+          if (cell && cell.originalRgb) {
+            const color = cell.originalRgb;
+            const key = `${color.r},${color.g},${color.b}`;
+            colorCounts[key] = (colorCounts[key] || 0) + 1;
+            total++;
+          }
+        }
+      }
+    }
+
+    // 找最常见的颜色
+    let maxCount = 0;
+    let dominantColor = null;
+    for (const key in colorCounts) {
+      const count = colorCounts[key];
+      if (count > maxCount) {
+        maxCount = count;
+        const [r, g, b] = key.split(',').map(Number);
+        dominantColor = { r, g, b };
+      }
+    }
+
+    const ratio = total > 0 ? (maxCount / total) * 100 : 0;
+    return { color: dominantColor, ratio };
+  };
+
+  // 扫描四边
+  const top = countEdgeCellColor(true, true);
+  const bottom = countEdgeCellColor(true, false);
+  const left = countEdgeCellColor(false, true);
+  const right = countEdgeCellColor(false, false);
+
+  const edges = [
+    { name: 'top', data: top },
+    { name: 'bottom', data: bottom },
+    { name: 'left', data: left },
+    { name: 'right', data: right }
+  ];
+
+  // 优先选择超过阈值的边缘
+  const validEdges = edges.filter(e => e.data.ratio >= threshold && e.data.color);
+  if (validEdges.length === 0) {
+    return { edgeColor: null, hasEdge: false };
+  }
+
+  // 选择比例最高的
+  validEdges.sort((a, b) => b.data.ratio - a.data.ratio);
+  const bestEdge = validEdges[0];
+
+  return {
+    edgeColor: bestEdge.data.color,
+    hasEdge: true,
+    edgeRatios: {
+      top: top.ratio,
+      bottom: bottom.ratio,
+      left: left.ratio,
+      right: right.ratio
+    }
+  };
+}
+
+/**
+ * 基于 segments 检测边缘底色（用于马赛克模式）
+ * @param {Array} segments - 色块数组
+ * @param {number} cols - 列数
+ * @param {number} rows - 行数
+ * @param {number} threshold - 颜色占比阈值，默认50%
+ * @returns {object} 边缘底色信息 { edgeColor: {r,g,b}, hasEdge: boolean }
+ */
+function detectEdgeColorFromSegments(segments, cols, rows, threshold = 50) {
+  if (!segments || segments.length === 0) {
+    return { edgeColor: null, hasEdge: false };
+  }
+
+  // 统计边缘 segment 的颜色
+  const countEdgeSegmentColor = (isHorizontal, isStart) => {
+    const colorCounts = {};
+    let total = 0;
+
+    // 收集边缘的 segments
+    for (const seg of segments) {
+      if (seg.col === undefined || seg.row === undefined) continue;
+
+      const isEdge = isHorizontal
+        ? (isStart ? seg.row < 2 : seg.row >= rows - 2)
+        : (isStart ? seg.col < 2 : seg.col >= cols - 2);
+
+      if (isEdge && seg.avgColor) {
+        const color = seg.avgColor;
+        const key = `${Math.round(color.r / 8) * 8},${Math.round(color.g / 8) * 8},${Math.round(color.b / 8) * 8}`;
+        colorCounts[key] = (colorCounts[key] || 0) + 1;
+        total++;
+      }
+    }
+
+    // 找最常见的颜色
+    let maxCount = 0;
+    let dominantColor = null;
+    for (const key in colorCounts) {
+      const count = colorCounts[key];
+      if (count > maxCount) {
+        maxCount = count;
+        const [r, g, b] = key.split(',').map(Number);
+        dominantColor = { r, g, b };
+      }
+    }
+
+    const ratio = total > 0 ? (maxCount / total) * 100 : 0;
+    return { color: dominantColor, ratio };
+  };
+
+  // 扫描四边
+  const top = countEdgeSegmentColor(true, true);
+  const bottom = countEdgeSegmentColor(true, false);
+  const left = countEdgeSegmentColor(false, true);
+  const right = countEdgeSegmentColor(false, false);
+
+  const edges = [
+    { name: 'top', data: top },
+    { name: 'bottom', data: bottom },
+    { name: 'left', data: left },
+    { name: 'right', data: right }
+  ];
+
+  // 优先选择超过阈值的边缘
+  const validEdges = edges.filter(e => e.data.ratio >= threshold && e.data.color);
+  if (validEdges.length === 0) {
+    return { edgeColor: null, hasEdge: false };
+  }
+
+  // 选择比例最高的
+  validEdges.sort((a, b) => b.data.ratio - a.data.ratio);
+  const bestEdge = validEdges[0];
+
+  return {
+    edgeColor: bestEdge.data.color,
+    hasEdge: true,
+    edgeRatios: {
+      top: top.ratio,
+      bottom: bottom.ratio,
+      left: left.ratio,
+      right: right.ratio
+    }
+  };
+}
+
+/**
+ * 裁剪 segments 并标记边缘色块（用于马赛克模式）
+ * @param {Array} segments - 色块数组
+ * @param {number} cols - 列数
+ * @param {number} rows - 行数
+ * @param {object} edgeColor - 边缘底色
+ * @returns {object} 裁剪后的结果 { segments, cols, rows, cropped: boolean }
+ */
+function filterEdgeSegments(segments, cols, rows, edgeColor, diffThreshold = 25) {
+  if (!segments || !edgeColor) {
+    return { segments, cols, rows, cropped: false };
+  }
+
+  // 收集非边缘的 segments（主体内容）
+  const innerSegments = segments.filter(seg => {
+    if (seg.col === undefined || seg.row === undefined) return false;
+    return seg.col >= 2 && seg.col < cols - 2 && seg.row >= 2 && seg.row < rows - 2;
+  });
+
+  // 计算主体内容的边界
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const seg of innerSegments) {
+    if (seg.avgColor) {
+      const dist = colorDistance(seg.avgColor, edgeColor);
+      if (dist > diffThreshold) {
+        // 这是一个与边缘颜色不同的主体像素
+        minX = Math.min(minX, seg.x);
+        minY = Math.min(minY, seg.y);
+        maxX = Math.max(maxX, seg.x + seg.width);
+        maxY = Math.max(maxY, seg.y + seg.height);
+      }
+    }
+  }
+
+  // 如果没有找到主体内容，不裁剪
+  if (minX === Infinity) {
+    return { segments, cols, rows, cropped: false };
+  }
+
+  // 过滤掉边缘 segments（只保留主体内容）
+  // 计算主体内容在原始网格中的位置
+  const minCol = Math.floor(minX / (maxX / cols));
+  const minRow = Math.floor(minY / (maxY / rows));
+  const maxCol = Math.ceil(maxX / (maxX / cols));
+  const maxRow = Math.ceil(maxY / (maxY / rows));
+
+  const newCols = maxCol - minCol;
+  const newRows = maxRow - minRow;
+
+  // 过滤并重新映射坐标
+  const croppedSegments = [];
+  for (const seg of segments) {
+    if (seg.col === undefined || seg.row === undefined) continue;
+
+    const segRight = seg.x + seg.width;
+    const segBottom = seg.y + seg.height;
+
+    // 检查是否在主体内容之外
+    const isOutsideContent = segRight <= minX || seg.x >= maxX || segBottom <= minY || seg.y >= maxY;
+
+    // 检查颜色是否与边缘颜色相似
+    let isEdge = false;
+    if (isOutsideContent && seg.avgColor) {
+      const dist = colorDistance(seg.avgColor, edgeColor);
+      isEdge = dist <= diffThreshold;
+    }
+
+    // 只保留非边缘的 segments
+    if (!isEdge) {
+      // 重新计算相对坐标
+      const newSeg = { ...seg };
+      newSeg.x = (seg.col - minCol) * (seg.width);
+      newSeg.y = (seg.row - minRow) * (seg.height);
+      newSeg.col = seg.col - minCol;
+      newSeg.row = seg.row - minRow;
+      croppedSegments.push(newSeg);
+    }
+  }
+
+  return {
+    segments: croppedSegments,
+    cols: newCols,
+    rows: newRows,
+    cropped: true
+  };
+}
+
+/**
+ * 检测边缘底色（基于原始像素）
+ * 扫描图像四边，判断是否为单一颜色（>50%同一颜色）
+ * @param {Uint8ClampedArray} pixelData - 像素数据
+ * @param {number} width - 图像宽度
+ * @param {number} height - 图像高度
+ * @param {number} scanLines - 扫描边缘的行/列数，默认3
+ * @param {number} threshold - 颜色占比阈值，默认50%
+ * @returns {object} 边缘底色信息 { edgeColor: {r,g,b}, hasEdge: boolean }
+ */
+function detectEdgeColor(pixelData, width, height, scanLines = 3, threshold = 50) {
+  const getPixel = (x, y) => {
+    const idx = (y * width + x) * 4;
+    return { r: pixelData[idx], g: pixelData[idx + 1], b: pixelData[idx + 2] };
+  };
+
+  // 统计边缘颜色
+  const countEdgeColor = (isHorizontal, isStart) => {
+    const colorCounts = {};
+    let total = 0;
+
+    for (let i = 0; i < (isHorizontal ? width : height); i++) {
+      const x = isHorizontal ? i : (isStart ? 0 : width - 1);
+      const y = isHorizontal ? (isStart ? 0 : height - 1) : i;
+
+      for (let j = 0; j < scanLines; j++) {
+        const scanX = isHorizontal ? x : (isStart ? j : width - 1 - j);
+        const scanY = isHorizontal ? (isStart ? j : height - 1 - j) : y;
+
+        if (scanX >= 0 && scanX < width && scanY >= 0 && scanY < height) {
+          const color = getPixel(scanX, scanY);
+          const key = `${color.r},${color.g},${color.b}`;
+          colorCounts[key] = (colorCounts[key] || 0) + 1;
+          total++;
+        }
+      }
+    }
+
+    // 找最常见的颜色
+    let maxCount = 0;
+    let dominantColor = null;
+    for (const key in colorCounts) {
+      const count = colorCounts[key];
+      if (count > maxCount) {
+        maxCount = count;
+        const [r, g, b] = key.split(',').map(Number);
+        dominantColor = { r, g, b };
+      }
+    }
+
+    // 检查是否超过阈值
+    const ratio = total > 0 ? (maxCount / total) * 100 : 0;
+    return { color: dominantColor, ratio };
+  };
+
+  // 扫描四边
+  const top = countEdgeColor(true, true);
+  const bottom = countEdgeColor(true, false);
+  const left = countEdgeColor(false, true);
+  const right = countEdgeColor(false, false);
+
+  // 找出现次数最多且超过阈值的边缘颜色
+  const edges = [
+    { name: 'top', data: top },
+    { name: 'bottom', data: bottom },
+    { name: 'left', data: left },
+    { name: 'right', data: right }
+  ];
+
+  // 优先选择超过阈值的边缘
+  const validEdges = edges.filter(e => e.data.ratio >= threshold && e.data.color);
+  if (validEdges.length === 0) {
+    return { edgeColor: null, hasEdge: false };
+  }
+
+  // 选择比例最高的
+  validEdges.sort((a, b) => b.data.ratio - a.data.ratio);
+  const bestEdge = validEdges[0];
+
+  return {
+    edgeColor: bestEdge.data.color,
+    hasEdge: true,
+    edgeRatios: {
+      top: top.ratio,
+      bottom: bottom.ratio,
+      left: left.ratio,
+      right: right.ratio
+    }
+  };
+}
+
+/**
+ * 找到裁剪边界 - 从四边向中心逼近找到主体内容
+ * @param {Uint8ClampedArray} pixelData - 像素数据
+ * @param {number} width - 图像宽度
+ * @param {number} height - 图像高度
+ * @param {object} edgeColor - 边缘底色 {r,g,b}
+ * @param {number} diffThreshold - 颜色差异阈值，默认25
+ * @returns {object} 裁剪边界 { top, bottom, left, right, hasEdge }
+ */
+function findCropBoundary(pixelData, width, height, edgeColor, diffThreshold = 25) {
+  if (!edgeColor) {
+    return { top: 0, bottom: height, left: 0, right: width, hasEdge: false };
+  }
+
+  const getPixel = (x, y) => {
+    const idx = (y * width + x) * 4;
+    return { r: pixelData[idx], g: pixelData[idx + 1], b: pixelData[idx + 2] };
+  };
+
+  const isDifferentFromEdge = (color) => {
+    return colorDistance(color, edgeColor) > diffThreshold;
+  };
+
+  // 从上往下扫描，找到第一行有差异的位置
+  let top = 0;
+  for (let y = 0; y < height; y++) {
+    let hasDiff = false;
+    for (let x = 0; x < width; x++) {
+      if (isDifferentFromEdge(getPixel(x, y))) {
+        hasDiff = true;
+        break;
+      }
+    }
+    if (hasDiff) {
+      top = y;
+      break;
+    }
+  }
+
+  // 从下往上扫描，找到第一行有差异的位置
+  let bottom = height;
+  for (let y = height - 1; y >= 0; y--) {
+    let hasDiff = false;
+    for (let x = 0; x < width; x++) {
+      if (isDifferentFromEdge(getPixel(x, y))) {
+        hasDiff = true;
+        break;
+      }
+    }
+    if (hasDiff) {
+      bottom = y + 1;
+      break;
+    }
+  }
+
+  // 从左往右扫描，找到第一列有差异的位置
+  let left = 0;
+  for (let x = 0; x < width; x++) {
+    let hasDiff = false;
+    for (let y = 0; y < height; y++) {
+      if (isDifferentFromEdge(getPixel(x, y))) {
+        hasDiff = true;
+        break;
+      }
+    }
+    if (hasDiff) {
+      left = x;
+      break;
+    }
+  }
+
+  // 从右往左扫描，找到第一列有差异的位置
+  let right = width;
+  for (let x = width - 1; x >= 0; x--) {
+    let hasDiff = false;
+    for (let y = 0; y < height; y++) {
+      if (isDifferentFromEdge(getPixel(x, y))) {
+        hasDiff = true;
+        break;
+      }
+    }
+    if (hasDiff) {
+      right = x + 1;
+      break;
+    }
+  }
+
+  // 检查是否有有效的裁剪区域
+  const hasEdge = (top > 0 || bottom < height || left > 0 || right < width) &&
+                  (right - left > 0 && bottom - top > 0);
+
+  return { top, bottom, left, right, hasEdge };
+}
+
+/**
+ * 标记边缘底色色块
+ * @param {Array} gridData - 马赛克网格数据
+ * @param {number} rows - 行数
+ * @param {number} cols - 列数
+ * @param {number} gridSize - 网格大小
+ * @param {object} edgeColor - 边缘底色 {r,g,b}
+ * @param {object} boundary - 裁剪边界 { top, bottom, left, right }
+ * @param {number} diffThreshold - 颜色差异阈值
+ * @returns {object} 裁剪后的结果 { gridData, rows, cols, cropped: boolean }
+ */
+function filterEdgeBlocks(gridData, rows, cols, gridSize, edgeColor, boundary, diffThreshold = 25) {
+  if (!edgeColor || !boundary || !boundary.hasEdge) {
+    return { gridData, rows, cols, cropped: false };
+  }
+
+  // 检查是否有完整的边界坐标
+  const hasBoundaryCoords = boundary.top !== undefined && boundary.bottom !== undefined &&
+                            boundary.left !== undefined && boundary.right !== undefined;
+
+  if (!hasBoundaryCoords) {
+    // 没有边界坐标，使用简化逻辑：标记外层格子
+    const outerRing = 2; // 检查外圈2层
+    let minCol = cols, maxCol = 0, minRow = rows, maxRow = 0;
+
+    // 第一遍：找出主体内容范围
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const cell = gridData[row] && gridData[row][col];
+        if (!cell || !cell.originalRgb) continue;
+
+        const isInOuterRing = row < outerRing || row >= rows - outerRing ||
+                              col < outerRing || col >= cols - outerRing;
+
+        if (!isInOuterRing) {
+          // 这可能是主体内容
+          const color = cell.originalRgb;
+          const isSameAsEdge = colorDistance(color, edgeColor) <= diffThreshold;
+          if (!isSameAsEdge) {
+            minCol = Math.min(minCol, col);
+            maxCol = Math.max(maxCol, col);
+            minRow = Math.min(minRow, row);
+            maxRow = Math.max(maxRow, row);
+          }
+        }
+      }
+    }
+
+    // 如果没有找到主体内容，不处理
+    if (minCol > maxCol || minRow > maxRow) {
+      return { gridData, rows, cols, cropped: false };
+    }
+
+    // 不裁剪，只标记边缘格子
+    // 使用连通性判断：只有通过边缘颜色连接到图片边缘的格子才不显示色号
+    // 创建访问标记数组
+    const visited = [];
+    for (let r = 0; r < rows; r++) {
+      visited[r] = [];
+      for (let c = 0; c < cols; c++) {
+        visited[r][c] = false;
+      }
+    }
+
+    // BFS 队列
+    const queue = [];
+
+    // 将所有边缘上与边缘颜色相同的格子加入队列
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        // 只检查边缘行和列
+        if (row !== 0 && row !== rows - 1 && col !== 0 && col !== cols - 1) continue;
+
+        const cell = gridData[row] && gridData[row][col];
+        if (!cell || !cell.originalRgb) continue;
+
+        const color = cell.originalRgb;
+        const isSameAsEdge = colorDistance(color, edgeColor) <= diffThreshold;
+
+        if (isSameAsEdge && !visited[row][col]) {
+          visited[row][col] = true;
+          queue.push({ row, col });
+        }
+      }
+    }
+
+    // BFS 遍历所有连通的与边缘颜色相同的格子
+    const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    while (queue.length > 0) {
+      const { row, col } = queue.shift();
+
+      for (const [dr, dc] of directions) {
+        const newRow = row + dr;
+        const newCol = col + dc;
+
+        if (newRow < 0 || newRow >= rows || newCol < 0 || newCol >= cols) continue;
+        if (visited[newRow][newCol]) continue;
+
+        const cell = gridData[newRow] && gridData[newRow][newCol];
+        if (!cell || !cell.originalRgb) continue;
+
+        const color = cell.originalRgb;
+        const isSameAsEdge = colorDistance(color, edgeColor) <= diffThreshold;
+
+        if (isSameAsEdge) {
+          visited[newRow][newCol] = true;
+          queue.push({ row: newRow, col: newCol });
+        }
+      }
+    }
+
+    // 标记所有连通的格子为 isEdge
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const cell = gridData[row] && gridData[row][col];
+        if (!cell) continue;
+
+        gridData[row][col].isEdge = visited[row][col];
+      }
+    }
+
+    return { gridData, rows, cols, cropped: false, marked: true };
+  }
+
+  // 有边界坐标（卡通模式），使用完整逻辑
+  const { top, bottom, left, right } = boundary;
+
+  // 计算主体内容的行列范围
+  const startCol = Math.floor(left / gridSize);
+  const endCol = Math.ceil(right / gridSize);
+  const startRow = Math.floor(top / gridSize);
+  const endRow = Math.ceil(bottom / gridSize);
+
+  // 不裁剪，只标记边缘格子
+  // 使用连通性判断：只有通过边缘颜色连接到图片边缘的格子才不显示色号
+  // 1. 找出所有在边缘上且与边缘颜色相同的格子作为起点
+  // 2. 使用 BFS 找到所有连通的与边缘颜色相同的格子
+  // 3. 只有这些连通的格子才标记为 isEdge
+
+  // 创建访问标记数组
+  const visited = [];
+  for (let r = 0; r < rows; r++) {
+    visited[r] = [];
+    for (let c = 0; c < cols; c++) {
+      visited[r][c] = false;
+    }
+  }
+
+  // BFS 队列
+  const queue = [];
+
+  // 2. 将所有边缘上与边缘颜色相同的格子加入队列
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      // 只检查边缘行和列
+      if (row !== 0 && row !== rows - 1 && col !== 0 && col !== cols - 1) continue;
+
+      const cell = gridData[row] && gridData[row][col];
+      if (!cell || !cell.originalRgb) continue;
+
+      const color = cell.originalRgb;
+      const isSameAsEdge = colorDistance(color, edgeColor) <= diffThreshold;
+
+      if (isSameAsEdge && !visited[row][col]) {
+        visited[row][col] = true;
+        queue.push({ row, col });
+      }
+    }
+  }
+
+  // 3. BFS 遍历所有连通的与边缘颜色相同的格子
+  const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]]; // 上下左右
+  while (queue.length > 0) {
+    const { row, col } = queue.shift();
+
+    for (const [dr, dc] of directions) {
+      const newRow = row + dr;
+      const newCol = col + dc;
+
+      // 检查边界
+      if (newRow < 0 || newRow >= rows || newCol < 0 || newCol >= cols) continue;
+      if (visited[newRow][newCol]) continue;
+
+      const cell = gridData[newRow] && gridData[newRow][newCol];
+      if (!cell || !cell.originalRgb) continue;
+
+      const color = cell.originalRgb;
+      const isSameAsEdge = colorDistance(color, edgeColor) <= diffThreshold;
+
+      if (isSameAsEdge) {
+        visited[newRow][newCol] = true;
+        queue.push({ row: newRow, col: newCol });
+      }
+    }
+  }
+
+  // 4. 标记所有连通的格子为 isEdge
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const cell = gridData[row] && gridData[row][col];
+      if (!cell) continue;
+
+      gridData[row][col].isEdge = visited[row][col];
+    }
+  }
+
+  return { gridData, rows, cols, cropped: false, marked: true };
+}
+
+/**
+ * 裁剪马赛克数据
+ * @param {object} mosaicData - 马赛克数据 { gridData, rows, cols, gridSize }
+ * @param {object} boundary - 裁剪边界 { top, bottom, left, right }
+ * @returns {object} 裁剪后的马赛克数据
+ */
+function cropMosaicData(mosaicData, boundary) {
+  if (!boundary.hasEdge) {
+    return mosaicData;
+  }
+
+  const { gridData, rows, cols, gridSize } = mosaicData;
+  const { top, bottom, left, right } = boundary;
+
+  // 计算裁剪后的行列数
+  const cropCols = Math.ceil(right / gridSize) - Math.floor(left / gridSize);
+  const cropRows = Math.ceil(bottom / gridSize) - Math.floor(top / gridSize);
+
+  // 重新计算网格起始位置
+  const startCol = Math.floor(left / gridSize);
+  const startRow = Math.floor(top / gridSize);
+
+  const newGridData = [];
+
+  for (let row = 0; row < cropRows; row++) {
+    newGridData[row] = [];
+    for (let col = 0; col < cropCols; col++) {
+      const srcRow = startRow + row;
+      const srcCol = startCol + col;
+
+      if (gridData[srcRow] && gridData[srcRow][srcCol]) {
+        const cell = { ...gridData[srcRow][srcCol] };
+        // 更新坐标为裁剪后的位置
+        cell.x = col * gridSize;
+        cell.y = row * gridSize;
+        newGridData[row][col] = cell;
+      }
+    }
+  }
+
+  return {
+    gridData: newGridData,
+    rows: cropRows,
+    cols: cropCols,
+    gridSize,
+    originalBoundary: boundary
+  };
+}
+
+/**
  * 智能处理图像 - 网格化 + 主导色识别
  * 使用网格划分图像，每个网格识别主导色
  * 智能判断是否为纯色区域，不过滤黑色（保留原色）
@@ -1093,5 +1800,12 @@ module.exports = {
   autoDetectBlockSize,
   colorDistance,
   simpleBlur,
-  floydSteinbergDithering
+  floydSteinbergDithering,
+  detectEdgeColor,
+  detectEdgeColorFromGrid,
+  detectEdgeColorFromSegments,
+  filterEdgeSegments,
+  findCropBoundary,
+  filterEdgeBlocks,
+  cropMosaicData
 };

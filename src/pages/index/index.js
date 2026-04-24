@@ -547,8 +547,8 @@ Page({
           for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
               const cell = gridData[row] && gridData[row][col];
-              // 跳过无效格子或区域成员格子
-              if (!cell || !cell.markCode || cell.isRegionMember) continue;
+              // 跳过无效格子、区域成员格子或边缘底色格子
+              if (!cell || !cell.markCode || cell.isRegionMember || cell.isEdge) continue;
 
               // 使用格子的实际宽高（合并后），并进行缩放
               const cellWidth = (cell.width || gridSize) * exportScale;
@@ -1001,7 +1001,7 @@ Page({
           for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
               const cell = gridData[row] && gridData[row][col];
-              if (cell && cell.markCode && !cell.isRegionMember) {
+              if (cell && cell.markCode && !cell.isRegionMember && !cell.isEdge) {
                 ctx.fillStyle = cell.markHex;
                 ctx.fillRect(cell.x, cell.y, cell.width, cell.height);
               }

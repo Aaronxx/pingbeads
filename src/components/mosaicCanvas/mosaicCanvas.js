@@ -1,5 +1,5 @@
 // components/mosaicCanvas/mosaicCanvas.js
-const { processSimple, aggregateSimilarColors, processWithSmartRegions } = require('../../utils/imageProcessor');
+const { processSimple, aggregateSimilarColors, processWithSmartRegions, detectEdgeColor, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, findCropBoundary, filterEdgeBlocks, cropMosaicData } = require('../../utils/imageProcessor');
 const { findClosestMarkColor } = require('../../utils/colorMapper');
 
 // 大区常量：每个大区包含 10x10 个色块
@@ -230,6 +230,24 @@ Component({
           this.renderSegmentsToCanvas(result.segments, cachedWidth, cachedHeight);
         }, 100);
 
+        // 马赛克模式的边缘底色检测与裁剪
+        const edgeDetection = detectEdgeColorFromSegments(result.segments, result.cols, result.rows);
+        if (edgeDetection && edgeDetection.hasEdge) {
+          const cropResult = filterEdgeSegments(result.segments, result.cols, result.rows, edgeDetection.edgeColor);
+          if (cropResult.cropped) {
+            result.segments = cropResult.segments;
+            result.cols = cropResult.cols;
+            result.rows = cropResult.rows;
+            // 保存裁剪后的 segments
+            this.cachedSegments = result.segments;
+            this.cachedSegmentsWidth = result.cols * result.gridSize;
+            this.cachedSegmentsHeight = result.rows * result.gridSize;
+          }
+          // 重新计算统计
+          const stats = this.calculateStatsFromSegments(result.segments);
+          this.triggerEvent('statsUpdate', { stats: stats });
+        }
+
         // 触发完成事件
         this.triggerEvent('mosaicGenerated', {
           gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize }
@@ -238,6 +256,64 @@ Component({
       } else {
         // 普通模式：传入 mergeThreshold 参数，在颜色映射阶段进行颜色聚合
         result = processSimple(pixelData, cachedWidth, cachedHeight, qualityGridSize, this.data.mergeThreshold);
+      }
+
+      // 边缘底色检测与标记
+      // 根据模式选择检测方式：马赛克模式用网格数据，卡通模式用原始像素
+      let edgeDetection = null;
+      let boundary = { hasEdge: false };
+      if (this.data.processMode === 'mosaic') {
+        // 马赛克模式：使用基于网格的检测（避免网格线干扰）
+        edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize);
+        // 马赛克模式使用简化逻辑，不需要计算精确边界
+        if (edgeDetection && edgeDetection.hasEdge) {
+          boundary = { hasEdge: true };
+        }
+      } else {
+        // 卡通模式：使用基于原始像素的检测
+        // 降低阈值到 30% 以提高检测灵敏度
+        console.log('[Edge] 卡通模式: pixelData=', !!pixelData, 'cachedWidth=', cachedWidth, 'cachedHeight=', cachedHeight);
+        edgeDetection = detectEdgeColor(pixelData, cachedWidth, cachedHeight, 3, 30);
+        console.log('[Edge] 卡通模式 edgeDetection:', edgeDetection);
+        // 卡通模式需要计算精确边界
+        if (edgeDetection && edgeDetection.hasEdge) {
+          boundary = findCropBoundary(pixelData, cachedWidth, cachedHeight, edgeDetection.edgeColor);
+          console.log('[Edge] 卡通模式 boundary:', boundary);
+          // 如果边界检测失败（hasEdge: false），但检测到了边缘颜色，仍然使用默认边界
+          // 这样可以利用简化逻辑来判断连通性
+          if (!boundary.hasEdge) {
+            boundary = { hasEdge: true, top: 0, bottom: cachedHeight, left: 0, right: cachedWidth };
+          }
+        }
+      }
+
+      if (edgeDetection && edgeDetection.hasEdge) {
+        // 边缘底色检测与裁剪
+        console.log('[Edge] 检测到边缘颜色:', edgeDetection.edgeColor);
+        console.log('[Edge] boundary 对象:', boundary);
+        console.log('[Edge] 原始网格:', { rows: result.rows, cols: result.cols });
+        const cropResult = filterEdgeBlocks(result.gridData, result.rows, result.cols, qualityGridSize, edgeDetection.edgeColor, boundary);
+        console.log('[Edge] 裁剪结果:', { cropped: cropResult.cropped, marked: cropResult.marked, rows: cropResult.rows, cols: cropResult.cols });
+        // 检查原始 result.gridData 中的 isEdge
+        let edgeCellCountBefore = 0;
+        for (let r = 0; r < result.rows; r++) {
+          for (let c = 0; c < result.cols; c++) {
+            const cell = result.gridData[r] && result.gridData[r][c];
+            if (cell && cell.isEdge) edgeCellCountBefore++;
+          }
+        }
+        console.log('[Edge] result.gridData 中 isEdge 格子数:', edgeCellCountBefore);
+        if (cropResult.marked) {
+          // 检查是否有 isEdge 标记
+          let edgeCellCount = 0;
+          for (let r = 0; r < result.rows; r++) {
+            for (let c = 0; c < result.cols; c++) {
+              const cell = result.gridData[r] && result.gridData[r][c];
+              if (cell && cell.isEdge) edgeCellCount++;
+            }
+          }
+          console.log('[Edge] 边缘色块数量:', edgeCellCount);
+        }
       }
 
       // 直接计算统计结果（不传输大量格子数据）
@@ -269,6 +345,15 @@ Component({
 
     // 计算统计结果（基于 gridData）
     calculateStats(gridData, rows, cols) {
+      // 调试：检查 gridData 中是否有 isEdge 标记
+      let edgeCount = 0;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const cell = gridData[r] && gridData[r][c];
+          if (cell && cell.isEdge) edgeCount++;
+        }
+      }
+
       const colorCounts = {};
       let totalCount = 0;
 
@@ -276,6 +361,8 @@ Component({
         for (let col = 0; col < cols; col++) {
           const cell = gridData[row] && gridData[row][col];
           if (!cell || !cell.markCode) continue;
+          // 跳过边缘底色色块
+          if (cell.isEdge) continue;
           const code = cell.markCode;
           // 使用格式化后的色号作为key（去掉前导0）
           const formattedCode = this.formatMarkCode(code);
@@ -306,6 +393,8 @@ Component({
 
       for (const segment of segments) {
         if (!segment.markCode) continue;
+        // 跳过边缘底色色块
+        if (segment.isEdge) continue;
         const code = segment.markCode;
         // 使用格式化后的色号作为key（去掉前导0）
         const formattedCode = this.formatMarkCode(code);
@@ -487,6 +576,11 @@ Component({
 
       const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
 
+      // 尝试获取像素数据进行边缘检测
+      let pixelData = this.getCachedPixelData();
+      const pixelWidth = this.cachedWidth || width;
+      const pixelHeight = this.cachedHeight || height;
+
       // 根据处理模式选择不同的处理方法
       let result;
       if (this.data.processMode === 'mosaic') {
@@ -514,13 +608,75 @@ Component({
           this.renderSegmentsToCanvas(result.segments, width, height);
         }, 100);
 
+        // 马赛克模式的边缘底色检测与裁剪
+        const edgeDetection = detectEdgeColorFromSegments(result.segments, result.cols, result.rows);
+        if (edgeDetection && edgeDetection.hasEdge) {
+          const cropResult = filterEdgeSegments(result.segments, result.cols, result.rows, edgeDetection.edgeColor);
+          if (cropResult.cropped) {
+            result.segments = cropResult.segments;
+            result.cols = cropResult.cols;
+            result.rows = cropResult.rows;
+            // 保存裁剪后的 segments
+            this.cachedSegments = result.segments;
+            this.cachedSegmentsWidth = result.cols * result.gridSize;
+            this.cachedSegmentsHeight = result.rows * result.gridSize;
+          }
+          // 重新计算统计
+          const stats = this.calculateStatsFromSegments(result.segments);
+          this.triggerEvent('statsUpdate', { stats: stats });
+        }
+
         this.triggerEvent('mosaicGenerated', {
           gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize }
         });
         return;
       } else {
         // 传入 mergeThreshold 参数
-        result = processSimple(null, width, height, qualityGridSize, this.data.mergeThreshold);
+        result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold);
+      }
+
+      // 边缘底色检测与裁剪
+      try {
+        let edgeDetection = null;
+        let boundary = { hasEdge: false };
+        if (this.data.processMode === 'mosaic') {
+          edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize);
+          if (edgeDetection && edgeDetection.hasEdge) {
+            boundary = { hasEdge: true };
+          }
+        } else if (pixelData && width > 0 && height > 0) {
+          console.log('[Edge] 卡通模式: pixelData=', !!pixelData, 'width=', width, 'height=', height);
+          // 降低阈值到 30% 以提高检测灵敏度
+          edgeDetection = detectEdgeColor(pixelData, width, height, 3, 30);
+          console.log('[Edge] 卡通模式 edgeDetection:', edgeDetection);
+          if (edgeDetection && edgeDetection.hasEdge) {
+            boundary = findCropBoundary(pixelData, width, height, edgeDetection.edgeColor);
+            console.log('[Edge] 卡通模式 boundary:', boundary);
+            // 如果边界检测失败，但检测到了边缘颜色，仍然使用默认边界
+            if (!boundary.hasEdge) {
+              boundary = { hasEdge: true, top: 0, bottom: height, left: 0, right: width };
+            }
+          }
+        }
+
+        if (edgeDetection && edgeDetection.hasEdge) {
+          console.log('[Edge] 检测到边缘颜色:', edgeDetection.edgeColor);
+          console.log('[Edge] boundary 对象:', boundary);
+          const cropResult = filterEdgeBlocks(result.gridData, result.rows, result.cols, qualityGridSize, edgeDetection.edgeColor, boundary);
+          console.log('[Edge] 裁剪结果:', { cropped: cropResult.cropped, rows: cropResult.rows, cols: cropResult.cols });
+          if (cropResult.marked) {
+            let edgeCellCount = 0;
+            for (let r = 0; r < result.rows; r++) {
+              for (let c = 0; c < result.cols; c++) {
+                const cell = result.gridData[r] && result.gridData[r][c];
+                if (cell && cell.isEdge) edgeCellCount++;
+              }
+            }
+            console.log('[Edge] 边缘色块数量:', edgeCellCount);
+          }
+        }
+      } catch (e) {
+        console.error('边缘检测错误:', e);
       }
 
       // 直接计算统计结果
@@ -595,6 +751,50 @@ Component({
       } else {
         // 传入 mergeThreshold 参数，在颜色映射阶段进行颜色聚合
         result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold);
+      }
+
+      // 边缘底色检测与裁剪
+      try {
+        let edgeDetection = null;
+        let boundary = { hasEdge: false };
+        if (this.data.processMode === 'mosaic') {
+          edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize);
+          if (edgeDetection && edgeDetection.hasEdge) {
+            boundary = { hasEdge: true };
+          }
+        } else if (pixelData && width > 0 && height > 0) {
+          console.log('[Edge] 卡通模式: pixelData=', !!pixelData, 'width=', width, 'height=', height);
+          // 降低阈值到 30% 以提高检测灵敏度
+          edgeDetection = detectEdgeColor(pixelData, width, height, 3, 30);
+          console.log('[Edge] 卡通模式 edgeDetection:', edgeDetection);
+          if (edgeDetection && edgeDetection.hasEdge) {
+            boundary = findCropBoundary(pixelData, width, height, edgeDetection.edgeColor);
+            console.log('[Edge] 卡通模式 boundary:', boundary);
+            // 如果边界检测失败，但检测到了边缘颜色，仍然使用默认边界
+            if (!boundary.hasEdge) {
+              boundary = { hasEdge: true, top: 0, bottom: height, left: 0, right: width };
+            }
+          }
+        }
+
+        if (edgeDetection && edgeDetection.hasEdge) {
+          console.log('[Edge] 检测到边缘颜色:', edgeDetection.edgeColor);
+          console.log('[Edge] boundary 对象:', boundary);
+          const cropResult = filterEdgeBlocks(result.gridData, result.rows, result.cols, qualityGridSize, edgeDetection.edgeColor, boundary);
+          console.log('[Edge] 裁剪结果:', { cropped: cropResult.cropped, rows: cropResult.rows, cols: cropResult.cols });
+          if (cropResult.marked) {
+            let edgeCellCount = 0;
+            for (let r = 0; r < result.rows; r++) {
+              for (let c = 0; c < result.cols; c++) {
+                const cell = result.gridData[r] && result.gridData[r][c];
+                if (cell && cell.isEdge) edgeCellCount++;
+              }
+            }
+            console.log('[Edge] 边缘色块数量:', edgeCellCount);
+          }
+        }
+      } catch (e) {
+        console.error('边缘检测错误:', e);
       }
 
       // 直接计算统计结果
@@ -752,7 +952,7 @@ Component({
               const x = offsetX + col * cellSize;
               const y = offsetY + row * cellSize;
 
-              // 绘制色块
+              // 绘制色块（所有格子都绘制色块）
               ctx.fillStyle = cell.markHex;
               ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(cellWidth), Math.ceil(cellHeight));
 
@@ -761,9 +961,9 @@ Component({
               ctx.lineWidth = 1;
               ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
 
-              // 绘制色号
+              // 绘制色号（跳过边缘底色色块）
               const size = Math.min(cellWidth, cellHeight);
-              if (that.data.showCode && size >= 8) {
+              if (that.data.showCode && size >= 8 && !cell.isEdge) {
                 const isLight = that.isLightColor(cell.markHex);
                 ctx.fillStyle = isLight ? '#333333' : '#ffffff';
                 ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
@@ -996,13 +1196,18 @@ Component({
               continue;
             }
 
+            // 跳过边缘底色色块
+            if (segment.isEdge) {
+              continue;
+            }
+
             // 绘制色段（紧密排列，不留间隙）
             ctx.fillStyle = segment.markHex || '#cccccc';
             ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(width), Math.ceil(height));
 
             // 绘制色号（如果色段足够大）
             const size = Math.min(width, height);
-            if (that.data.showCode && size >= 8) {
+            if (that.data.showCode && size >= 8 && !segment.isEdge) {
               const isLight = that.isLightColor(segment.markHex);
               ctx.fillStyle = isLight ? '#333333' : '#ffffff';
               ctx.font = `${Math.max(8, size * 0.3)}px sans-serif`;
@@ -1522,6 +1727,7 @@ Component({
           const x = finalOffsetX + col * cellSize;
           const y = finalOffsetY + row * cellSize;
 
+          // 绘制色块（所有格子都绘制色块）
           ctx.fillStyle = cell.markHex;
           ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(cellWidth), Math.ceil(cellHeight));
 
@@ -1529,8 +1735,9 @@ Component({
           ctx.lineWidth = 1;
           ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
 
+          // 绘制色号（跳过边缘底色色块）
           const size = Math.min(cellWidth, cellHeight);
-          if (this.data.showCode && size >= 8) {
+          if (this.data.showCode && size >= 8 && !cell.isEdge) {
             const isLight = this.isLightColor(cell.markHex);
             ctx.fillStyle = isLight ? '#333333' : '#ffffff';
             ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
