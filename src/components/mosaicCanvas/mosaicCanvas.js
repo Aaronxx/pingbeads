@@ -1134,6 +1134,11 @@ Component({
             ctx.fillStyle = segment.markHex || '#cccccc';
             ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(width), Math.ceil(height));
 
+            // 绘制色段边框
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(width) - 1, Math.ceil(height) - 1);
+
             // 绘制色号（跳过边缘底色色块）
             const size = Math.min(width, height);
             if (that.data.showCode && size >= 8 && !segment.isEdge) {
