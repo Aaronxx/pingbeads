@@ -60,8 +60,8 @@ Page({
       { name: '100', value: 100 }
     ],
     // 当前选项索引（用于 picker 绑定）
-    gridOptionIndex: 3,  // 默认 10
-    thresholdOptionIndex: 2,  // 默认 15
+    gridOptionIndex: 2,  // 默认 10 (gridOptions[2].value = 10)
+    thresholdOptionIndex: 3,  // 默认 15 (thresholdOptions[3].value = 15)
 
     // 替换功能
     showReplacePanel: false,  // 是否显示替换面板
@@ -99,7 +99,7 @@ Page({
       imagePath: path,
       currentStep: 1,
       mosaicData: null,
-      highlightCode: null,
+      highlightCode: '',
       scale: 1
     });
   },
@@ -390,6 +390,12 @@ Page({
 
     const exportData = mosaicCanvas.getExportData();
 
+    if (!exportData || !exportData.gridInfo) {
+      wx.showToast({ title: '请先生成拼豆图纸', icon: 'none' });
+      this.setData({ isExporting: false });
+      return;
+    }
+
     const { cols, rows, gridSize } = exportData.gridInfo;
     const gridData = exportData.gridData;
     const segments = exportData.segments;
@@ -416,15 +422,15 @@ Page({
     const statsHeight = statsItemHeight * statsRowCount + 20;
 
     // 增大分辨率：导出时使用更大的格子
-    // 动态计算放大倍数，限制最大导出尺寸在 4000 像素内，避免 Canvas 2D 导出失败
-    const maxExportDimension = 4000;
+    // 动态计算放大倍数，限制最大导出尺寸在 4096 像素内（微信 Canvas 2D 上限）
+    const maxExportDimension = 4096;
     const baseWidth = cols * gridSize + 40; // 加上左侧标尺
     const baseHeight = rows * gridSize + 30 + statsHeight; // 加上顶部标尺和统计行
 
-    // 计算合适的放大倍数，确保最长边不超过限制
+    // 计算合适的放大倍数，确保最长边不超过 4096，且最小为 1 倍
     const scaleX = maxExportDimension / baseWidth;
     const scaleY = maxExportDimension / baseHeight;
-    const exportScale = Math.min(2, Math.max(1, Math.min(scaleX, scaleY)));
+    const exportScale = Math.max(1, Math.min(scaleX, scaleY));
 
     const exportGridSize = gridSize * exportScale;
 
@@ -533,6 +539,11 @@ Page({
               ctx.fillStyle = cell.markHex || '#cccccc';
               ctx.fillRect(x, y, width, height);
 
+              // 绘制色块边框
+              ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(width) - 1, Math.ceil(height) - 1);
+
               // 绘制色号（降低阈值到 4 像素，确保小图也能显示色号）
               if (width >= 4 && height >= 4) {
                 const isLight = isLightColor(cell.markHex);
@@ -561,6 +572,11 @@ Page({
             // 绘制色段
             ctx.fillStyle = segment.markHex || '#cccccc';
             ctx.fillRect(x, y, width, height);
+
+            // 绘制色块边框
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(width) - 1, Math.ceil(height) - 1);
 
             // 绘制色号（降低阈值到 4 像素，确保小图也能显示色号）
             if (width >= 4 && height >= 4) {
@@ -593,6 +609,11 @@ Page({
               // 绘制色块
               ctx.fillStyle = cell.markHex;
               ctx.fillRect(x, y, cellWidth, cellHeight);
+
+              // 绘制色块边框
+              ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
 
               // 绘制色号（根据实际的格子大小调整字号，降低阈值到 4 像素）
               if (cellWidth >= 4 && cellHeight >= 4) {
@@ -690,8 +711,8 @@ Page({
             success: (res) => {
               that.saveToPhotoAlbum(res.tempFilePath);
             },
-            fail: () => {
-              wx.showToast({ title: '导出失败，请重试' + JSON.stringify(err), icon: 'none' });
+            fail: (e) => {
+              wx.showToast({ title: '导出失败，请重试', icon: 'none' });
               that.setData({ isExporting: false });
             }
           };

@@ -55,6 +55,11 @@ Component({
         return;
       }
 
+      if (!this.data.stats) {
+        this.triggerEvent('codeClick', { code, hex: null });
+        return;
+      }
+
       const item = this.data.stats.sortedByCount.find(i => i.code === code);
       this.triggerEvent('codeClick', { code, hex: item ? item.hex : null });
     }
