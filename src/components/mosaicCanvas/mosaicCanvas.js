@@ -331,7 +331,7 @@ Component({
           if (cell.isEdge) continue;
           const code = cell.markCode;
           // 使用格式化后的色号作为key（去掉前导0）
-          const formattedCode = this.formatMarkCode(code);
+          const formattedCode = formatMarkCode(code);
           if (!colorCounts[formattedCode]) {
             colorCounts[formattedCode] = {
               code: formattedCode,
@@ -363,7 +363,7 @@ Component({
         if (segment.isEdge) continue;
         const code = segment.markCode;
         // 使用格式化后的色号作为key（去掉前导0）
-          const formattedCode = this.formatMarkCode(code);
+          const formattedCode = formatMarkCode(code);
         if (!colorCounts[formattedCode]) {
           colorCounts[formattedCode] = {
             code: formattedCode,
@@ -1825,12 +1825,12 @@ Component({
           // 绘制色号（跳过边缘底色色块）
           const size = Math.min(cellWidth, cellHeight);
           if (this.data.showCode && size >= 8 && !cell.isEdge) {
-            const isLight = this.isLightColor(cell.markHex);
+            const isLight = isLightColor(cell.markHex);
             ctx.fillStyle = isLight ? '#333333' : '#ffffff';
             ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(this.formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
+            ctx.fillText(formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
           }
         }
       }

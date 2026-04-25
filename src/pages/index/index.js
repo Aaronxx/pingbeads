@@ -642,7 +642,7 @@ Page({
             displayCode = displayCode.charAt(0) + displayCode.substring(2);
           }
           
-          const isLightColor = isLightColor(item.hex);
+          const isLight = isLightColor(item.hex);
           
           // 绘制圆角按钮背景（玻璃拟态效果）
           // 1. 先绘制按钮背景
@@ -937,9 +937,6 @@ Page({
     ctx.quadraticCurveTo(x, y, x + radius, y);
     ctx.closePath();
     ctx.fill();
-    return brightness > 150;
-    return code.replace(/^([A-Z])0(\d+)$/, '$1$2');
-    return num < 10 ? `${letter}0${num}` : `${letter}${num}`;
   },
 
   // 使用 canvasId 导出（真机调试兼容方案）
