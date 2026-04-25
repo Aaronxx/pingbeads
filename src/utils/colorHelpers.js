@@ -25,19 +25,30 @@ function isLightColor(hex) {
   return brightness > 150;
 }
 
+/**
+ * 格式化色号（现已不需要转换，数据已不带前缀0）
+ * 保留函数以兼容可能的其他用途
+ */
 function formatMarkCode(code) {
   if (!code) return '';
-  return code.replace(/^([A-Z])0(\d+)$/, '$1$2');
+  return code;
 }
 
+/**
+ * 解析色号输入为标准格式
+ * 兼容用户输入：支持 "A1", "A01", "a1", "a01" 等格式
+ * 输出统一格式：不带前缀0（如 "A1"）
+ */
 function parseMarkCode(input) {
   if (!input) return null;
   const normalized = input.toUpperCase().trim();
-  const match = normalized.match(/^([A-Z])(\d+)$/);
+  // 支持单字母(A-Z)或双字母(ZG等)前缀 + 数字
+  const match = normalized.match(/^([A-Z]{1,2})(\d+)$/);
   if (!match) return null;
   const letter = match[1];
   const num = parseInt(match[2], 10);
-  return num < 10 ? `${letter}0${num}` : `${letter}${num}`;
+  // 输出时不加前缀0，直接拼接
+  return `${letter}${num}`;
 }
 
 module.exports = {

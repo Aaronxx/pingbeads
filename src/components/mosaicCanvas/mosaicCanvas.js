@@ -1141,11 +1141,10 @@ Component({
       return brightness > 150;
     },
 
-    // 格式化色号（去除前导0）
+    // 格式化色号（现已不需要转换，数据已不带前缀0）
     formatMarkCode(code) {
       if (!code) return '';
-      // 匹配字母+数字格式，如 A01, B09, C10 等
-      return code.replace(/^([A-Z])0(\d+)$/, '$1$2');
+      return code;
     },
 
     // 解析色号（兼容大小写和前导0）
@@ -1153,13 +1152,13 @@ Component({
       if (!input) return null;
       // 转换为大写并去除空格
       const normalized = input.toUpperCase().trim();
-      // 匹配格式：字母+数字（如 A1, A01, a1, m9, M09 等）
-      const match = normalized.match(/^([A-Z])(\d+)$/);
+      // 匹配格式：字母+数字（如 A1, A01, a1, m9, M09, ZG1 等，支持双字母前缀）
+      const match = normalized.match(/^([A-Z]{1,2})(\d+)$/);
       if (!match) return null;
       const letter = match[1];
       const num = parseInt(match[2], 10);
-      // 还原为标准格式（可能需要前导0）
-      return num < 10 ? `${letter}0${num}` : `${letter}${num}`;
+      // 输出时不加前缀0
+      return `${letter}${num}`;
     },
 
     // 重试渲染（延迟执行）
