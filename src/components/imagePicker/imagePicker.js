@@ -1,7 +1,7 @@
-// components/imagePicker/imagePicker.js
+﻿// components/imagePicker/imagePicker.js
 Component({
   properties: {
-    // 是否显示选择按钮
+    // 鏄惁鏄剧ず閫夋嫨鎸夐挳
     showPicker: {
       type: Boolean,
       value: true
@@ -9,14 +9,13 @@ Component({
   },
 
   data: {
-    // 选择的图片路径
-    imagePath: '',
-    // 是否已选择图片
+    // 閫夋嫨鐨勫浘鐗囪矾寰?    imagePath: '',
+    // 鏄惁宸查€夋嫨鍥剧墖
     hasImage: false
   },
 
   methods: {
-    // 选择图片
+    // 閫夋嫨鍥剧墖
     chooseImage() {
       wx.chooseMedia({
         count: 1,
@@ -28,29 +27,28 @@ Component({
             imagePath: tempFilePath,
             hasImage: true
           });
-          // 触发事件
+          // 瑙﹀彂浜嬩欢
           
           this.triggerEvent('imageSelected', {
             path: tempFilePath
           });
-          wx.showToast({ title: '触发事件', icon: 'none' });
         },
         fail: (err) => {
           
           wx.showToast({
-            title: '选择图片失败',
+            title: '閫夋嫨鍥剧墖澶辫触',
             icon: 'none'
           });
         }
       });
     },
 
-    // 重新选择图片
+    // 閲嶆柊閫夋嫨鍥剧墖
     reselectImage() {
       this.chooseImage();
     },
 
-    // 清除图片
+    // 娓呴櫎鍥剧墖
     clearImage() {
       this.setData({
         imagePath: '',
@@ -59,7 +57,7 @@ Component({
       this.triggerEvent('imageCleared');
     },
 
-    // 预览图片
+    // 棰勮鍥剧墖
     previewImage() {
       if (!this.data.imagePath) return;
       wx.previewImage({
@@ -68,3 +66,4 @@ Component({
     }
   }
 });
+

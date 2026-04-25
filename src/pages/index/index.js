@@ -1,4 +1,6 @@
 // pages/index/index.js
+const { isLightColor, formatMarkCode, parseMarkCode } = require('../../utils/colorHelpers');
+
 Page({
   data: {
     // 当前步骤: 1-选择图片, 2-处理完成
@@ -267,8 +269,8 @@ Page({
     }
 
     // 解析色号（兼容大小写和前导0）
-    const fromCode = this.parseMarkCode(replaceFromCode);
-    const toCode = this.parseMarkCode(replaceToCode);
+    const fromCode = parseMarkCode(replaceFromCode);
+    const toCode = parseMarkCode(replaceToCode);
     if (!fromCode || !toCode) {
       wx.showToast({ title: '色号格式错误', icon: 'none' });
       return;
@@ -531,13 +533,13 @@ Page({
 
               // 绘制色号（降低阈值到 4 像素，确保小图也能显示色号）
               if (width >= 4 && height >= 4) {
-                const isLight = this.isLightColor(cell.markHex);
+                const isLight = isLightColor(cell.markHex);
                 ctx.fillStyle = isLight ? '#333' : '#fff';
                 const fontSize = Math.max(4, Math.min(width, height) * 0.35);
                 ctx.font = `bold ${fontSize.toFixed(0)}px sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(this.formatMarkCode(cell.markCode), x + width / 2, y + height / 2);
+                ctx.fillText(formatMarkCode(cell.markCode), x + width / 2, y + height / 2);
               }
             }
           }
@@ -560,14 +562,14 @@ Page({
 
             // 绘制色号（降低阈值到 4 像素，确保小图也能显示色号）
             if (width >= 4 && height >= 4) {
-              const isLight = this.isLightColor(segment.markHex);
+              const isLight = isLightColor(segment.markHex);
               ctx.fillStyle = isLight ? '#333' : '#fff';
               // 马赛克模式：色块通常较小，使用更大的比例和更小的最小值
               const fontSize = Math.max(4, Math.min(width, height) * 0.35);
               ctx.font = `bold ${fontSize.toFixed(0)}px sans-serif`;
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
-              ctx.fillText(this.formatMarkCode(segment.markCode), x + width / 2, y + height / 2);
+              ctx.fillText(formatMarkCode(segment.markCode), x + width / 2, y + height / 2);
             }
           }
         } else {
@@ -593,14 +595,14 @@ Page({
               // 绘制色号（根据实际的格子大小调整字号，降低阈值到 4 像素）
               if (cellWidth >= 4 && cellHeight >= 4) {
                 // 根据色块颜色自动选择文字颜色
-                const isLight = this.isLightColor(cell.markHex);
+                const isLight = isLightColor(cell.markHex);
                 ctx.fillStyle = isLight ? '#333' : '#fff';
                 // 使用实际的 cellWidth 来计算字号，确保文字适应格子大小
                 const fontSize = Math.max(8, Math.min(cellWidth, cellHeight) * 0.35);
                 ctx.font = `bold ${fontSize.toFixed(0)}px sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(this.formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
+                ctx.fillText(formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
               }
             }
           }
@@ -640,7 +642,7 @@ Page({
             displayCode = displayCode.charAt(0) + displayCode.substring(2);
           }
           
-          const isLightColor = this.isLightColor(item.hex);
+          const isLightColor = isLightColor(item.hex);
           
           // 绘制圆角按钮背景（玻璃拟态效果）
           // 1. 先绘制按钮背景
@@ -935,49 +937,8 @@ Page({
     ctx.quadraticCurveTo(x, y, x + radius, y);
     ctx.closePath();
     ctx.fill();
-  },
-
-  // 判断颜色是否为浅色（需要深色文字）
-  isLightColor(hex) {
-    if (!hex) return false;
-    // 去掉 #
-    hex = hex.replace('#', '');
-    // 解析 RGB
-    let r, g, b;
-    if (hex.length === 3) {
-      r = parseInt(hex[0] + hex[0], 16);
-      g = parseInt(hex[1] + hex[1], 16);
-      b = parseInt(hex[2] + hex[2], 16);
-    } else if (hex.length === 6) {
-      r = parseInt(hex.substring(0, 2), 16);
-      g = parseInt(hex.substring(2, 4), 16);
-      b = parseInt(hex.substring(4, 6), 16);
-    } else {
-      return false;
-    }
-    // 计算亮度
-    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
     return brightness > 150;
-  },
-
-  // 格式化色号（去除前导0）
-  formatMarkCode(code) {
-    if (!code) return '';
-    // 匹配字母+数字格式，如 A01, B09, C10 等
     return code.replace(/^([A-Z])0(\d+)$/, '$1$2');
-  },
-
-  // 解析色号（兼容大小写和前导0）
-  parseMarkCode(input) {
-    if (!input) return null;
-    // 转换为大写并去除空格
-    const normalized = input.toUpperCase().trim();
-    // 匹配格式：字母+数字（如 A1, A01, a1, m9, M09 等）
-    const match = normalized.match(/^([A-Z])(\d+)$/);
-    if (!match) return null;
-    const letter = match[1];
-    const num = parseInt(match[2], 10);
-    // 还原为标准格式（可能需要前导0）
     return num < 10 ? `${letter}0${num}` : `${letter}${num}`;
   },
 
