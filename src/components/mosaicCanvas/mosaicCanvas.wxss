@@ -1,7 +1,7 @@
 /* components/mosaicCanvas/mosaicCanvas.wxss */
 
 /* 渐变背景色板 */
-page {
+.mosaic-wrapper {
   --cell-border: rgba(255, 255, 255, 0.15);
   --shadow-subtle: 0 2rpx 4rpx rgba(0, 0, 0, 0.1);
 }

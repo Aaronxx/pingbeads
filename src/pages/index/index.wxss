@@ -1,7 +1,7 @@
 /* pages/index/index.wxss */
 
 /* 变量定义 */
-page {
+.container {
   --primary: #3b82f6;
   --primary-dark: #2563eb;
   --primary-light: #60a5fa;

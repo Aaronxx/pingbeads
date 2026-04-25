@@ -729,7 +729,7 @@ Page({
             success: (res) => {
               that.saveToPhotoAlbum(res.tempFilePath);
             },
-            fail: (e) => {
+            fail: () => {
               wx.showToast({ title: '导出失败，请重试', icon: 'none' });
               that.setData({ isExporting: false });
             }
