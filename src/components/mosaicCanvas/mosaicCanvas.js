@@ -1,7 +1,7 @@
 // components/mosaicCanvas/mosaicCanvas.js
 const { processSimple, processWithSmartRegions, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData } = require('../../utils/imageProcessor');
-const { isLightColor, formatMarkCode, parseMarkCode } = require('../../utils/colorHelpers');
-const { REGION_SIZE, getColCode, parseRegionCode, getRegionCells } = require('../../utils/regionUtils');
+const { isLightColor, formatMarkCode } = require('../../utils/colorHelpers');
+const { REGION_SIZE, getColCode, getRegionCells } = require('../../utils/regionUtils');
 
 Component({
   properties: {
