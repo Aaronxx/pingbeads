@@ -10,6 +10,8 @@
 /**
  * 计算颜色距离 (欧氏距离)
  */
+const { fastFindClosestMarkColor } = require('../utils/colorMapper');
+
 function colorDistance(c1, c2) {
   return Math.sqrt(
     Math.pow(c1.r - c2.r, 2) +
@@ -50,7 +52,6 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0) {
   }
 
   // 使用查找表加速颜色映射
-  const { fastFindClosestMarkColor } = require('../utils/colorMapper');
 
   // 如果没有像素数据，使用简单算法
   if (!pixelData || pixelData.length === 0) {
@@ -109,7 +110,6 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0) {
  * 生成占位网格（无图片数据时使用）
  */
 function generatePlaceholderGrid(cols, rows, gridSize) {
-  const { fastFindClosestMarkColor } = require('../utils/colorMapper');
   
   const gridData = [];
   
@@ -268,7 +268,6 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
   }
 
   // 5. 为每个聚类中心找到最接近的 Mark 色号
-  const { fastFindClosestMarkColor } = require('../utils/colorMapper');
   const centerMarkColors = centers.map(center => fastFindClosestMarkColor(center));
 
   
@@ -1206,7 +1205,6 @@ function cropMosaicData(mosaicData, boundary) {
 function processWithSmartRegions(pixelData, width, height, gridSize) {
 
   // 导入颜色查找函数
-  const { fastFindClosestMarkColor: findMark } = require('../utils/colorMapper');
 
   // 如果没有像素数据，返回空结果
   if (!pixelData || pixelData.length === 0) {
@@ -1302,7 +1300,7 @@ function processWithSmartRegions(pixelData, width, height, gridSize) {
 
       // 如果没有有效颜色，使用默认灰色
       if (colors.length === 0) {
-        let markColor = findMark({ r: 128, g: 128, b: 128 });
+      let markColor = fastFindClosestMarkColor({ r: 128, g: 128, b: 128 });
         if (!markColor || !markColor.code) {
           markColor = { code: 'M001', hex: '#CCCCCC', rgb: { r: 204, g: 204, b: 204 } };
         }
@@ -1366,7 +1364,7 @@ function processWithSmartRegions(pixelData, width, height, gridSize) {
       }
 
       // 映射到 MARD 色号
-      let markColor = findMark(finalColor);
+        let markColor = fastFindClosestMarkColor(finalColor);
       // 防御：如果找不到颜色，使用默认值
       if (!markColor || !markColor.code) {
         markColor = { code: 'M001', hex: '#CCCCCC', rgb: { r: 204, g: 204, b: 204 } };

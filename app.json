@@ -10,11 +10,6 @@
     "navigationBarTextStyle": "black"
   },
   "requiredBackgroundModes": [],
-  "usingComponents": {
-    "imagePicker": "/src/components/imagePicker/imagePicker",
-    "mosaicCanvas": "/src/components/mosaicCanvas/mosaicCanvas",
-    "colorStats": "/src/components/colorStats/colorStats"
-  },
   "style": "v2",
   "sitemapLocation": "sitemap.json"
 }
