@@ -16,49 +16,6 @@ page {
   box-sizing: border-box;
 }
 
-.mosaic-wrapper.fullscreen {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 9999;
-  height: 100vh;
-  width: 100vw !important;
-  border-radius: 0;
-  background: #000;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-/* 全屏按钮 */
-.fullscreen-btn {
-  position: absolute;
-  top: -20rpx;
-  right: -20rpx;
-  z-index: 9999;
-  padding: 12rpx 24rpx;
-  background: rgba(0, 0, 0, 0.6);
-  color: #fff;
-  font-size: 24rpx;
-  border-radius: 8rpx;
-  backdrop-filter: blur(8rpx);
-  transition: all 0.2s ease;
-}
-
-.fullscreen-btn:active {
-  background: rgba(0, 0, 0, 0.8);
-  transform: scale(0.96);
-}
-
-/* 全屏时退出按钮在左上角 */
-.fullscreen-btn.fullscreen-exit {
-  top: 40rpx;
-  left: 40rpx;
-  right: auto;
-}
-
 /* 滚动区域 */
 .mosaic-scroll {
   width: 100%;

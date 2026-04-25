@@ -22,7 +22,6 @@ Component({
     canvasHeight: 300,
     isProcessing: false,
     gridInfo: null,
-    isFullscreen: false,
     scale: 1,
     // 拖动偏移量
     offsetX: 0,
@@ -1320,18 +1319,6 @@ Component({
           // 渲染完成
           that.isRendering = false;
         });
-    },
-
-    toggleFullscreen() {
-      const isFullscreen = !this.data.isFullscreen;
-      this.setData({ isFullscreen });
-
-      // 设置横屏
-      if (isFullscreen) {
-        wx.setPageOrientation('landscape');
-      } else {
-        wx.setPageOrientation('portrait');
-      }
     },
 
     // 获取可见区域范围
