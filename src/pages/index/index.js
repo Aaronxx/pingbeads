@@ -668,7 +668,7 @@ Page({
           this.drawRoundedRect(ctx, x, y, btnWidth, btnHeight, radius);
           
           // 4. 绘制文字
-          ctx.fillStyle = isLightColor ? '#333' : '#fff';
+          ctx.fillStyle = isLight ? '#333' : '#fff';
           ctx.font = 'bold 12px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
