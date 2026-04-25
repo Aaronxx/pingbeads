@@ -2,6 +2,7 @@
 const { processSimple, processWithSmartRegions, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData } = require('../../utils/imageProcessor');
 const { isLightColor, formatMarkCode } = require('../../utils/colorHelpers');
 const { REGION_SIZE, getColCode, getRegionCells } = require('../../utils/regionUtils');
+const { isSpecialColor, getAlternativeColor } = require('../../utils/colorMapper');
 
 Component({
   properties: {
@@ -10,6 +11,7 @@ Component({
     mergeThreshold: { type: Number, value: 5 },
     // 处理模式: 'normal' | 'smart' - smart 模式会保留黑色边界并合并色块
     processMode: { type: String, value: 'normal' },
+    useSpecialColors: { type: Boolean, value: true },  // 是否使用特殊色
     highlightCode: { type: String, value: null },
     showCode: { type: Boolean, value: false },
     scale: { type: Number, value: 1 },
@@ -67,21 +69,21 @@ Component({
         }, 200);
       }
     },
-    'gridSize, mergeThreshold, previewQuality, processMode': function() {
+    'gridSize, mergeThreshold, previewQuality, processMode, useSpecialColors': function() {
 
 
 
 
       if (this.cachedPixelData && this.cachedWidth > 0) {
         // 有缓存数据，使用缓存重新生成
-        
+
         this.setData({ isProcessing: true });
         setTimeout(() => {
           this.regenerateFromCache();
         }, 200);
       } else if (this.data.imagePath) {
         // 没有缓存但有图片路径，重新加载图片
-        
+
         this.processImage(this.data.imagePath);
       }
     },
@@ -150,6 +152,9 @@ Component({
 
         // 将 segments 转换为 2D gridData，复用卡通模式的渲染逻辑
         const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows);
+
+        // 替换特殊色为替代色（必须在 gridData 生成之后）
+        this.replaceSpecialColors(gridData, result.rows, result.cols);
 
         // 马赛克模式：检查 isEdge 标记并进行裁剪
         let hasExistingIsEdge = false;
@@ -220,6 +225,9 @@ Component({
         // 普通模式：传入 mergeThreshold 参数，在颜色映射阶段进行颜色聚合
         result = processSimple(pixelData, cachedWidth, cachedHeight, qualityGridSize, this.data.mergeThreshold);
       }
+
+      // 替换特殊色为替代色
+      this.replaceSpecialColors(result.gridData, result.rows, result.cols);
 
       // 边缘底色检测与标记
       // 根据模式选择检测方式：马赛克模式用网格数据，卡通模式用原始像素
@@ -309,6 +317,33 @@ Component({
     },
 
     // 计算统计结果（基于 gridData）
+    /**
+     * 替换特殊色为替代色
+     * 当 useSpecialColors 为 false 时调用
+     * @param {Array} gridData - 网格数据
+     * @param {number} rows - 行数
+     * @param {number} cols - 列数
+     */
+    replaceSpecialColors(gridData, rows, cols) {
+      if (this.data.useSpecialColors) return; // 如果使用特殊色，不替换
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const cell = gridData[row] && gridData[row][col];
+          if (!cell || !cell.markCode) continue;
+
+          if (isSpecialColor(cell.markCode)) {
+            const altColor = getAlternativeColor(cell.markCode);
+            if (altColor) {
+              cell.markCode = altColor.code;
+              cell.markHex = altColor.hex;
+              cell.markRgb = altColor.rgb;
+            }
+          }
+        }
+      }
+    },
+
     calculateStats(gridData, rows, cols) {
       // 调试：检查 gridData 中是否有 isEdge 标记
       let edgeCount = 0;
@@ -543,6 +578,9 @@ Component({
         // 将 segments 转换为 2D gridData，复用卡通模式的渲染逻辑
         const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows);
 
+        // 替换特殊色为替代色
+        this.replaceSpecialColors(gridData, result.rows, result.cols);
+
         // 马赛克模式：检查 isEdge 标记并进行裁剪
         let hasExistingIsEdge = false;
         let edgeCount = 0;
@@ -611,6 +649,9 @@ Component({
         // 传入 mergeThreshold 参数
         result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold);
       }
+
+      // 替换特殊色为替代色
+      this.replaceSpecialColors(result.gridData, result.rows, result.cols);
 
       // 边缘底色检测与裁剪
       try {
@@ -726,6 +767,9 @@ Component({
         // 将 segments 转换为 2D gridData，复用卡通模式的渲染逻辑
         const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows);
 
+        // 替换特殊色为替代色
+        this.replaceSpecialColors(gridData, result.rows, result.cols);
+
         // 马赛克模式：检查 isEdge 标记并进行裁剪
         let hasExistingIsEdge = false;
         let edgeCount = 0;
@@ -794,6 +838,9 @@ Component({
         // 传入 mergeThreshold 参数，在颜色映射阶段进行颜色聚合
         result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold);
       }
+
+      // 替换特殊色为替代色
+      this.replaceSpecialColors(result.gridData, result.rows, result.cols);
 
       // 边缘底色检测与裁剪
       try {

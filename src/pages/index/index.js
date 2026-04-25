@@ -63,6 +63,9 @@ Page({
     gridOptionIndex: 2,  // 默认 10 (gridOptions[2].value = 10)
     thresholdOptionIndex: 3,  // 默认 15 (thresholdOptions[3].value = 15)
 
+    // 特殊色设置
+    useSpecialColors: false,  // 是否使用特殊色（P、Q、R、T、ZG系列）
+
     // 替换功能
     showReplacePanel: false,  // 是否显示替换面板
     replaceRegionCode: '',  // 大区编号（如 A1）
@@ -198,6 +201,21 @@ Page({
     this.setData({
       mergeThreshold: newThreshold,
       thresholdOptionIndex: index,
+      mosaicData: null,
+      currentStep: 1
+    });
+  },
+
+  // 切换是否使用特殊色
+  onSpecialColorsChange(e) {
+    // 导出中禁止调整
+    if (this.data.isExporting) {
+      wx.showToast({ title: '导出中，请稍候', icon: 'none' });
+      return;
+    }
+
+    this.setData({
+      useSpecialColors: e.detail.value,
       mosaicData: null,
       currentStep: 1
     });

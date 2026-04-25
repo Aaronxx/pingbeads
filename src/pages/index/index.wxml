@@ -49,6 +49,15 @@
 
     </view>
 
+    <!-- 第二行：特殊色开关 -->
+    <view class="special-color-row" wx:if="{{imagePath}}">
+      <view class="setting-item">
+        <switch checked="{{useSpecialColors}}" bindchange="onSpecialColorsChange" color="#4CAF50" />
+        <text class="switch-label">使用特殊色</text>
+      </view>
+      <text class="special-hint" wx:if="{{!useSpecialColors}}">（P/Q/R/T/ZG系列将映射到相近普通色）</text>
+    </view>
+
     <!-- 替换功能面板：展开时显示在按钮行下方 -->
     <view class="replace-panel" wx:if="{{showReplacePanel && mosaicData}}">
       <view class="replace-inputs">
@@ -89,6 +98,7 @@
         gridSize="{{gridSize}}"
         mergeThreshold="{{mergeThreshold}}"
         processMode="{{processMode}}"
+        useSpecialColors="{{useSpecialColors}}"
         highlightCode="{{highlightCode}}"
         showCode="{{showCode}}"
         previewQuality="{{previewQuality}}"

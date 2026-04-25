@@ -6,7 +6,115 @@
 
 const { markPalette } = require('../data/colorPalettes');
 
-// 预计算 256×256×256 RGB 到 Mark 的映射表（可选，占用 16MB）
+// 特殊色系列（不包括在普通色中）
+const SPECIAL_SERIES = ['P', 'Q', 'R', 'T', 'ZG'];
+
+/**
+ * 判断色号是否为特殊色系列
+ * @param {string} code - 色号（如 "P1", "ZG2", "R10"）
+ * @returns {boolean}
+ */
+function isSpecialColor(code) {
+  if (!code) return false;
+  // 检查字母前缀是否在特殊色系列中
+  const prefix = code.match(/^[A-Z]+/);
+  return prefix && SPECIAL_SERIES.includes(prefix[0]);
+}
+
+/**
+ * 特殊色替代映射表
+ * 每个特殊色映射到最接近的普通色
+ * 由脚本自动生成
+ */
+const SPECIAL_ALTERNATIVES = {
+  "P1": "H1",
+  "P2": "H3",
+  "P3": "B28",
+  "P4": "F14",
+  "P5": "A7",
+  "P6": "B6",
+  "P7": "F17",
+  "P8": "A20",
+  "P9": "H14",
+  "P10": "E24",
+  "P11": "H13",
+  "P12": "H9",
+  "P13": "C28",
+  "P14": "B25",
+  "P15": "M3",
+  "P16": "A6",
+  "P17": "G6",
+  "P18": "F16",
+  "P19": "H18",
+  "P20": "F22",
+  "P21": "A23",
+  "P22": "F24",
+  "P23": "G14",
+  "Q1": "E3",
+  "Q2": "A21",
+  "Q3": "B1",
+  "Q4": "H12",
+  "Q5": "C24",
+  "R1": "F15",
+  "R2": "E6",
+  "R3": "A10",
+  "R4": "B1",
+  "R5": "B5",
+  "R6": "C19",
+  "R7": "C19",
+  "R8": "C8",
+  "R9": "D7",
+  "R10": "A8",
+  "R11": "H1",
+  "R12": "H14",
+  "R13": "H5",
+  "R14": "C25",
+  "R15": "C24",
+  "R16": "C15",
+  "R17": "B25",
+  "R18": "B6",
+  "R19": "B29",
+  "R20": "A23",
+  "R21": "G13",
+  "R22": "G8",
+  "R23": "A18",
+  "R24": "E15",
+  "R25": "M14",
+  "R26": "D12",
+  "R27": "F24",
+  "R28": "D6",
+  "T1": "H2",
+  "ZG1": "M10",
+  "ZG2": "G4",
+  "ZG3": "M6",
+  "ZG4": "E23",
+  "ZG5": "H20",
+  "ZG6": "D1",
+  "ZG7": "D12",
+  "ZG8": "H3"
+};
+
+/**
+ * 根据色号获取替代色信息
+ * @param {string} specialCode - 特殊色号
+ * @returns {{code: string, hex: string, rgb: object}|null} 替代色信息
+ */
+function getAlternativeColor(specialCode) {
+  const altCode = SPECIAL_ALTERNATIVES[specialCode];
+  if (!altCode) return null;
+  return markPalette.find(c => c.code === altCode) || null;
+}
+
+/**
+ * 根据色号获取替代色号
+ * @param {string} specialCode - 特殊色号
+ * @returns {string|null} 替代色号
+ */
+function getAlternativeCode(specialCode) {
+  return SPECIAL_ALTERNATIVES[specialCode] || null;
+}
+
+// 预计算 256×256×256 RGB 到 Mark 的映射表
 // 为平衡性能和内存，使用 8-bit 精度映射
 let colorLookupTable = null;
 
@@ -16,10 +124,10 @@ let colorLookupTable = null;
  */
 function buildColorLookupTable() {
   if (colorLookupTable) return;
-  
+
   const resolution = 32;
   colorLookupTable = new Array(resolution * resolution * resolution);
-  
+
   for (let r = 0; r < resolution; r++) {
     for (let g = 0; g < resolution; g++) {
       for (let b = 0; b < resolution; b++) {
@@ -28,11 +136,11 @@ function buildColorLookupTable() {
           g: Math.round(g * 255 / (resolution - 1)),
           b: Math.round(b * 255 / (resolution - 1))
         };
-        
+
         // 找到最接近的 Mark 颜色
         let minDistance = Infinity;
         let closestColor = markPalette[0];
-        
+
         for (const color of markPalette) {
           const distance = euclideanDistance(rgb, color.rgb);
           if (distance < minDistance) {
@@ -40,7 +148,7 @@ function buildColorLookupTable() {
             closestColor = color;
           }
         }
-        
+
         colorLookupTable[r * resolution * resolution + g * resolution + b] = closestColor;
       }
     }
@@ -106,28 +214,40 @@ function hexToRgb(hex) {
 /**
  * 快速查找最接近的 Mark 色号（使用查找表）
  * @param {{r: number, g: number, b: number}} targetRgb - 目标 RGB 颜色
+ * @param {boolean} excludeSpecial - 是否排除特殊色（使用替代色），默认 false
  * @returns {{code: string, hex: string, rgb: {r: number, g: number, b: number}}}
  */
-function fastFindClosestMarkColor(targetRgb) {
+function fastFindClosestMarkColor(targetRgb, excludeSpecial = false) {
   if (!colorLookupTable) {
-    return findClosestMarkColor(targetRgb);
+    return findClosestMarkColor(targetRgb, excludeSpecial);
   }
-  
+
   const resolution = 32;
   // 量化到 32 级
   const rIdx = Math.min(resolution - 1, Math.floor(targetRgb.r * resolution / 256));
   const gIdx = Math.min(resolution - 1, Math.floor(targetRgb.g * resolution / 256));
   const bIdx = Math.min(resolution - 1, Math.floor(targetRgb.b * resolution / 256));
-  
-  return colorLookupTable[rIdx * resolution * resolution + gIdx * resolution + bIdx];
+
+  let result = colorLookupTable[rIdx * resolution * resolution + gIdx * resolution + bIdx];
+
+  // 如果需要排除特殊色，替换为替代色
+  if (excludeSpecial && isSpecialColor(result.code)) {
+    const altColor = getAlternativeColor(result.code);
+    if (altColor) {
+      result = altColor;
+    }
+  }
+
+  return result;
 }
 
 /**
  * 找到最接近的 Mark 色号（精确版本）
  * @param {{r: number, g: number, b: number}} targetRgb - 目标 RGB 颜色
+ * @param {boolean} excludeSpecial - 是否排除特殊色（使用替代色），默认 false
  * @returns {{code: string, hex: string, rgb: {r: number, g: number, b: number}, distance: number}}
  */
-function findClosestMarkColor(targetRgb) {
+function findClosestMarkColor(targetRgb, excludeSpecial = false) {
   let minDistance = Infinity;
   let closestColor = null;
 
@@ -139,10 +259,23 @@ function findClosestMarkColor(targetRgb) {
     }
   }
 
-  return {
+  let result = {
     ...closestColor,
     distance: minDistance
   };
+
+  // 如果需要排除特殊色，替换为替代色
+  if (excludeSpecial && isSpecialColor(result.code)) {
+    const altColor = getAlternativeColor(result.code);
+    if (altColor) {
+      result = {
+        ...altColor,
+        distance: minDistance  // 保留原始距离
+      };
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -150,11 +283,12 @@ function findClosestMarkColor(targetRgb) {
  * @param {number} r - 红色通道 (0-255)
  * @param {number} g - 绿色通道 (0-255)
  * @param {number} b - 蓝色通道 (0-255)
+ * @param {boolean} excludeSpecial - 是否排除特殊色，默认 false
  * @returns {{code: string, hex: string, rgb: {r: number, g: number, b: number}}}
  */
-function rgbToMark(r, g, b) {
+function rgbToMark(r, g, b, excludeSpecial = false) {
   const targetRgb = { r, g, b };
-  const result = findClosestMarkColor(targetRgb);
+  const result = findClosestMarkColor(targetRgb, excludeSpecial);
   // 移除 distance 字段，因为调用者不需要
   const { distance, ...colorInfo } = result;
   return colorInfo;
@@ -163,20 +297,22 @@ function rgbToMark(r, g, b) {
 /**
  * 将十六进制颜色映射到 Mark 色号
  * @param {string} hex - 十六进制颜色值
+ * @param {boolean} excludeSpecial - 是否排除特殊色，默认 false
  * @returns {{code: string, hex: string, rgb: {r: number, g: number, b: number}}}
  */
-function hexToMark(hex) {
+function hexToMark(hex, excludeSpecial = false) {
   const rgb = hexToRgb(hex);
-  return rgbToMark(rgb.r, rgb.g, rgb.b);
+  return rgbToMark(rgb.r, rgb.g, rgb.b, excludeSpecial);
 }
 
 /**
  * 批量映射颜色数组
  * @param {Array<{r: number, g: number, b: number}>} colors - RGB 颜色数组
+ * @param {boolean} excludeSpecial - 是否排除特殊色，默认 false
  * @returns {Array<{code: string, hex: string, rgb: {r: number, g: number, b: number}}>}
  */
-function batchMapColors(colors) {
-  return colors.map(color => rgbToMark(color.r, color.g, color.b));
+function batchMapColors(colors, excludeSpecial = false) {
+  return colors.map(color => rgbToMark(color.r, color.g, color.b, excludeSpecial));
 }
 
 module.exports = {
@@ -188,5 +324,10 @@ module.exports = {
   rgbToMark,
   hexToMark,
   batchMapColors,
-  markPalette
+  markPalette,
+  isSpecialColor,
+  SPECIAL_SERIES,
+  SPECIAL_ALTERNATIVES,
+  getAlternativeColor,
+  getAlternativeCode
 };

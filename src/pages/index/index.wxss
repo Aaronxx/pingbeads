@@ -110,6 +110,23 @@ page {
   gap: 12rpx;
 }
 
+/* ========================
+   特殊色开关行：与按钮行左对齐
+   ======================== */
+.special-color-row {
+  display: flex;
+  align-items: center;
+  width: 90%;
+  margin-left: 5%;
+  padding: 8rpx 0;
+  gap: 16rpx;
+}
+
+.special-hint {
+  font-size: 20rpx;
+  color: var(--text-muted);
+}
+
 .button-center {
   flex: 1;
   display: flex;
@@ -309,6 +326,12 @@ page {
   font-size: 18rpx;
   color: var(--text-muted);
   margin-bottom: 2rpx;
+}
+
+.switch-label {
+  font-size: 18rpx;
+  color: var(--text-muted);
+  margin-left: 8rpx;
 }
 
 .picker-value {
