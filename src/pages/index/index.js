@@ -1,7 +1,4 @@
 // pages/index/index.js
-const { isLightColor: isLightColorUtil, formatMarkCode: formatMarkCodeUtil, parseMarkCode: parseMarkCodeUtil } = require('../../utils/colorHelpers');
-const { drawWatermark: drawWatermarkUtil, drawExportGuideLines: drawExportGuideLinesUtil, drawRoundedRect: drawRoundedRectUtil } = require('../../utils/exportRenderer');
-
 Page({
   data: {
     // 当前步骤: 1-选择图片, 2-处理完成
@@ -776,7 +773,6 @@ Page({
 
   // 绘制水印 - 多行倾斜覆盖全图
   drawWatermark(ctx, canvasWidth, canvasHeight) {
-    return drawWatermarkUtil(ctx, canvasWidth, canvasHeight);
     const text = '拼豆酥';
     const fontSize = 24;
     const angle = -30 * Math.PI / 180; // 倾斜30度
@@ -900,7 +896,6 @@ Page({
 
   // 绘制导出图片的参考线
   drawExportGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize) {
-    return drawExportGuideLinesUtil(ctx, offsetX, offsetY, cols, rows, gridSize);
     const lineColor = 'rgba(70, 130, 180, 0.8)'; // 更深更明显的钢蓝色
     const lineWidth = 3;
 
@@ -928,7 +923,6 @@ Page({
 
   // 绘制圆角矩形
   drawRoundedRect(ctx, x, y, width, height, radius) {
-    return drawRoundedRectUtil(ctx, x, y, width, height, radius);
     ctx.beginPath();
     ctx.moveTo(x + radius, y);
     ctx.lineTo(x + width - radius, y);
@@ -945,7 +939,6 @@ Page({
 
   // 判断颜色是否为浅色（需要深色文字）
   isLightColor(hex) {
-    return isLightColorUtil(hex);
     if (!hex) return false;
     // 去掉 #
     hex = hex.replace('#', '');
@@ -969,7 +962,6 @@ Page({
 
   // 格式化色号（去除前导0）
   formatMarkCode(code) {
-    return formatMarkCodeUtil(code);
     if (!code) return '';
     // 匹配字母+数字格式，如 A01, B09, C10 等
     return code.replace(/^([A-Z])0(\d+)$/, '$1$2');
@@ -977,7 +969,6 @@ Page({
 
   // 解析色号（兼容大小写和前导0）
   parseMarkCode(input) {
-    return parseMarkCodeUtil(input);
     if (!input) return null;
     // 转换为大写并去除空格
     const normalized = input.toUpperCase().trim();

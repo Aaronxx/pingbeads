@@ -36,7 +36,8 @@ function drawExportGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize) {
   }
 }
 
-function drawWatermark(ctx, canvasWidth, canvasHeight, text = '拼豆酱') {
+function drawWatermark(ctx, canvasWidth, canvasHeight, text) {
+  const watermarkText = text || '拼豆酥';
   const fontSize = 24;
   const angle = -30 * Math.PI / 180;
 
@@ -47,7 +48,7 @@ function drawWatermark(ctx, canvasWidth, canvasHeight, text = '拼豆酱') {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  const textWidth = ctx.measureText(text).width;
+  const textWidth = ctx.measureText(watermarkText).width;
   const spacingX = textWidth + 150;
   const spacingY = fontSize + 80;
 
@@ -64,7 +65,7 @@ function drawWatermark(ctx, canvasWidth, canvasHeight, text = '拼豆酱') {
     for (let col = -1; col < cols; col++) {
       const x = col * spacingX + (row % 2) * (spacingX / 2);
       const y = row * spacingY;
-      ctx.fillText(text, x, y);
+      ctx.fillText(watermarkText, x, y);
     }
   }
 

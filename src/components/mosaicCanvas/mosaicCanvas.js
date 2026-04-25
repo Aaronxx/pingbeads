@@ -1,7 +1,5 @@
 // components/mosaicCanvas/mosaicCanvas.js
 const { processSimple, processWithSmartRegions, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData } = require('../../utils/imageProcessor');
-const { isLightColor: isLightColorUtil, formatMarkCode: formatMarkCodeUtil } = require('../../utils/colorHelpers');
-const { calculateGridStats } = require('../../utils/statsCalculator');
 
 // 大区常量：每个大区包含 10x10 个色块
 const REGION_SIZE = 10;
@@ -373,11 +371,6 @@ Component({
 
     // 计算统计结果（基于 gridData）
     calculateStats(gridData, rows, cols) {
-      return calculateGridStats(gridData, rows, cols, {
-        ignoreEdge: true,
-        normalizeCode: true,
-        includeOriginalCode: true
-      });
       // 调试：检查 gridData 中是否有 isEdge 标记
       let edgeCount = 0;
       for (let r = 0; r < rows; r++) {
@@ -398,7 +391,7 @@ Component({
           if (cell.isEdge) continue;
           const code = cell.markCode;
           // 使用格式化后的色号作为key（去掉前导0）
-          const formattedCode = formatMarkCodeUtil(code);
+          const formattedCode = this.formatMarkCode(code);
           if (!colorCounts[formattedCode]) {
             colorCounts[formattedCode] = {
               code: formattedCode,
@@ -430,7 +423,7 @@ Component({
         if (segment.isEdge) continue;
         const code = segment.markCode;
         // 使用格式化后的色号作为key（去掉前导0）
-          const formattedCode = formatMarkCodeUtil(code);
+          const formattedCode = this.formatMarkCode(code);
         if (!colorCounts[formattedCode]) {
           colorCounts[formattedCode] = {
             code: formattedCode,
@@ -1092,12 +1085,12 @@ Component({
               // 绘制色号（跳过边缘底色色块）
               const size = Math.min(cellWidth, cellHeight);
               if (that.data.showCode && size >= 8 && !cell.isEdge) {
-            const isLight = isLightColorUtil(cell.markHex);
+            const isLight = that.isLightColor(cell.markHex);
                 ctx.fillStyle = isLight ? '#333333' : '#ffffff';
                 ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-            ctx.fillText(formatMarkCodeUtil(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
+            ctx.fillText(that.formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
               }
             }
           }
@@ -1190,7 +1183,6 @@ Component({
 
     // 判断颜色是否为浅色
     isLightColor(hex) {
-      return isLightColorUtil(hex);
       if (!hex) return false;
       hex = hex.replace('#', '');
       let r, g, b;
@@ -1211,7 +1203,6 @@ Component({
 
     // 格式化色号（去除前导0）
     formatMarkCode(code) {
-      return formatMarkCodeUtil(code);
       if (!code) return '';
       // 匹配字母+数字格式，如 A01, B09, C10 等
       return code.replace(/^([A-Z])0(\d+)$/, '$1$2');
@@ -1363,12 +1354,12 @@ Component({
             // 绘制色号（跳过边缘底色色块）- 使用实际的 cell 尺寸
             const cellSize = Math.min(width, height);
             if (that.data.showCode && cellSize >= 8 && !segment.isEdge) {
-            const isLight = isLightColorUtil(segment.markHex);
+            const isLight = that.isLightColor(segment.markHex);
               ctx.fillStyle = isLight ? '#333333' : '#ffffff';
               ctx.font = `${Math.max(6, cellSize * 0.25)}px sans-serif`;
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
-            ctx.fillText(formatMarkCodeUtil(segment.markCode), x + width / 2, y + height / 2);
+            ctx.fillText(that.formatMarkCode(segment.markCode), x + width / 2, y + height / 2);
             }
           }
 
@@ -1894,12 +1885,12 @@ Component({
           // 绘制色号（跳过边缘底色色块）
           const size = Math.min(cellWidth, cellHeight);
           if (this.data.showCode && size >= 8 && !cell.isEdge) {
-            const isLight = isLightColorUtil(cell.markHex);
+            const isLight = this.isLightColor(cell.markHex);
             ctx.fillStyle = isLight ? '#333333' : '#ffffff';
             ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(formatMarkCodeUtil(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
+            ctx.fillText(this.formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
           }
         }
       }
