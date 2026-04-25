@@ -406,10 +406,10 @@ Component({
       const baseGridSize = this.data.gridSize;
       // 调整：让预览使用更大的格子，保持高分辨率
       switch (quality) {
-        case 1: return Math.max(12, baseGridSize * 2);  // 低质量用较大格子
-        case 2: return Math.max(10, baseGridSize);     // 中等质量
-        case 3: return Math.max(8, baseGridSize);      // 高质量
-        default: return Math.max(10, baseGridSize);
+        case 1: return baseGridSize * 2;  // 低质量用较大格子
+        case 2: return baseGridSize;
+        case 3: return Math.ceil(baseGridSize / 2);
+        default: return baseGridSize;
       }
     },
 

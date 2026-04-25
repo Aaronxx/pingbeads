@@ -40,14 +40,14 @@ Page({
       { name: '高', value: 3 }
     ],
     gridOptions: [
-      { name: '2', value: 2 },
       { name: '5', value: 5 },
       { name: '8', value: 8 },
       { name: '10', value: 10 },
       { name: '15', value: 15 },
       { name: '20', value: 20 },
       { name: '30', value: 30 },
-      { name: '50', value: 50 }
+      { name: '50', value: 50 },
+      { name: '100', value: 100 }
     ],
     thresholdOptions: [
       { name: '不合并', value: 0 },
@@ -55,7 +55,9 @@ Page({
       { name: '10', value: 10 },
       { name: '15', value: 15 },
       { name: '20', value: 20 },
-      { name: '30', value: 30 }
+      { name: '30', value: 30 },
+      { name: '50', value: 50 },
+      { name: '100', value: 100 }
     ],
     // 当前选项索引（用于 picker 绑定）
     gridOptionIndex: 3,  // 默认 10
@@ -598,7 +600,7 @@ Page({
                 const isLight = isLightColor(cell.markHex);
                 ctx.fillStyle = isLight ? '#333' : '#fff';
                 // 使用实际的 cellWidth 来计算字号，确保文字适应格子大小
-                const fontSize = Math.max(8, Math.min(cellWidth, cellHeight) * 0.35);
+                const fontSize = Math.max(4, Math.min(cellWidth, cellHeight) * 0.35);
                 ctx.font = `bold ${fontSize.toFixed(0)}px sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
