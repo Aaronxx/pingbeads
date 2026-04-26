@@ -55,7 +55,7 @@
         <switch checked="{{useSpecialColors}}" bindchange="onSpecialColorsChange" color="#4CAF50" />
         <text class="switch-label">使用特殊色</text>
       </view>
-      <text class="special-hint" wx:if="{{!useSpecialColors}}">（P/Q/R/T/ZG系列将映射到相近普通色）</text>
+      <text class="special-hint" wx:if="{{!useSpecialColors}}">（P/Q/R/T/Y/ZG系列将映射到相近普通色）</text>
     </view>
 
     <!-- 替换功能面板：展开时显示在按钮行下方 -->

@@ -7,7 +7,7 @@
 const { markPalette } = require('../data/colorPalettes');
 
 // 特殊色系列（不包括在普通色中）
-const SPECIAL_SERIES = ['P', 'Q', 'R', 'T', 'ZG'];
+const SPECIAL_SERIES = ['P', 'Q', 'R', 'T', 'Y', 'ZG'];
 
 /**
  * 判断色号是否为特殊色系列
@@ -91,7 +91,12 @@ const SPECIAL_ALTERNATIVES = {
   "ZG5": "H20",
   "ZG6": "D1",
   "ZG7": "D12",
-  "ZG8": "H3"
+  "ZG8": "H3",
+  "Y1": "E3",
+  "Y2": "G12",
+  "Y3": "B13",
+  "Y4": "C4",
+  "Y5": "D18"
 };
 
 /**
