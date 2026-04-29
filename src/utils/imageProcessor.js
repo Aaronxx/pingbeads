@@ -141,7 +141,43 @@ function generatePlaceholderGrid(cols, rows, gridSize) {
 }
 
 /**
+ * 计算颜色的饱和度和亮度
+ * @param {object} rgb - RGB颜色 {r, g, b}
+ * @returns {{saturation: number, brightness: number}} 饱和度和亮度 (0-1)
+ */
+function getSaturationAndBrightness(rgb) {
+  const r = rgb.r / 255;
+  const g = rgb.g / 255;
+  const b = rgb.b / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+
+  // 亮度
+  const brightness = max;
+
+  // 饱和度
+  const saturation = max === 0 ? 0 : delta / max;
+
+  return { saturation, brightness };
+}
+
+/**
+ * 计算颜色的优先级分数 (用于排序)
+ * 饱和度越高、亮度越高的颜色优先级越高
+ * @param {object} rgb - RGB颜色 {r, g, b}
+ * @returns {number} 优先级分数 (0-1)
+ */
+function getColorPriorityScore(rgb) {
+  const { saturation, brightness } = getSaturationAndBrightness(rgb);
+  // 加权计算：饱和度权重0.6，亮度权重0.4
+  return saturation * 0.6 + brightness * 0.4;
+}
+
+/**
  * 颜色聚合 - 基于目标色块数量的 K-means 聚类（优化版）
+ * 优化：优先保留高饱和度、高亮度的颜色
  * @param {Array} gridData - 网格数据
  * @param {number} rows - 行数
  * @param {number} cols - 列数
@@ -149,9 +185,6 @@ function generatePlaceholderGrid(cols, rows, gridSize) {
  */
 function aggregateSimilarColors(gridData, rows, cols, targetCount) {
   if (!gridData || targetCount <= 0) return gridData;
-
-  
-  
 
   // 收集所有格子的主导色 RGB
   const allColors = [];
@@ -170,11 +203,8 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
 
   if (allColors.length === 0) return gridData;
 
-  
-
   // 如果格子数量已经小于目标数量，不需要聚类
   if (allColors.length <= targetCount) {
-    
     return gridData;
   }
 
@@ -198,20 +228,25 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
     return gridData;
   }
 
-  // 2. 简化：直接对唯一颜色进行聚类（减少计算量）
-  // 使用加权采样选择初始中心
+  // 2. 按优先级排序选择初始中心
+  // 高饱和度、高亮度的颜色优先保留
+  const sortedUniqueColors = [...uniqueColors].sort((a, b) => {
+    const scoreA = getColorPriorityScore(a.rgb);
+    const scoreB = getColorPriorityScore(b.rgb);
+    return scoreB - scoreA; // 降序，高分在前
+  });
+
+  // 选择优先级最高的颜色作为初始中心
   const centers = [];
-  const step = Math.max(1, Math.floor(uniqueColors.length / targetCount));
-  for (let i = 0; i < targetCount && i * step < uniqueColors.length; i++) {
-    centers.push({ ...uniqueColors[i * step].rgb });
+  const step = Math.max(1, Math.floor(sortedUniqueColors.length / targetCount));
+  for (let i = 0; i < targetCount && i * step < sortedUniqueColors.length; i++) {
+    centers.push({ ...sortedUniqueColors[i * step].rgb });
   }
 
   // 确保至少有 targetCount 个中心
-  while (centers.length < targetCount && centers.length < uniqueColors.length) {
-    centers.push({ ...uniqueColors[centers.length].rgb });
+  while (centers.length < targetCount && centers.length < sortedUniqueColors.length) {
+    centers.push({ ...sortedUniqueColors[centers.length].rgb });
   }
-
-  
 
   // 3. 简化距离计算：使用曼哈顿距离（比欧氏距离快）
   const fastDistance = (c1, c2) => {
@@ -239,10 +274,13 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
       clusters[minIdx].push(colorInfo);
     }
 
-    // 更新中心
+    // 更新中心，但保留高优先级颜色的特征
     let changed = false;
     for (let i = 0; i < centers.length; i++) {
       if (clusters[i].length === 0) continue;
+
+      const clusterPriorityScore = getColorPriorityScore(centers[i]);
+      const isHighPriority = clusterPriorityScore > 0.4; // 高优先级阈值
 
       let sumR = 0, sumG = 0, sumB = 0;
       for (const c of clusters[i]) {
@@ -252,11 +290,26 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
       }
 
       const totalWeight = clusters[i].reduce((sum, c) => sum + c.count, 0);
-      const newCenter = {
+      let newCenter = {
         r: Math.round(sumR / totalWeight),
         g: Math.round(sumG / totalWeight),
         b: Math.round(sumB / totalWeight)
       };
+
+      // 如果当前中心是高优先级颜色，调整新中心使其偏向高饱和度/高亮度
+      if (isHighPriority) {
+        const { saturation, brightness } = getSaturationAndBrightness(newCenter);
+        // 如果新中心的饱和度或亮度低于原中心，适当拉高
+        const oldSatBright = getSaturationAndBrightness(centers[i]);
+        if (saturation < oldSatBright.saturation * 0.7 || brightness < oldSatBright.brightness * 0.7) {
+          // 混合原中心和新中心，保留更多原中心的特征
+          newCenter = {
+            r: Math.round(centers[i].r * 0.6 + newCenter.r * 0.4),
+            g: Math.round(centers[i].g * 0.6 + newCenter.g * 0.4),
+            b: Math.round(centers[i].b * 0.6 + newCenter.b * 0.4)
+          };
+        }
+      }
 
       if (fastDistance(centers[i], newCenter) > 3) {
         centers[i] = newCenter;
@@ -268,9 +321,20 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
   }
 
   // 5. 为每个聚类中心找到最接近的 Mark 色号
-  const centerMarkColors = centers.map(center => fastFindClosestMarkColor(center));
+  // 按优先级排序，确保高优先级聚类获得更好的色号匹配
+  const centerWithPriority = centers.map((center, idx) => ({
+    center,
+    originalIdx: idx,
+    priority: getColorPriorityScore(center)
+  })).sort((a, b) => b.priority - a.priority);
 
-  
+  const centerMarkColors = centerWithPriority.map(({ center }) => fastFindClosestMarkColor(center));
+
+  // 创建原始索引到排序后索引的映射
+  const originalToSortedIdx = new Map();
+  centerWithPriority.forEach(({ originalIdx }, sortedIdx) => {
+    originalToSortedIdx.set(originalIdx, sortedIdx);
+  });
 
   // 6. 将每个唯一颜色映射到其所属聚类的 Mark 色号
   // 使用颜色到中心的映射表，避免重复计算
@@ -288,7 +352,8 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
       }
     }
 
-    rgbToCenterIdx.set(`${colorInfo.rgb.r},${colorInfo.rgb.g},${colorInfo.rgb.b}`, minIdx);
+    // 转换为排序后的索引
+    rgbToCenterIdx.set(`${colorInfo.rgb.r},${colorInfo.rgb.g},${colorInfo.rgb.b}`, originalToSortedIdx.get(minIdx));
   }
 
   // 7. 应用到所有格子
@@ -298,10 +363,10 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
       if (!cell || !cell.originalRgb) continue;
 
       const key = `${cell.originalRgb.r},${cell.originalRgb.g},${cell.originalRgb.b}`;
-      const centerIdx = rgbToCenterIdx.get(key);
+      const sortedIdx = rgbToCenterIdx.get(key);
 
-      if (centerIdx !== undefined) {
-        const markColor = centerMarkColors[centerIdx];
+      if (sortedIdx !== undefined) {
+        const markColor = centerMarkColors[sortedIdx];
         cell.markCode = markColor.code;
         cell.markHex = markColor.hex;
         cell.markRgb = markColor.rgb;
