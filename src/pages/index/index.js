@@ -40,14 +40,13 @@ Page({
       { name: '高', value: 3 }
     ],
     gridOptions: [
-      { name: '5', value: 5 },
-      { name: '8', value: 8 },
-      { name: '10', value: 10 },
-      { name: '15', value: 15 },
-      { name: '20', value: 20 },
-      { name: '30', value: 30 },
-      { name: '50', value: 50 },
-      { name: '100', value: 100 }
+      { name: '超级多', value: 5 },
+      { name: '多', value: 8 },
+      { name: '中等', value: 10 },
+      { name: '少一点', value: 15 },
+      { name: '再少一点', value: 20 },
+      { name: '比较少了', value: 30 },
+      { name: '超级少', value: 50 }
     ],
     thresholdOptions: [
       { name: '不合并', value: 0 },
@@ -65,6 +64,9 @@ Page({
 
     // 特殊色设置
     useSpecialColors: false,  // 是否使用特殊色（P、Q、R、T、ZG系列）
+
+    // 去除边缘设置
+    removeEdge: true,  // 是否去除边缘底色
 
     // 替换功能
     showReplacePanel: false,  // 是否显示替换面板
@@ -214,10 +216,23 @@ Page({
       return;
     }
 
+    // 只更新 useSpecialColors，mosaicCanvas 组件会通过 observer 监听到变化并重新生成
     this.setData({
-      useSpecialColors: e.detail.value,
-      mosaicData: null,
-      currentStep: 1
+      useSpecialColors: e.detail.value
+    });
+  },
+
+  // 去除边缘开关变化
+  onRemoveEdgeChange(e) {
+    // 导出中禁止调整
+    if (this.data.isExporting) {
+      wx.showToast({ title: '导出中，请稍候', icon: 'none' });
+      return;
+    }
+
+    // 只更新 removeEdge，mosaicCanvas 组件会通过 observer 监听到变化并重新生成
+    this.setData({
+      removeEdge: e.detail.value
     });
   },
 
@@ -542,11 +557,13 @@ Page({
 
         if (isMosaicMode && gridData) {
           // 智能模式：使用裁剪后的 gridData 绘制
+          // 根据 removeEdge 设置决定是否跳过边缘单元格
+          const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
           for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
               const cell = gridData[row] && gridData[row][col];
-              // 跳过无效格子或边缘底色格子
-              if (!cell || !cell.markCode || cell.isEdge) continue;
+              // 跳过无效格子或边缘底色格子（根据 removeEdge 设置）
+              if (!cell || !cell.markCode || (shouldRemoveEdge && cell.isEdge)) continue;
 
               const x = offsetX + col * gridSize * exportScale;
               const y = offsetY + row * gridSize * exportScale;
@@ -582,6 +599,10 @@ Page({
           const segScaleY = mosaicHeight / imageHeight;
 
           for (const segment of segments) {
+            // 根据 removeEdge 设置决定是否跳过边缘色段
+            const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
+            if (shouldRemoveEdge && segment.isEdge) continue;
+
             const x = offsetX + segment.x * segScaleX;
             const y = offsetY + segment.y * segScaleY;
             const width = segment.width * segScaleX;
@@ -611,11 +632,13 @@ Page({
         } else {
           // 普通模式：使用 gridData 绘制
           // 跳过 isRegionMember 的格子（它们会被根格子覆盖）
+          // 根据 removeEdge 设置决定是否跳过边缘单元格
+          const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
           for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
               const cell = gridData[row] && gridData[row][col];
-              // 跳过无效格子、区域成员格子或边缘底色格子
-              if (!cell || !cell.markCode || cell.isRegionMember || cell.isEdge) continue;
+              // 跳过无效格子、区域成员格子或边缘底色格子（根据 removeEdge 设置）
+              if (!cell || !cell.markCode || cell.isRegionMember || (shouldRemoveEdge && cell.isEdge)) continue;
 
               // 使用格子的实际宽高（合并后），并进行缩放
               const cellWidth = (cell.width || gridSize) * exportScale;
@@ -899,10 +922,13 @@ Page({
         canvas.height = height;
 
         // 绘制
+        // 根据 removeEdge 设置决定是否跳过边缘单元格
+        const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
         for (let row = 0; row < rows; row++) {
           for (let col = 0; col < cols; col++) {
             const cell = gridData[row] && gridData[row][col];
-            if (cell && cell.markCode) {
+            // 跳过无效格子、边缘底色格子（根据 removeEdge 设置）
+            if (cell && cell.markCode && (!shouldRemoveEdge || !cell.isEdge)) {
               ctx.fillStyle = cell.markHex;
               ctx.fillRect(cell.x, cell.y, cell.width, cell.height);
             }
@@ -1024,10 +1050,12 @@ Page({
           canvas.height = height;
           
           // 绘制马赛克
+          // 根据 removeEdge 设置决定是否跳过边缘单元格
+          const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
           for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
               const cell = gridData[row] && gridData[row][col];
-              if (cell && cell.markCode && !cell.isRegionMember && !cell.isEdge) {
+              if (cell && cell.markCode && !cell.isRegionMember && (!shouldRemoveEdge || !cell.isEdge)) {
                 ctx.fillStyle = cell.markHex;
                 ctx.fillRect(cell.x, cell.y, cell.width, cell.height);
               }

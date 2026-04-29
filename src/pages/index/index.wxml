@@ -19,7 +19,7 @@
           <view class="setting-item">
             <picker mode="selector" range="{{gridOptions}}" range-key="name" value="{{gridOptionIndex}}" bindchange="onGridSizeChange">
               <view class="picker-box">
-                <text class="picker-label">网格</text>
+                <text class="picker-label">豆豆数</text>
                 <text class="picker-value">{{gridOptions[gridOptionIndex].name}}</text>
               </view>
             </picker>
@@ -49,13 +49,16 @@
 
     </view>
 
-    <!-- 第二行：特殊色开关 -->
+    <!-- 第二行：特殊色开关和去除边缘开关 -->
     <view class="special-color-row" wx:if="{{imagePath}}">
       <view class="setting-item">
         <switch checked="{{useSpecialColors}}" bindchange="onSpecialColorsChange" color="#4CAF50" />
-        <text class="switch-label">使用特殊色</text>
+        <text class="switch-label">特殊色</text>
       </view>
-      <text class="special-hint" wx:if="{{!useSpecialColors}}">（P/Q/R/T/Y/ZG系列将映射到相近普通色）</text>
+      <view class="setting-item">
+        <switch checked="{{removeEdge}}" bindchange="onRemoveEdgeChange" color="#4CAF50" />
+        <text class="switch-label">去边缘</text>
+      </view>
     </view>
 
     <!-- 替换功能面板：展开时显示在按钮行下方 -->
@@ -99,6 +102,7 @@
         mergeThreshold="{{mergeThreshold}}"
         processMode="{{processMode}}"
         useSpecialColors="{{useSpecialColors}}"
+        removeEdge="{{removeEdge}}"
         highlightCode="{{highlightCode}}"
         showCode="{{showCode}}"
         previewQuality="{{previewQuality}}"

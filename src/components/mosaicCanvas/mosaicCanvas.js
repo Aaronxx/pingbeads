@@ -12,6 +12,7 @@ Component({
     // 处理模式: 'normal' | 'smart' - smart 模式会保留黑色边界并合并色块
     processMode: { type: String, value: 'normal' },
     useSpecialColors: { type: Boolean, value: true },  // 是否使用特殊色
+    removeEdge: { type: Boolean, value: true },  // 是否去除边缘底色
     highlightCode: { type: String, value: null },
     showCode: { type: Boolean, value: false },
     scale: { type: Number, value: 1 },
@@ -69,7 +70,7 @@ Component({
         }, 200);
       }
     },
-    'gridSize, mergeThreshold, previewQuality, processMode, useSpecialColors': function() {
+    'gridSize, mergeThreshold, previewQuality, processMode, useSpecialColors, removeEdge': function() {
 
 
 
@@ -345,14 +346,8 @@ Component({
     },
 
     calculateStats(gridData, rows, cols) {
-      // 调试：检查 gridData 中是否有 isEdge 标记
-      let edgeCount = 0;
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const cell = gridData[r] && gridData[r][c];
-          if (cell && cell.isEdge) edgeCount++;
-        }
-      }
+      // 根据 removeEdge 设置决定是否跳过边缘单元格
+      const shouldRemoveEdge = this.data.removeEdge !== false;  // 默认去除边缘
 
       const colorCounts = {};
       let totalCount = 0;
@@ -361,8 +356,8 @@ Component({
         for (let col = 0; col < cols; col++) {
           const cell = gridData[row] && gridData[row][col];
           if (!cell || !cell.markCode) continue;
-          // 跳过边缘底色色块
-          if (cell.isEdge) continue;
+          // 根据 removeEdge 设置决定是否跳过边缘底色色块
+          if (shouldRemoveEdge && cell.isEdge) continue;
           const code = cell.markCode;
           // 使用格式化后的色号作为key（去掉前导0）
           const formattedCode = formatMarkCode(code);
@@ -388,13 +383,16 @@ Component({
 
     // 计算统计结果（基于 segments 数组）
     calculateStatsFromSegments(segments) {
+      // 根据 removeEdge 设置决定是否跳过边缘单元格
+      const shouldRemoveEdge = this.data.removeEdge !== false;  // 默认去除边缘
+
       const colorCounts = {};
       let totalCount = 0;
 
       for (const segment of segments) {
         if (!segment.markCode) continue;
-        // 跳过边缘底色色块
-        if (segment.isEdge) continue;
+        // 根据 removeEdge 设置决定是否跳过边缘底色色块
+        if (shouldRemoveEdge && segment.isEdge) continue;
         const code = segment.markCode;
         // 使用格式化后的色号作为key（去掉前导0）
           const formattedCode = formatMarkCode(code);
@@ -1048,10 +1046,12 @@ Component({
           const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - offsetY) / cellSize));
 
           // 绘制可见区域的格子
+          const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
           for (let row = startRow; row <= endRow; row++) {
             for (let col = startCol; col <= endCol; col++) {
               const cell = gridData[row] && gridData[row][col];
-              if (!cell || !cell.markCode) continue;
+              // 根据 removeEdge 设置决定是否跳过边缘单元格
+              if (!cell || !cell.markCode || (shouldRemoveEdge && cell.isEdge)) continue;
 
               const cellWidth = cellSize;
               const cellHeight = cellSize;
@@ -1059,7 +1059,7 @@ Component({
               const x = offsetX + col * cellSize;
               const y = offsetY + row * cellSize;
 
-              // 绘制色块（所有格子都绘制色块）
+              // 绘制色块（根据 removeEdge 设置决定是否绘制边缘）
               ctx.fillStyle = cell.markHex;
               ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(cellWidth), Math.ceil(cellHeight));
 
@@ -1068,9 +1068,9 @@ Component({
               ctx.lineWidth = 1;
               ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
 
-              // 绘制色号（跳过边缘底色色块）
+              // 绘制色号（根据 removeEdge 设置决定是否绘制边缘色号）
               const size = Math.min(cellWidth, cellHeight);
-              if (that.data.showCode && size >= 8 && !cell.isEdge) {
+              if (that.data.showCode && size >= 8 && (!shouldRemoveEdge || !cell.isEdge)) {
             const isLight = that.isLightColor(cell.markHex);
                 ctx.fillStyle = isLight ? '#333333' : '#ffffff';
                 ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
@@ -1328,6 +1328,10 @@ Component({
             }
 
             // 绘制色段（紧密排列，不留间隙）
+            // 根据 removeEdge 设置决定是否跳过边缘色段
+            const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
+            if (shouldRemoveEdge && segment.isEdge) continue;
+
             ctx.fillStyle = segment.markHex || '#cccccc';
             ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(width), Math.ceil(height));
 
@@ -1336,9 +1340,9 @@ Component({
             ctx.lineWidth = 1;
             ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(width) - 1, Math.ceil(height) - 1);
 
-            // 绘制色号（跳过边缘底色色块）- 使用实际的 cell 尺寸
+            // 绘制色号（根据 removeEdge 设置决定是否绘制边缘色号）- 使用实际的 cell 尺寸
             const cellSize = Math.min(width, height);
-            if (that.data.showCode && cellSize >= 8 && !segment.isEdge) {
+            if (that.data.showCode && cellSize >= 8 && (!shouldRemoveEdge || !segment.isEdge)) {
             const isLight = that.isLightColor(segment.markHex);
               ctx.fillStyle = isLight ? '#333333' : '#ffffff';
               ctx.font = `${Math.max(6, cellSize * 0.25)}px sans-serif`;
@@ -1837,17 +1841,20 @@ Component({
       const startRow = Math.max(0, Math.floor((visibleTop - finalOffsetY) / cellSize));
       const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - finalOffsetY) / cellSize));
 
+      // 根据 removeEdge 设置决定是否跳过边缘单元格
+      const shouldRemoveEdge = this.data.removeEdge !== false;  // 默认去除边缘
+
       for (let row = startRow; row <= endRow; row++) {
         for (let col = startCol; col <= endCol; col++) {
           const cell = gridData[row] && gridData[row][col];
-          if (!cell || !cell.markCode) continue;
+          if (!cell || !cell.markCode || (shouldRemoveEdge && cell.isEdge)) continue;
 
           const cellWidth = cellSize;
           const cellHeight = cellSize;
           const x = finalOffsetX + col * cellSize;
           const y = finalOffsetY + row * cellSize;
 
-          // 绘制色块（所有格子都绘制色块）
+          // 绘制色块（根据 removeEdge 设置决定是否绘制边缘）
           ctx.fillStyle = cell.markHex;
           ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(cellWidth), Math.ceil(cellHeight));
 
@@ -1855,9 +1862,9 @@ Component({
           ctx.lineWidth = 1;
           ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
 
-          // 绘制色号（跳过边缘底色色块）
+          // 绘制色号（根据 removeEdge 设置决定是否绘制边缘色号）
           const size = Math.min(cellWidth, cellHeight);
-          if (this.data.showCode && size >= 8 && !cell.isEdge) {
+          if (this.data.showCode && size >= 8 && (!shouldRemoveEdge || !cell.isEdge)) {
             const isLight = isLightColor(cell.markHex);
             ctx.fillStyle = isLight ? '#333333' : '#ffffff';
             ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
