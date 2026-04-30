@@ -53,29 +53,19 @@ Component({
 
   observers: {
     'imagePath': function(newPath) {
-      
-      
-      
       if (newPath) {
         this.processImage(newPath);
       }
     },
     'regenerateTrigger': function() {
-      
-      
-      // 当触发器变化时，重新生成
       if (this.cachedPixelData && this.cachedWidth > 0) {
-        // 设置处理中状态，让用户看到正在重新生成
         this.setData({ isProcessing: true });
-        // 延迟一下再重新生成，让用户看到清空效果
         setTimeout(() => {
           this.regenerateFromCache();
         }, 200);
       }
     },
     'gridSize, mergeThreshold, previewQuality, processMode, useSpecialColors, removeEdge, vibrantScale': function() {
-      // processMode 变化时，清除缓存强制使用原始像素数据重新生成
-      // 避免卡通模式的鲜艳度增强影响马赛克模式
       if (this.data.processMode === 'mosaic') {
         this.cachedGridData = null;
         this.cachedGridInfo = null;
@@ -83,29 +73,20 @@ Component({
       }
 
       if (this.cachedPixelData && this.cachedWidth > 0) {
-        // 有缓存数据，使用缓存重新生成
-
         this.setData({ isProcessing: true });
         setTimeout(() => {
           this.regenerateFromCache();
         }, 200);
       } else if (this.data.imagePath) {
-        // 没有缓存但有图片路径，重新加载图片
-
         this.processImage(this.data.imagePath);
       }
     },
-    // 监听 scale 变化，重新渲染 Canvas
     'scale': function() {
-
-      // 当 scale 变化时，重新渲染 Canvas
-      // 使用 cachedGridData 渲染
       if (this.cachedGridData && this.cachedGridInfo) {
         const { cols, rows, gridSize } = this.cachedGridInfo;
         this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
       }
     },
-    // 监听偏移变化，重新渲染 Canvas（拖动时除外）
     'offsetX,offsetY': function() {
       // 拖动时只移动视图，不渲染
       if (this.data.isDragging) return;

@@ -7,134 +7,18 @@
  * 3. 边缘检测与裁剪
  */
 
+const { fastFindClosestMarkColor } = require('../utils/colorMapper');
+
 /**
  * 计算颜色距离 (欧氏距离)
  */
-const { fastFindClosestMarkColor } = require('../utils/colorMapper');
-
 function colorDistance(c1, c2) {
+  if (!c1 || !c2) return Infinity;
   return Math.sqrt(
     Math.pow(c1.r - c2.r, 2) +
     Math.pow(c1.g - c2.g, 2) +
     Math.pow(c1.b - c2.b, 2)
   );
-}
-
-/**
- * RGB 转 HSL
- * @param {number} r - 红色 (0-255)
- * @param {number} g - 绿色 (0-255)
- * @param {number} b - 蓝色 (0-255)
- * @returns {{h: number, s: number, l: number}} HSL 值 (h: 0-360, s/l: 0-1)
- */
-function rgbToHsl(r, g, b) {
-  const rNorm = r / 255;
-  const gNorm = g / 255;
-  const bNorm = b / 255;
-
-  const max = Math.max(rNorm, gNorm, bNorm);
-  const min = Math.min(rNorm, gNorm, bNorm);
-  const delta = max - min;
-
-  let h = 0;
-  let s = max === 0 ? 0 : delta / max;
-  const l = (max + min) / 2;
-
-  if (delta !== 0) {
-    if (max === rNorm) {
-      h = ((gNorm - bNorm) / delta) % 6;
-    } else if (max === gNorm) {
-      h = (bNorm - rNorm) / delta + 2;
-    } else {
-      h = (rNorm - gNorm) / delta + 4;
-    }
-    h = Math.round(h * 60);
-    if (h < 0) h += 360;
-  }
-
-  return { h, s, l };
-}
-
-/**
- * HSL 转 RGB
- * @param {number} h - 色相 (0-360)
- * @param {number} s - 饱和度 (0-1)
- * @param {number} l - 亮度 (0-1)
- * @returns {{r: number, g: number, b: number}} RGB 值 (0-255)
- */
-function hslToRgb(h, s, l) {
-  const c = (1 - Math.abs(2 * l - 1)) * s;
-  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
-  const m = l - c / 2;
-
-  let rF, gF, bF;
-
-  if (h < 60) {
-    rF = c; gF = x; bF = 0;
-  } else if (h < 120) {
-    rF = x; gF = c; bF = 0;
-  } else if (h < 180) {
-    rF = 0; gF = c; bF = x;
-  } else if (h < 240) {
-    rF = 0; gF = x; bF = c;
-  } else if (h < 300) {
-    rF = x; gF = 0; bF = c;
-  } else {
-    rF = c; gF = 0; bF = x;
-  }
-
-  return {
-    r: Math.round((rF + m) * 255),
-    g: Math.round((gF + m) * 255),
-    b: Math.round((bF + m) * 255)
-  };
-}
-
-/**
- * 像素级预处理 - 增强图片鲜艳度
- * 使用饱和度提升 + 对比度增强的组合
- * @param {Uint8ClampedArray} pixelData - 像素数据
- * @param {number} width - 图像宽度
- * @param {number} height - 图像高度
- * @param {number} saturationBoost - 饱和度提升倍数 (0-1)，默认 0.3
- * @param {number} contrastBoost - 对比度增强倍数 (0-1)，默认 0.15
- * @returns {Uint8ClampedArray} 增强后的像素数据
- */
-function enhanceVibrantColors(pixelData, width, height, saturationBoost = 0.3, contrastBoost = 0.15) {
-  if (!pixelData || pixelData.length === 0) return pixelData;
-
-  const result = new Uint8ClampedArray(pixelData);
-
-  for (let i = 0; i < result.length; i += 4) {
-    let r = result[i];
-    let g = result[i + 1];
-    let b = result[i + 2];
-
-    // 1. RGB 转 HSL
-    const { h, s, l } = rgbToHsl(r, g, b);
-
-    // 2. 增强饱和度
-    const newS = Math.min(1, s * (1 + saturationBoost));
-
-    // 3. HSL 转回 RGB
-    const rgb = hslToRgb(h, newS, l);
-    r = rgb.r;
-    g = rgb.g;
-    b = rgb.b;
-
-    // 4. 对比度增强
-    const contrastFactor = 1 + contrastBoost;
-    r = Math.round(128 + (r - 128) * contrastFactor);
-    g = Math.round(128 + (g - 128) * contrastFactor);
-    b = Math.round(128 + (b - 128) * contrastFactor);
-
-    // 5. 限制在有效范围
-    result[i] = Math.max(0, Math.min(255, r));
-    result[i + 1] = Math.max(0, Math.min(255, g));
-    result[i + 2] = Math.max(0, Math.min(255, b));
-  }
-
-  return result;
 }
 
 /**
@@ -1382,16 +1266,6 @@ function processWithSmartRegions(pixelData, width, height, gridSize) {
       g: pixelData[idx + 1],
       b: pixelData[idx + 2]
     };
-  }
-
-  // 计算颜色距离
-  function colorDistance(c1, c2) {
-    if (!c1 || !c2) return Infinity;
-    return Math.sqrt(
-      Math.pow(c1.r - c2.r, 2) +
-      Math.pow(c1.g - c2.g, 2) +
-      Math.pow(c1.b - c2.b, 2)
-    );
   }
 
   // 存储色块数据
