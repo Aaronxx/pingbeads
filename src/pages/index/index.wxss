@@ -116,10 +116,12 @@
 .special-color-row {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   width: 90%;
   margin-left: 5%;
   padding: 8rpx 0;
   gap: 16rpx;
+  flex-wrap: wrap;
 }
 
 .special-hint {
@@ -285,6 +287,21 @@
   display: flex;
   align-items: center;
   gap: 6rpx;
+}
+
+/* 鲜艳度滑块 */
+.vibrant-slider {
+  flex: 1;
+  min-width: 200rpx;
+}
+
+.vibrant-slider .switch-label {
+  min-width: 60rpx;
+}
+
+.vibrant-slider slider {
+  flex: 1;
+  margin: 0 10rpx;
 }
 
 .setting-label {

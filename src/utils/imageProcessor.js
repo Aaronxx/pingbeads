@@ -21,6 +21,123 @@ function colorDistance(c1, c2) {
 }
 
 /**
+ * RGB 转 HSL
+ * @param {number} r - 红色 (0-255)
+ * @param {number} g - 绿色 (0-255)
+ * @param {number} b - 蓝色 (0-255)
+ * @returns {{h: number, s: number, l: number}} HSL 值 (h: 0-360, s/l: 0-1)
+ */
+function rgbToHsl(r, g, b) {
+  const rNorm = r / 255;
+  const gNorm = g / 255;
+  const bNorm = b / 255;
+
+  const max = Math.max(rNorm, gNorm, bNorm);
+  const min = Math.min(rNorm, gNorm, bNorm);
+  const delta = max - min;
+
+  let h = 0;
+  let s = max === 0 ? 0 : delta / max;
+  const l = (max + min) / 2;
+
+  if (delta !== 0) {
+    if (max === rNorm) {
+      h = ((gNorm - bNorm) / delta) % 6;
+    } else if (max === gNorm) {
+      h = (bNorm - rNorm) / delta + 2;
+    } else {
+      h = (rNorm - gNorm) / delta + 4;
+    }
+    h = Math.round(h * 60);
+    if (h < 0) h += 360;
+  }
+
+  return { h, s, l };
+}
+
+/**
+ * HSL 转 RGB
+ * @param {number} h - 色相 (0-360)
+ * @param {number} s - 饱和度 (0-1)
+ * @param {number} l - 亮度 (0-1)
+ * @returns {{r: number, g: number, b: number}} RGB 值 (0-255)
+ */
+function hslToRgb(h, s, l) {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+
+  let rF, gF, bF;
+
+  if (h < 60) {
+    rF = c; gF = x; bF = 0;
+  } else if (h < 120) {
+    rF = x; gF = c; bF = 0;
+  } else if (h < 180) {
+    rF = 0; gF = c; bF = x;
+  } else if (h < 240) {
+    rF = 0; gF = x; bF = c;
+  } else if (h < 300) {
+    rF = x; gF = 0; bF = c;
+  } else {
+    rF = c; gF = 0; bF = x;
+  }
+
+  return {
+    r: Math.round((rF + m) * 255),
+    g: Math.round((gF + m) * 255),
+    b: Math.round((bF + m) * 255)
+  };
+}
+
+/**
+ * 像素级预处理 - 增强图片鲜艳度
+ * 使用饱和度提升 + 对比度增强的组合
+ * @param {Uint8ClampedArray} pixelData - 像素数据
+ * @param {number} width - 图像宽度
+ * @param {number} height - 图像高度
+ * @param {number} saturationBoost - 饱和度提升倍数 (0-1)，默认 0.3
+ * @param {number} contrastBoost - 对比度增强倍数 (0-1)，默认 0.15
+ * @returns {Uint8ClampedArray} 增强后的像素数据
+ */
+function enhanceVibrantColors(pixelData, width, height, saturationBoost = 0.3, contrastBoost = 0.15) {
+  if (!pixelData || pixelData.length === 0) return pixelData;
+
+  const result = new Uint8ClampedArray(pixelData);
+
+  for (let i = 0; i < result.length; i += 4) {
+    let r = result[i];
+    let g = result[i + 1];
+    let b = result[i + 2];
+
+    // 1. RGB 转 HSL
+    const { h, s, l } = rgbToHsl(r, g, b);
+
+    // 2. 增强饱和度
+    const newS = Math.min(1, s * (1 + saturationBoost));
+
+    // 3. HSL 转回 RGB
+    const rgb = hslToRgb(h, newS, l);
+    r = rgb.r;
+    g = rgb.g;
+    b = rgb.b;
+
+    // 4. 对比度增强
+    const contrastFactor = 1 + contrastBoost;
+    r = Math.round(128 + (r - 128) * contrastFactor);
+    g = Math.round(128 + (g - 128) * contrastFactor);
+    b = Math.round(128 + (b - 128) * contrastFactor);
+
+    // 5. 限制在有效范围
+    result[i] = Math.max(0, Math.min(255, r));
+    result[i + 1] = Math.max(0, Math.min(255, g));
+    result[i + 2] = Math.max(0, Math.min(255, b));
+  }
+
+  return result;
+}
+
+/**
  * 简化版处理 - 逐像素映射
  * 适合直接使用，不需要预处理
  * 优化：使用分片处理避免阻塞
@@ -29,8 +146,9 @@ function colorDistance(c1, c2) {
  * @param {number} height - 图像高度
  * @param {number} gridSize - 网格大小
  * @param {number} mergeThreshold - 颜色聚合阈值 (0-30)
+ * @param {number} vibrantScale - 鲜艳度增强系数 (0-1)，0 表示不增强，默认 0.3
  */
-function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0) {
+function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, vibrantScale = 0) {
   const cols = Math.ceil(width / gridSize);
   const rows = Math.ceil(height / gridSize);
   const scaleX = width / cols;
@@ -58,6 +176,9 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0) {
     return generatePlaceholderGrid(cols, rows, gridSize);
   }
 
+  // 鲜艳度预处理
+  let processedPixelData = pixelData;
+
   for (let row = 0; row < rows; row++) {
     gridData[row] = [];
     for (let col = 0; col < cols; col++) {
@@ -69,9 +190,9 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0) {
       for (let y = srcY; y < endY && y < height; y++) {
         for (let x = srcX; x < endX && x < width; x++) {
           const idx = (y * width + x) * 4;
-          r += pixelData[idx];
-          g += pixelData[idx + 1];
-          b += pixelData[idx + 2];
+          r += processedPixelData[idx];
+          g += processedPixelData[idx + 1];
+          b += processedPixelData[idx + 2];
           count++;
         }
       }
@@ -82,8 +203,60 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0) {
         b: Math.round(b / count)
       } : { r: 0, g: 0, b: 0 };
 
+      // 鲜艳度增强：饱和度 + 亮度 + 对比度 组合调整
+      let vibrantColor = dominantColor;
+      if (vibrantScale > 0) {
+        const scale = vibrantScale / 10; // 0-1
+
+        // RGB 转 HSV
+        const r = dominantColor.r / 255;
+        const g = dominantColor.g / 255;
+        const b = dominantColor.b / 255;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const d = max - min;
+
+        let h = 0, s = max === 0 ? 0 : d / max, v = max;
+
+        if (d !== 0) {
+          if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+          else if (max === g) h = ((b - r) / d + 2) / 6;
+          else h = ((r - g) / d + 4) / 6;
+        }
+
+        // 增强饱和度 (+10% 到 +50%)
+        s = Math.min(1, s * (1 + scale * 0.5));
+        // 增强亮度 (+5% 到 +25%)
+        v = Math.min(1, v * (1 + scale * 0.2));
+
+        // HSV 转 RGB
+        const i = Math.floor(h * 6);
+        const f = h * 6 - i;
+        const p = v * (1 - s);
+        const q = v * (1 - f * s);
+        const t = v * (1 - (1 - f) * s);
+        let rn, gn, bn;
+
+        switch (i % 6) {
+          case 0: rn = v; gn = t; bn = p; break;
+          case 1: rn = q; gn = v; bn = p; break;
+          case 2: rn = p; gn = v; bn = t; break;
+          case 3: rn = p; gn = q; bn = v; break;
+          case 4: rn = t; gn = p; bn = v; break;
+          case 5: rn = v; gn = p; bn = q; break;
+        }
+
+        // 对比度增强
+        const contrast = 1.0 + scale * 0.5; // 1.0 到 1.5
+        vibrantColor = {
+          r: Math.max(0, Math.min(255, Math.round(128 + (rn * 255 - 128) * contrast))),
+          g: Math.max(0, Math.min(255, Math.round(128 + (gn * 255 - 128) * contrast))),
+          b: Math.max(0, Math.min(255, Math.round(128 + (bn * 255 - 128) * contrast)))
+        };
+      }
+
       // 使用快速查找
-      const markColor = fastFindClosestMarkColor(dominantColor);
+      const markColor = fastFindClosestMarkColor(vibrantColor);
 
       gridData[row][col] = {
         x: col * gridSize,
@@ -95,6 +268,7 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0) {
         markHex: markColor.hex,
         markRgb: markColor.rgb
       };
+
     }
   }
 
@@ -1459,5 +1633,6 @@ module.exports = {
   filterEdgeBlocks,
   cropMosaicData,
   findCropBoundaryFromGrid,
-  convertSegmentsToGridData
+  convertSegmentsToGridData,
+  aggregateSimilarColors
 };

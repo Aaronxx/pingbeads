@@ -49,7 +49,7 @@
 
     </view>
 
-    <!-- 第二行：特殊色开关和去除边缘开关 -->
+    <!-- 第二行：特殊色开关、去边缘开关（卡通模式显示鲜艳滑块） -->
     <view class="special-color-row" wx:if="{{imagePath}}">
       <view class="setting-item">
         <switch checked="{{useSpecialColors}}" bindchange="onSpecialColorsChange" color="#4CAF50" />
@@ -58,6 +58,10 @@
       <view class="setting-item">
         <switch checked="{{removeEdge}}" bindchange="onRemoveEdgeChange" color="#4CAF50" />
         <text class="switch-label">去边缘</text>
+      </view>
+      <view class="setting-item vibrant-slider" wx:if="{{processMode === 'cartoon'}}">
+        <text class="switch-label">鲜艳</text>
+        <slider min="0" max="10" value="{{vibrantScale}}" bindchange="onVibrantChange" show-value block-color="#4CAF50" />
       </view>
     </view>
 
@@ -107,6 +111,7 @@
         showCode="{{showCode}}"
         previewQuality="{{previewQuality}}"
         regenerateTrigger="{{regenerateTrigger}}"
+        vibrantScale="{{vibrantScale}}"
         bind:cellClick="onCodeClick"
         bind:mosaicGenerated="onMosaicGenerated"
         bind:statsUpdate="onStatsUpdate"

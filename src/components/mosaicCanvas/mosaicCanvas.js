@@ -17,7 +17,8 @@ Component({
     showCode: { type: Boolean, value: false },
     scale: { type: Number, value: 1 },
     previewQuality: { type: Number, value: 2 },
-    regenerateTrigger: { type: Number, value: 0 }
+    regenerateTrigger: { type: Number, value: 0 },
+    vibrantScale: { type: Number, value: 0 }  // 鲜艳度增强系数 (0-1)
   },
 
   data: {
@@ -35,7 +36,9 @@ Component({
     flatCells: [],
     // 不再在此存储大数组，改用普通属性
     cachedWidth: 0,
-    cachedHeight: 0
+    cachedHeight: 0,
+    // 鲜艳度增强系数 (0-1)，0 表示不增强
+    vibrantScale: 0
   },
 
   // 使用普通属性存储大数组，避免通过 setData 传输
@@ -70,10 +73,14 @@ Component({
         }, 200);
       }
     },
-    'gridSize, mergeThreshold, previewQuality, processMode, useSpecialColors, removeEdge': function() {
-
-
-
+    'gridSize, mergeThreshold, previewQuality, processMode, useSpecialColors, removeEdge, vibrantScale': function() {
+      // processMode 变化时，清除缓存强制使用原始像素数据重新生成
+      // 避免卡通模式的鲜艳度增强影响马赛克模式
+      if (this.data.processMode === 'mosaic') {
+        this.cachedGridData = null;
+        this.cachedGridInfo = null;
+        this.cachedSegments = null;
+      }
 
       if (this.cachedPixelData && this.cachedWidth > 0) {
         // 有缓存数据，使用缓存重新生成
@@ -118,15 +125,19 @@ Component({
     },
     
     setCachedPixelData(pixelData, width, height) {
-      this.cachedPixelData = pixelData;
+      // 深拷贝避免原始数据被修改
+      this.cachedPixelData = new Uint8ClampedArray(pixelData);
       this.cachedWidth = width;
       this.cachedHeight = height;
+      console.log('[setCachedPixelData] first 3 pixels:', pixelData[0], pixelData[1], pixelData[2]);
     },
     
     regenerateFromCache() {
       const pixelData = this.getCachedPixelData();
       const cachedWidth = this.cachedWidth;
       const cachedHeight = this.cachedHeight;
+
+      console.log('[regenerateFromCache] mode:', this.data.processMode, 'first 3 pixels:', pixelData ? pixelData[0] : 'null', pixelData ? pixelData[1] : 'null', pixelData ? pixelData[2] : 'null');
 
       if (!pixelData || cachedWidth === 0) return;
 
@@ -137,7 +148,9 @@ Component({
       if (this.data.processMode === 'mosaic') {
         // 智能模式：扫描线识别马赛克色块
         try {
+          console.log('[regenerateFromCache] calling processWithSmartRegions with pixelData length:', pixelData.length);
           result = processWithSmartRegions(pixelData, cachedWidth, cachedHeight, qualityGridSize);
+          console.log('[regenerateFromCache] processWithSmartRegions returned segments count:', result.segments ? result.segments.length : 0);
         } catch (e) {
           console.error('马赛克模式处理失败:', e);
           wx.showToast({ title: '处理失败，请重试', icon: 'none' });
@@ -154,7 +167,7 @@ Component({
         // 将 segments 转换为 2D gridData，复用卡通模式的渲染逻辑
         const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows);
 
-        // 替换特殊色为替代色（必须在 gridData 生成之后）
+        // 替换特殊色为替代色（马赛克模式不应用鲜艳度增强，保持原始数据纯净）
         this.replaceSpecialColors(gridData, result.rows, result.cols);
 
         // 马赛克模式：检查 isEdge 标记并进行裁剪
@@ -203,6 +216,7 @@ Component({
 
         // 计算统计结果（基于 gridData）
         const stats = this.calculateStats(gridData, result.rows, result.cols);
+        console.log('[regenerateFromCache mosaic] stats unique colors:', stats ? stats.colorCount : 0);
 
         this.setData({
           gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
@@ -224,11 +238,13 @@ Component({
         return;
       } else {
         // 普通模式：传入 mergeThreshold 参数，在颜色映射阶段进行颜色聚合
-        result = processSimple(pixelData, cachedWidth, cachedHeight, qualityGridSize, this.data.mergeThreshold);
+        result = processSimple(pixelData, cachedWidth, cachedHeight, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
       }
 
       // 替换特殊色为替代色
       this.replaceSpecialColors(result.gridData, result.rows, result.cols);
+      // 重新应用鲜艳度增强
+      this.reapplyVibrantScale(result.gridData, result.rows, result.cols);
 
       // 边缘底色检测与标记
       // 根据模式选择检测方式：马赛克模式用网格数据，卡通模式用原始像素
@@ -292,6 +308,7 @@ Component({
 
       // 直接计算统计结果（不传输大量格子数据）
       const stats = this.calculateStats(result.gridData, result.rows, result.cols);
+      console.log('[regenerateFromCache] stats unique colors:', stats ? stats.colorCount : 0);
 
 
       this.setData({
@@ -342,6 +359,105 @@ Component({
             }
           }
         }
+      }
+    },
+
+    // 重新应用鲜艳度增强（在 replaceSpecialColors 之后调用）
+    // 使用批量处理优化性能
+    reapplyVibrantScale(gridData, rows, cols) {
+      const vibrantScale = this.data.vibrantScale;
+      if (vibrantScale <= 0) return;
+
+      const { batchMapColors, markPalette } = require('../../utils/colorMapper');
+      const { aggregateSimilarColors } = require('../../utils/imageProcessor');
+
+      const scale = vibrantScale / 10; // 0-1
+
+      // 第一遍：收集所有需要处理的格子位置和计算增强后的颜色
+      const cellsToProcess = [];
+      const colorsToMap = [];
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const cell = gridData[row] && gridData[row][col];
+          if (!cell || !cell.originalRgb) continue;
+
+          // 计算增强后的颜色（饱和度 + 亮度 + 对比度 组合）
+          const orig = cell.originalRgb;
+          const r = orig.r / 255;
+          const g = orig.g / 255;
+          const b = orig.b / 255;
+          const max = Math.max(r, g, b);
+          const min = Math.min(r, g, b);
+          const d = max - min;
+
+          // RGB 转 HSV
+          let h = 0, s = max === 0 ? 0 : d / max, v = max;
+          if (d !== 0) {
+            if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+            else if (max === g) h = ((b - r) / d + 2) / 6;
+            else h = ((r - g) / d + 4) / 6;
+          }
+
+          // 增强饱和度 (+10% 到 +50%)
+          s = Math.min(1, s * (1 + scale * 0.5));
+          // 增强亮度 (+5% 到 +25%)
+          v = Math.min(1, v * (1 + scale * 0.2));
+
+          // HSV 转 RGB
+          const i = Math.floor(h * 6);
+          const f = h * 6 - i;
+          const p = v * (1 - s);
+          const q = v * (1 - f * s);
+          const t = v * (1 - (1 - f) * s);
+          let rn, gn, bn;
+
+          switch (i % 6) {
+            case 0: rn = v; gn = t; bn = p; break;
+            case 1: rn = q; gn = v; bn = p; break;
+            case 2: rn = p; gn = v; bn = t; break;
+            case 3: rn = p; gn = q; bn = v; break;
+            case 4: rn = t; gn = p; bn = v; break;
+            case 5: rn = v; gn = p; bn = q; break;
+          }
+
+          // 对比度增强
+          const contrast = 1.0 + scale * 0.5; // 1.0 到 1.5
+          const vibrantColor = {
+            r: Math.max(0, Math.min(255, Math.round(128 + (rn * 255 - 128) * contrast))),
+            g: Math.max(0, Math.min(255, Math.round(128 + (gn * 255 - 128) * contrast))),
+            b: Math.max(0, Math.min(255, Math.round(128 + (bn * 255 - 128) * contrast)))
+          };
+
+          cellsToProcess.push({ row, col });
+          colorsToMap.push(vibrantColor);
+        }
+      }
+
+      // 批量映射所有颜色
+      const mappedColors = batchMapColors(colorsToMap);
+
+      // 第二遍：应用映射结果，同时更新 originalRgb 为增强后的颜色（供颜色聚合使用）
+      for (let i = 0; i < cellsToProcess.length; i++) {
+        const { row, col } = cellsToProcess[i];
+        const cell = gridData[row][col];
+        const markColor = mappedColors[i];
+        // 更新增强后的颜色到 originalRgb，这样颜色聚合会基于增强后的颜色
+        cell.originalRgb = colorsToMap[i];
+        cell.markCode = markColor.code;
+        cell.markHex = markColor.hex;
+        cell.markRgb = markColor.rgb;
+      }
+
+      // 颜色聚合：如果设置了 mergeThreshold，需要重新执行颜色聚合
+      const mergeThreshold = this.data.mergeThreshold;
+      if (mergeThreshold > 0) {
+        aggregateSimilarColors(gridData, rows, cols, mergeThreshold);
+      }
+
+      // 特殊色替换：如果特殊色开关是关闭的，需要重新替换特殊色
+      if (!this.data.useSpecialColors) {
+        this.replaceSpecialColors(gridData, rows, cols);
       }
     },
 
@@ -576,7 +692,7 @@ Component({
         // 将 segments 转换为 2D gridData，复用卡通模式的渲染逻辑
         const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows);
 
-        // 替换特殊色为替代色
+        // 替换特殊色为替代色（马赛克模式不应用鲜艳度增强，保持原始数据纯净）
         this.replaceSpecialColors(gridData, result.rows, result.cols);
 
         // 马赛克模式：检查 isEdge 标记并进行裁剪
@@ -645,11 +761,13 @@ Component({
         return;
       } else {
         // 传入 mergeThreshold 参数
-        result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold);
+        result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
       }
 
       // 替换特殊色为替代色
       this.replaceSpecialColors(result.gridData, result.rows, result.cols);
+      // 重新应用鲜艳度增强
+      this.reapplyVibrantScale(result.gridData, result.rows, result.cols);
 
       // 边缘底色检测与裁剪
       try {
@@ -740,6 +858,12 @@ Component({
     },
 
     processPixelData(pixelData, width, height) {
+      // 保存像素数据缓存，供后续鲜艳度调整使用
+      // 深拷贝避免原始数据被修改
+      this.cachedPixelData = new Uint8ClampedArray(pixelData);
+      this.cachedWidth = width;
+      this.cachedHeight = height;
+
       this.setData({ isProcessing: true });
 
       const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
@@ -765,7 +889,7 @@ Component({
         // 将 segments 转换为 2D gridData，复用卡通模式的渲染逻辑
         const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows);
 
-        // 替换特殊色为替代色
+        // 替换特殊色为替代色（马赛克模式不应用鲜艳度增强，保持原始数据纯净）
         this.replaceSpecialColors(gridData, result.rows, result.cols);
 
         // 马赛克模式：检查 isEdge 标记并进行裁剪
@@ -834,11 +958,13 @@ Component({
         return;
       } else {
         // 传入 mergeThreshold 参数，在颜色映射阶段进行颜色聚合
-        result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold);
+        result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
       }
 
       // 替换特殊色为替代色
       this.replaceSpecialColors(result.gridData, result.rows, result.cols);
+      // 重新应用鲜艳度增强
+      this.reapplyVibrantScale(result.gridData, result.rows, result.cols);
 
       // 边缘底色检测与裁剪
       try {

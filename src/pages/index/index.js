@@ -68,6 +68,9 @@ Page({
     // 去除边缘设置
     removeEdge: true,  // 是否去除边缘底色
 
+    // 鲜艳度增强
+    vibrantScale: 0,  // 鲜艳度增强系数 (0-1)，0 表示不增强
+
     // 替换功能
     showReplacePanel: false,  // 是否显示替换面板
     replaceRegionCode: '',  // 大区编号（如 A1）
@@ -233,6 +236,27 @@ Page({
     // 只更新 removeEdge，mosaicCanvas 组件会通过 observer 监听到变化并重新生成
     this.setData({
       removeEdge: e.detail.value
+    });
+  },
+
+  // 鲜艳度滑块变化
+  onVibrantChange(e) {
+    // 导出中禁止调整
+    if (this.data.isExporting) {
+      wx.showToast({ title: '导出中，请稍候', icon: 'none' });
+      return;
+    }
+
+    // 直接使用滑块的值 (0-10)
+    this.setData({
+      vibrantScale: e.detail.value
+    });
+  },
+
+  // 鲜艳度滑块拖动中（实时更新显示）
+  onVibrantChanging(e) {
+    this.setData({
+      vibrantScale: e.detail.value
     });
   },
 
