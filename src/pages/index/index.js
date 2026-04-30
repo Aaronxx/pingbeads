@@ -56,7 +56,11 @@ Page({
       { name: '20', value: 20 },
       { name: '30', value: 30 },
       { name: '50', value: 50 },
-      { name: '100', value: 100 }
+      { name: '100', value: 100 },
+      { name: '150', value: 150 },
+      { name: '200', value: 200 },
+      { name: '250', value: 250 },
+      { name: '291', value: 291 }
     ],
     // 当前选项索引（用于 picker 绑定）
     gridOptionIndex: 2,  // 默认 10 (gridOptions[2].value = 10)
