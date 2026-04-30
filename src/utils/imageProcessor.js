@@ -206,53 +206,7 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
       // 鲜艳度增强：饱和度 + 亮度 + 对比度 组合调整
       let vibrantColor = dominantColor;
       if (vibrantScale > 0) {
-        const scale = vibrantScale / 10; // 0-1
-
-        // RGB 转 HSV
-        const r = dominantColor.r / 255;
-        const g = dominantColor.g / 255;
-        const b = dominantColor.b / 255;
-        const max = Math.max(r, g, b);
-        const min = Math.min(r, g, b);
-        const d = max - min;
-
-        let h = 0, s = max === 0 ? 0 : d / max, v = max;
-
-        if (d !== 0) {
-          if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-          else if (max === g) h = ((b - r) / d + 2) / 6;
-          else h = ((r - g) / d + 4) / 6;
-        }
-
-        // 增强饱和度 (+10% 到 +50%)
-        s = Math.min(1, s * (1 + scale * 0.5));
-        // 增强亮度 (+5% 到 +25%)
-        v = Math.min(1, v * (1 + scale * 0.2));
-
-        // HSV 转 RGB
-        const i = Math.floor(h * 6);
-        const f = h * 6 - i;
-        const p = v * (1 - s);
-        const q = v * (1 - f * s);
-        const t = v * (1 - (1 - f) * s);
-        let rn, gn, bn;
-
-        switch (i % 6) {
-          case 0: rn = v; gn = t; bn = p; break;
-          case 1: rn = q; gn = v; bn = p; break;
-          case 2: rn = p; gn = v; bn = t; break;
-          case 3: rn = p; gn = q; bn = v; break;
-          case 4: rn = t; gn = p; bn = v; break;
-          case 5: rn = v; gn = p; bn = q; break;
-        }
-
-        // 对比度增强
-        const contrast = 1.0 + scale * 0.5; // 1.0 到 1.5
-        vibrantColor = {
-          r: Math.max(0, Math.min(255, Math.round(128 + (rn * 255 - 128) * contrast))),
-          g: Math.max(0, Math.min(255, Math.round(128 + (gn * 255 - 128) * contrast))),
-          b: Math.max(0, Math.min(255, Math.round(128 + (bn * 255 - 128) * contrast)))
-        };
+        vibrantColor = enhanceVibrant(dominantColor, vibrantScale / 10);
       }
 
       // 使用快速查找
@@ -1623,6 +1577,61 @@ function convertSegmentsToGridData(segments, cols, rows) {
   return gridData;
 }
 
+/**
+ * 鲜艳度增强：饱和度 + 亮度 + 对比度 组合调整
+ * @param {Object} rgb - RGB颜色对象 {r, g, b}
+ * @param {number} scale - 增强强度 0-1
+ * @returns {Object} 增强后的RGB颜色对象 {r, g, b}
+ */
+function enhanceVibrant(rgb, scale) {
+  if (!rgb || scale <= 0) return rgb;
+
+  const r = rgb.r / 255;
+  const g = rgb.g / 255;
+  const b = rgb.b / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+
+  // RGB 转 HSV
+  let h = 0, s = max === 0 ? 0 : d / max, v = max;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+  }
+
+  // 增强饱和度 (+10% 到 +50%)
+  s = Math.min(1, s * (1 + scale * 0.5));
+  // 增强亮度 (+5% 到 +25%)
+  v = Math.min(1, v * (1 + scale * 0.2));
+
+  // HSV 转 RGB
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s);
+  const q = v * (1 - f * s);
+  const t = v * (1 - (1 - f) * s);
+  let rn, gn, bn;
+
+  switch (i % 6) {
+    case 0: rn = v; gn = t; bn = p; break;
+    case 1: rn = q; gn = v; bn = p; break;
+    case 2: rn = p; gn = v; bn = t; break;
+    case 3: rn = p; gn = q; bn = v; break;
+    case 4: rn = t; gn = p; bn = v; break;
+    case 5: rn = v; gn = p; bn = q; break;
+  }
+
+  // 对比度增强
+  const contrast = 1.0 + scale * 0.5; // 1.0 到 1.5
+  return {
+    r: Math.max(0, Math.min(255, Math.round(128 + (rn * 255 - 128) * contrast))),
+    g: Math.max(0, Math.min(255, Math.round(128 + (gn * 255 - 128) * contrast))),
+    b: Math.max(0, Math.min(255, Math.round(128 + (bn * 255 - 128) * contrast)))
+  };
+}
+
 module.exports = {
   processSimple,
   processWithSmartRegions,
@@ -1634,5 +1643,6 @@ module.exports = {
   cropMosaicData,
   findCropBoundaryFromGrid,
   convertSegmentsToGridData,
-  aggregateSimilarColors
+  aggregateSimilarColors,
+  enhanceVibrant
 };

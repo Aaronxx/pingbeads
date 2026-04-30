@@ -129,15 +129,12 @@ Component({
       this.cachedPixelData = new Uint8ClampedArray(pixelData);
       this.cachedWidth = width;
       this.cachedHeight = height;
-      console.log('[setCachedPixelData] first 3 pixels:', pixelData[0], pixelData[1], pixelData[2]);
     },
     
     regenerateFromCache() {
       const pixelData = this.getCachedPixelData();
       const cachedWidth = this.cachedWidth;
       const cachedHeight = this.cachedHeight;
-
-      console.log('[regenerateFromCache] mode:', this.data.processMode, 'first 3 pixels:', pixelData ? pixelData[0] : 'null', pixelData ? pixelData[1] : 'null', pixelData ? pixelData[2] : 'null');
 
       if (!pixelData || cachedWidth === 0) return;
 
@@ -148,9 +145,7 @@ Component({
       if (this.data.processMode === 'mosaic') {
         // 智能模式：扫描线识别马赛克色块
         try {
-          console.log('[regenerateFromCache] calling processWithSmartRegions with pixelData length:', pixelData.length);
           result = processWithSmartRegions(pixelData, cachedWidth, cachedHeight, qualityGridSize);
-          console.log('[regenerateFromCache] processWithSmartRegions returned segments count:', result.segments ? result.segments.length : 0);
         } catch (e) {
           console.error('马赛克模式处理失败:', e);
           wx.showToast({ title: '处理失败，请重试', icon: 'none' });
@@ -216,7 +211,6 @@ Component({
 
         // 计算统计结果（基于 gridData）
         const stats = this.calculateStats(gridData, result.rows, result.cols);
-        console.log('[regenerateFromCache mosaic] stats unique colors:', stats ? stats.colorCount : 0);
 
         this.setData({
           gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
@@ -308,8 +302,6 @@ Component({
 
       // 直接计算统计结果（不传输大量格子数据）
       const stats = this.calculateStats(result.gridData, result.rows, result.cols);
-      console.log('[regenerateFromCache] stats unique colors:', stats ? stats.colorCount : 0);
-
 
       this.setData({
         gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
@@ -369,7 +361,7 @@ Component({
       if (vibrantScale <= 0) return;
 
       const { batchMapColors, markPalette } = require('../../utils/colorMapper');
-      const { aggregateSimilarColors } = require('../../utils/imageProcessor');
+      const { aggregateSimilarColors, enhanceVibrant } = require('../../utils/imageProcessor');
 
       const scale = vibrantScale / 10; // 0-1
 
@@ -382,52 +374,8 @@ Component({
           const cell = gridData[row] && gridData[row][col];
           if (!cell || !cell.originalRgb) continue;
 
-          // 计算增强后的颜色（饱和度 + 亮度 + 对比度 组合）
-          const orig = cell.originalRgb;
-          const r = orig.r / 255;
-          const g = orig.g / 255;
-          const b = orig.b / 255;
-          const max = Math.max(r, g, b);
-          const min = Math.min(r, g, b);
-          const d = max - min;
-
-          // RGB 转 HSV
-          let h = 0, s = max === 0 ? 0 : d / max, v = max;
-          if (d !== 0) {
-            if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-            else if (max === g) h = ((b - r) / d + 2) / 6;
-            else h = ((r - g) / d + 4) / 6;
-          }
-
-          // 增强饱和度 (+10% 到 +50%)
-          s = Math.min(1, s * (1 + scale * 0.5));
-          // 增强亮度 (+5% 到 +25%)
-          v = Math.min(1, v * (1 + scale * 0.2));
-
-          // HSV 转 RGB
-          const i = Math.floor(h * 6);
-          const f = h * 6 - i;
-          const p = v * (1 - s);
-          const q = v * (1 - f * s);
-          const t = v * (1 - (1 - f) * s);
-          let rn, gn, bn;
-
-          switch (i % 6) {
-            case 0: rn = v; gn = t; bn = p; break;
-            case 1: rn = q; gn = v; bn = p; break;
-            case 2: rn = p; gn = v; bn = t; break;
-            case 3: rn = p; gn = q; bn = v; break;
-            case 4: rn = t; gn = p; bn = v; break;
-            case 5: rn = v; gn = p; bn = q; break;
-          }
-
-          // 对比度增强
-          const contrast = 1.0 + scale * 0.5; // 1.0 到 1.5
-          const vibrantColor = {
-            r: Math.max(0, Math.min(255, Math.round(128 + (rn * 255 - 128) * contrast))),
-            g: Math.max(0, Math.min(255, Math.round(128 + (gn * 255 - 128) * contrast))),
-            b: Math.max(0, Math.min(255, Math.round(128 + (bn * 255 - 128) * contrast)))
-          };
+          // 使用公共函数进行鲜艳度增强
+          const vibrantColor = enhanceVibrant(cell.originalRgb, scale);
 
           cellsToProcess.push({ row, col });
           colorsToMap.push(vibrantColor);
