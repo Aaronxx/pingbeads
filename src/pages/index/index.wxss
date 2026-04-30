@@ -325,18 +325,39 @@
   min-width: 80rpx;
 }
 
-/* 智能模式切换按钮 */
+/* ========================
+   可爱模式切换按钮
+   ======================== */
 .picker-box.mode-switch {
-  background: linear-gradient(135deg, #e0e0e0 0%, #d0d0d0 100%);
+  background: linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%);
+  border: 2rpx solid #f9a8d4;
+  border-radius: 20rpx;
+  padding: 6rpx 16rpx;
+  min-width: 80rpx;
+  box-shadow: 0 4rpx 12rpx rgba(244, 114, 182, 0.2);
+  transition: all 0.2s ease;
+}
+
+.picker-box.mode-switch .picker-label {
+  font-size: 20rpx;
+  color: #db2777;
+  font-weight: 600;
+  margin-bottom: 0;
 }
 
 .picker-box.mode-switch.active {
-  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+  background: linear-gradient(135deg, #34d399 0%, #10b981 50%, #059669 100%);
+  border-color: #10b981;
+  box-shadow: 0 4rpx 16rpx rgba(16, 185, 129, 0.4), inset 0 2rpx 4rpx rgba(255, 255, 255, 0.3);
 }
 
-.picker-box.mode-switch.active .picker-label,
-.picker-box.mode-switch.active .picker-value {
+.picker-box.mode-switch.active .picker-label {
   color: #fff;
+  text-shadow: 0 1rpx 2rpx rgba(0, 0, 0, 0.1);
+}
+
+.picker-box.mode-switch:active {
+  transform: scale(0.95);
 }
 
 .picker-label {

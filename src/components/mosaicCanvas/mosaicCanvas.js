@@ -18,7 +18,8 @@ Component({
     scale: { type: Number, value: 1 },
     previewQuality: { type: Number, value: 2 },
     regenerateTrigger: { type: Number, value: 0 },
-    vibrantScale: { type: Number, value: 0 }  // 鲜艳度增强系数 (0-1)
+    vibrantScale: { type: Number, value: 0 },  // 鲜艳度增强系数 (0-1)
+    mirrorImage: { type: Boolean, value: false }  // 是否镜像翻转
   },
 
   data: {
@@ -65,7 +66,7 @@ Component({
         }, 200);
       }
     },
-    'gridSize, mergeThreshold, previewQuality, processMode, useSpecialColors, removeEdge, vibrantScale': function() {
+    'gridSize, mergeThreshold, previewQuality, processMode, useSpecialColors, removeEdge, vibrantScale, mirrorImage': function() {
       if (this.data.processMode === 'mosaic') {
         this.cachedGridData = null;
         this.cachedGridInfo = null;
@@ -1111,8 +1112,13 @@ Component({
               const cellWidth = cellSize;
               const cellHeight = cellSize;
 
-              const x = offsetX + col * cellSize;
+              let x = offsetX + col * cellSize;
               const y = offsetY + row * cellSize;
+
+              // 应用镜像变换
+              if (that.data.mirrorImage) {
+                x = actualCanvasWidth - x - cellWidth;
+              }
 
               // 绘制色块（根据 removeEdge 设置决定是否绘制边缘）
               ctx.fillStyle = cell.markHex;

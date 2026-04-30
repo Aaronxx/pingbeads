@@ -49,15 +49,16 @@
 
     </view>
 
-    <!-- 第二行：特殊色开关、去边缘开关（卡通模式显示鲜艳滑块） -->
+    <!-- 第二行：特殊色按钮、去边缘按钮、镜像按钮（卡通模式显示鲜艳滑块） -->
     <view class="special-color-row" wx:if="{{imagePath}}">
-      <view class="setting-item">
-        <switch checked="{{useSpecialColors}}" bindchange="onSpecialColorsChange" color="#4CAF50" />
-        <text class="switch-label">特殊色</text>
+      <view class="picker-box mode-switch {{useSpecialColors ? 'active' : ''}}" bindtap="onSpecialColorsChange">
+        <text class="picker-label">特殊色</text>
       </view>
-      <view class="setting-item">
-        <switch checked="{{removeEdge}}" bindchange="onRemoveEdgeChange" color="#4CAF50" />
-        <text class="switch-label">去边缘</text>
+      <view class="picker-box mode-switch {{removeEdge ? 'active' : ''}}" bindtap="onRemoveEdgeChange">
+        <text class="picker-label">去边缘</text>
+      </view>
+      <view class="picker-box mode-switch {{mirrorImage ? 'active' : ''}}" bindtap="onMirrorChange">
+        <text class="picker-label">镜像</text>
       </view>
       <view class="setting-item vibrant-slider" wx:if="{{processMode === 'cartoon'}}">
         <text class="switch-label">鲜艳</text>
@@ -107,6 +108,7 @@
         processMode="{{processMode}}"
         useSpecialColors="{{useSpecialColors}}"
         removeEdge="{{removeEdge}}"
+        mirrorImage="{{mirrorImage}}"
         highlightCode="{{highlightCode}}"
         showCode="{{showCode}}"
         previewQuality="{{previewQuality}}"
