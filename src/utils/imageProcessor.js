@@ -266,27 +266,39 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
   const maxIterations = 5;
   const iterStart = Date.now();
   let iterCount = 0;
+
+  // 记录每次迭代的分配结果，用于最终映射
+  let lastAssign = new Array(uniqueColors.length);
+  let lastDist = new Array(uniqueColors.length);
+
   for (let iter = 0; iter < maxIterations; iter++) {
     iterCount++;
     // 分配每个唯一颜色到最近的中心
     const clusters = Array.from({ length: centers.length }, () => []);
 
-    for (const colorInfo of uniqueColors) {
+    for (let ci = 0; ci < uniqueColors.length; ci++) {
+      const colorInfo = uniqueColors[ci];
+      const cr = colorInfo.rgb.r;
+      const cg = colorInfo.rgb.g;
+      const cb = colorInfo.rgb.b;
+
       let minDist = Infinity;
       let minIdx = 0;
 
       for (let i = 0; i < centers.length; i++) {
-        const dist = fastDistance(colorInfo.rgb, centers[i]);
+        const dist = Math.abs(centers[i].r - cr) + Math.abs(centers[i].g - cg) + Math.abs(centers[i].b - cb);
         if (dist < minDist) {
           minDist = dist;
           minIdx = i;
         }
       }
 
+      lastAssign[ci] = minIdx;
+      lastDist[ci] = minDist;
       clusters[minIdx].push(colorInfo);
     }
 
-    // 更新中心
+    // 更新中心（使用内联距离计算避免函数调用）
     let changed = false;
     for (let i = 0; i < centers.length; i++) {
       if (clusters[i].length === 0) continue;
@@ -305,7 +317,9 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
         b: Math.round(sumB / totalWeight)
       };
 
-      if (fastDistance(centers[i], newCenter) > 3) {
+      // 使用内联曼哈顿距离
+      const dist = Math.abs(centers[i].r - newCenter.r) + Math.abs(centers[i].g - newCenter.g) + Math.abs(centers[i].b - newCenter.b);
+      if (dist > 3) {
         centers[i] = newCenter;
         changed = true;
       }
@@ -323,22 +337,13 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
   
 
   // 6. 将每个唯一颜色映射到其所属聚类的 Mark 色号
-  // 使用颜色到中心的映射表，避免重复计算
+  // 使用上次迭代的结果，避免重复计算
   const rgbToCenterIdx = new Map();
 
-  for (const colorInfo of uniqueColors) {
-    let minDist = Infinity;
-    let minIdx = 0;
-
-    for (let i = 0; i < centers.length; i++) {
-      const dist = fastDistance(colorInfo.rgb, centers[i]);
-      if (dist < minDist) {
-        minDist = dist;
-        minIdx = i;
-      }
-    }
-
-    rgbToCenterIdx.set(`${colorInfo.rgb.r},${colorInfo.rgb.g},${colorInfo.rgb.b}`, minIdx);
+  for (let ci = 0; ci < uniqueColors.length; ci++) {
+    const colorInfo = uniqueColors[ci];
+    const key = (colorInfo.rgb.r << 16) | (colorInfo.rgb.g << 8) | colorInfo.rgb.b;
+    rgbToCenterIdx.set(key, lastAssign[ci]);
   }
 
   // 7. 应用到所有格子
@@ -347,7 +352,7 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
       const cell = gridData[row] && gridData[row][col];
       if (!cell || !cell.originalRgb) continue;
 
-      const key = `${cell.originalRgb.r},${cell.originalRgb.g},${cell.originalRgb.b}`;
+      const key = (cell.originalRgb.r << 16) | (cell.originalRgb.g << 8) | cell.originalRgb.b;
       const centerIdx = rgbToCenterIdx.get(key);
 
       if (centerIdx !== undefined) {
