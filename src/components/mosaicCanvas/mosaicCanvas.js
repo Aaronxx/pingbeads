@@ -323,7 +323,12 @@ Component({
      * @param {number} cols - 列数
      */
     replaceSpecialColors(gridData, rows, cols) {
-      if (this.data.useSpecialColors) return; // 如果使用特殊色，不替换
+      const useSpecial = this.data.useSpecialColors;
+      if (useSpecial) return; // 如果使用特殊色，不替换
+
+      const startTime = Date.now();
+      let specialCount = 0;
+      let nonSpecialCount = 0;
 
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
@@ -331,15 +336,20 @@ Component({
           if (!cell || !cell.markCode) continue;
 
           if (isSpecialColor(cell.markCode)) {
+            specialCount++;
             const altColor = getAlternativeColor(cell.markCode);
             if (altColor) {
               cell.markCode = altColor.code;
               cell.markHex = altColor.hex;
               cell.markRgb = altColor.rgb;
             }
+          } else {
+            nonSpecialCount++;
           }
         }
       }
+
+      console.log(`[replaceSpecialColors] 耗时 ${Date.now() - startTime}ms, 特殊色=${specialCount}, 普通色=${nonSpecialCount}`);
     },
 
     // 重新应用鲜艳度增强（在 replaceSpecialColors 之后调用）

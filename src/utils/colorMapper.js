@@ -9,6 +9,9 @@ const { markPalette } = require('../data/colorPalettes');
 // 特殊色系列（不包括在普通色中）
 const SPECIAL_SERIES = ['P', 'Q', 'R', 'T', 'Y', 'ZG'];
 
+// 预构建特殊色系列前缀的 Set，用于 O(1) 查找
+const specialSeriesSet = new Set(SPECIAL_SERIES);
+
 /**
  * 判断色号是否为特殊色系列
  * @param {string} code - 色号（如 "P1", "ZG2", "R10"）
@@ -16,9 +19,9 @@ const SPECIAL_SERIES = ['P', 'Q', 'R', 'T', 'Y', 'ZG'];
  */
 function isSpecialColor(code) {
   if (!code) return false;
-  // 检查字母前缀是否在特殊色系列中
+  // 检查字母前缀是否在特殊色系列中（使用 Set 查找）
   const prefix = code.match(/^[A-Z]+/);
-  return prefix && SPECIAL_SERIES.includes(prefix[0]);
+  return prefix && specialSeriesSet.has(prefix[0]);
 }
 
 /**
@@ -99,15 +102,22 @@ const SPECIAL_ALTERNATIVES = {
   "Y5": "D18"
 };
 
+// 预计算替代色信息的缓存（避免每次都调用 markPalette.find）
+const alternativeColorCache = new Map();
+for (const [specialCode, altCode] of Object.entries(SPECIAL_ALTERNATIVES)) {
+  const altColor = markPalette.find(c => c.code === altCode);
+  if (altColor) {
+    alternativeColorCache.set(specialCode, altColor);
+  }
+}
+
 /**
  * 根据色号获取替代色信息
  * @param {string} specialCode - 特殊色号
  * @returns {{code: string, hex: string, rgb: object}|null} 替代色信息
  */
 function getAlternativeColor(specialCode) {
-  const altCode = SPECIAL_ALTERNATIVES[specialCode];
-  if (!altCode) return null;
-  return markPalette.find(c => c.code === altCode) || null;
+  return alternativeColorCache.get(specialCode) || null;
 }
 
 /**
