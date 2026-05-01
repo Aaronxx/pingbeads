@@ -40,8 +40,6 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
   const scaleY = height / rows;
 
   const gridData = [];
-  const startTime = Date.now();
-  const precomputeStart = Date.now();
 
   // 预先计算每个网格区域的像素范围
   const gridRegions = [];
@@ -55,9 +53,7 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
       gridRegions[row][col] = { srcX, srcY, endX, endY };
     }
   }
-  console.log(`[processSimple] 预计算 gridRegions: ${Date.now() - precomputeStart}ms`);
-
-  // 使用查找表加速颜色映射
+  // 主循环
 
   // 如果没有像素数据，使用简单算法
   if (!pixelData || pixelData.length === 0) {
@@ -67,7 +63,6 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
   // 鲜艳度预处理
   let processedPixelData = pixelData;
 
-  const loopStart = Date.now();
   let enhanceCount = 0;
   let findCount = 0;
 
@@ -135,16 +130,10 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
 
     }
   }
-  console.log(`[processSimple] 主循环: ${Date.now() - loopStart}ms, enhance=${enhanceCount}, find=${findCount}, markCache=${markCache.size}`);
-
   // 颜色聚合 - 将相近的原始 RGB 颜色映射到相同的 Mark 色号
   if (mergeThreshold > 0) {
-    const aggStart = Date.now();
     aggregateSimilarColors(gridData, rows, cols, mergeThreshold);
-    console.log(`[aggregate] 总耗时: ${Date.now() - startTime}ms`);
   }
-
-  console.log(`[processSimple] 总耗时: ${Date.now() - startTime}ms, ${rows}x${cols}=${rows*cols}个网格`);
 
   return { gridData, cols, rows, gridSize };
 }
@@ -191,7 +180,6 @@ function generatePlaceholderGrid(cols, rows, gridSize) {
  * @param {number} targetCount - 目标色块数量 (1-30)
  */
 function aggregateSimilarColors(gridData, rows, cols, targetCount) {
-  const startTime = Date.now();
   if (!gridData || targetCount <= 0) return gridData;
 
   
@@ -264,7 +252,6 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
 
   // 4. 减少迭代次数
   const maxIterations = 5;
-  const iterStart = Date.now();
   let iterCount = 0;
 
   // 记录每次迭代的分配结果，用于最终映射
@@ -327,12 +314,9 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
 
     if (!changed) break;
   }
-  console.log(`[aggregate] K-means迭代: ${Date.now() - iterStart}ms, ${iterCount}次迭代`);
 
   // 5. 为每个聚类中心找到最接近的 Mark 色号
-  const centerStart = Date.now();
   const centerMarkColors = centers.map(center => fastFindClosestMarkColor(center));
-  console.log(`[aggregate] 中心色映射: ${Date.now() - centerStart}ms`);
 
   
 
@@ -375,7 +359,6 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
     }
   }
 
-  console.log(`[aggregate] 总耗时: ${Date.now() - startTime}ms, 实际使用${usedCodes.size}个色号`);
   return gridData;
 }
 

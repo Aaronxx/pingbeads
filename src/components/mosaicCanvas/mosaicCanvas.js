@@ -214,17 +214,11 @@ Component({
         return;
       } else {
         // 普通模式：传入 mergeThreshold 参数，在颜色映射阶段进行颜色聚合
-        console.log(`[${new Date().toLocaleTimeString()}] 开始 processSimple (普通模式), ${cachedWidth}x${cachedHeight}, gridSize=${qualityGridSize}`);
-        const startTime = Date.now();
         result = processSimple(pixelData, cachedWidth, cachedHeight, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
-        console.log(`[${new Date().toLocaleTimeString()}] processSimple 完成, 耗时 ${Date.now() - startTime}ms, rows: ${result.rows} cols: ${result.cols}`);
       }
 
       // 替换特殊色为替代色
-      console.log(`[${new Date().toLocaleTimeString()}] 开始 replaceSpecialColors...`);
-      const replaceStart = Date.now();
       this.replaceSpecialColors(result.gridData, result.rows, result.cols);
-      console.log(`[${new Date().toLocaleTimeString()}] replaceSpecialColors 完成, 耗时 ${Date.now() - replaceStart}ms`);
       // 重新应用鲜艳度增强
       this.reapplyVibrantScale(result.gridData, result.rows, result.cols);
 
@@ -326,7 +320,6 @@ Component({
       const useSpecial = this.data.useSpecialColors;
       if (useSpecial) return; // 如果使用特殊色，不替换
 
-      const startTime = Date.now();
       let specialCount = 0;
       let nonSpecialCount = 0;
 
@@ -348,8 +341,6 @@ Component({
           }
         }
       }
-
-      console.log(`[replaceSpecialColors] 耗时 ${Date.now() - startTime}ms, 特殊色=${specialCount}, 普通色=${nonSpecialCount}`);
     },
 
     // 重新应用鲜艳度增强（在 replaceSpecialColors 之后调用）
@@ -904,22 +895,13 @@ Component({
         return;
       } else {
         // 传入 mergeThreshold 参数，在颜色映射阶段进行颜色聚合
-        console.log(`[${new Date().toLocaleTimeString()}] 开始 processSimple (卡通模式), ${width}x${height}, gridSize=${qualityGridSize}`);
-        const startTime2 = Date.now();
         result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
-        console.log(`[${new Date().toLocaleTimeString()}] processSimple 完成, 耗时 ${Date.now() - startTime2}ms, rows: ${result.rows} cols: ${result.cols}`);
       }
 
       // 替换特殊色为替代色
-      console.log(`[${new Date().toLocaleTimeString()}] 开始 replaceSpecialColors...`);
-      const replaceStart2 = Date.now();
       this.replaceSpecialColors(result.gridData, result.rows, result.cols);
-      console.log(`[${new Date().toLocaleTimeString()}] replaceSpecialColors 完成, 耗时 ${Date.now() - replaceStart2}ms`);
       // 重新应用鲜艳度增强
-      console.log(`[${new Date().toLocaleTimeString()}] 开始 reapplyVibrantScale...`);
-      const vibrantStart2 = Date.now();
       this.reapplyVibrantScale(result.gridData, result.rows, result.cols);
-      console.log(`[${new Date().toLocaleTimeString()}] reapplyVibrantScale 完成, 耗时 ${Date.now() - vibrantStart2}ms`);
 
       // 边缘底色检测与裁剪
       try {
