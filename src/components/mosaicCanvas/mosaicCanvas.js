@@ -105,14 +105,14 @@ Component({
     getCachedPixelData() {
       return this.cachedPixelData;
     },
-
+    
     setCachedPixelData(pixelData, width, height) {
       // 深拷贝避免原始数据被修改
       this.cachedPixelData = new Uint8ClampedArray(pixelData);
       this.cachedWidth = width;
       this.cachedHeight = height;
     },
-
+    
     regenerateFromCache() {
       const pixelData = this.getCachedPixelData();
       const cachedWidth = this.cachedWidth;
@@ -1014,8 +1014,8 @@ Component({
           const canvas = res[0].node;
           const ctx = canvas.getContext('2d');
           
-          // 直接使用 data 中预先计算好的尺寸，避免依赖查询到的尺寸（首次查询可能不准确）
-          // data 中的尺寸在 processImage 中根据 systemInfo.windowWidth 和图片比例计算得出
+          // 使用组件 data 中的尺寸，因为这是根据图片实际计算出来的
+          // 忽略查询返回的尺寸，因为它可能受 CSS 影响
           let canvasWidth = that.data.canvasWidth || 300;
           let canvasHeight = that.data.canvasHeight || 300;
 
@@ -1023,6 +1023,12 @@ Component({
           const MAX_CANVAS_SIZE = 4096;
           canvasWidth = Math.min(canvasWidth, MAX_CANVAS_SIZE);
           canvasHeight = Math.min(canvasHeight, MAX_CANVAS_SIZE);
+
+          // 如果 data 中的尺寸太小，使用查询到的尺寸（但不超极限）
+          if (res[0].width > canvasWidth || res[0].height > canvasHeight) {
+            canvasWidth = Math.min(res[0].width, MAX_CANVAS_SIZE);
+            canvasHeight = Math.min(res[0].height, MAX_CANVAS_SIZE);
+          }
           
           
           
@@ -1128,7 +1134,7 @@ Component({
               if (that.data.showCode && size >= 8 && (!shouldRemoveEdge || !cell.isEdge)) {
             const isLight = that.isLightColor(cell.markHex);
                 ctx.fillStyle = isLight ? '#333333' : '#ffffff';
-                ctx.font = `${Math.min(size * 0.5, Math.max(4, size * 0.25))}px sans-serif`;
+                ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
             ctx.fillText(that.formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
@@ -1400,7 +1406,7 @@ Component({
             if (that.data.showCode && cellSize >= 8 && (!shouldRemoveEdge || !segment.isEdge)) {
             const isLight = that.isLightColor(segment.markHex);
               ctx.fillStyle = isLight ? '#333333' : '#ffffff';
-              ctx.font = `${Math.min(cellSize * 0.5, Math.max(4, cellSize * 0.25))}px sans-serif`;
+              ctx.font = `${Math.max(6, cellSize * 0.25)}px sans-serif`;
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
             ctx.fillText(that.formatMarkCode(segment.markCode), x + width / 2, y + height / 2);
@@ -1922,7 +1928,7 @@ Component({
           if (this.data.showCode && size >= 8 && (!shouldRemoveEdge || !cell.isEdge)) {
             const isLight = isLightColor(cell.markHex);
             ctx.fillStyle = isLight ? '#333333' : '#ffffff';
-            ctx.font = `${Math.min(size * 0.5, Math.max(4, size * 0.25))}px sans-serif`;
+            ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
