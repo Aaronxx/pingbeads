@@ -1229,7 +1229,7 @@ Component({
       const fontSize = Math.max(8, regionPixelSize * 0.4);
 
       ctx.save();
-      ctx.globalAlpha = 0.35; // 透明度 35%
+      ctx.globalAlpha = 0.15; // 透明度 15%
       ctx.font = `${fontSize}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
