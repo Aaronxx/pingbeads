@@ -290,10 +290,10 @@ function fastFindClosestMarkColor(targetRgb, excludeSpecial = false) {
   }
 
   const resolution = 32;
-  // 量化到 32 级
-  const rIdx = Math.min(resolution - 1, Math.floor(targetRgb.r * resolution / 256));
-  const gIdx = Math.min(resolution - 1, Math.floor(targetRgb.g * resolution / 256));
-  const bIdx = Math.min(resolution - 1, Math.floor(targetRgb.b * resolution / 256));
+  // 量化到 32 级（使用位移优化）
+  const rIdx = Math.min(31, targetRgb.r >> 3);
+  const gIdx = Math.min(31, targetRgb.g >> 3);
+  const bIdx = Math.min(31, targetRgb.b >> 3);
 
   let result = colorLookupTable[rIdx * resolution * resolution + gIdx * resolution + bIdx];
 
@@ -361,10 +361,9 @@ function findClosestMarkColor(targetRgb, excludeSpecial = false) {
  */
 function rgbToMark(r, g, b, excludeSpecial = false) {
   const targetRgb = { r, g, b };
-  const result = findClosestMarkColor(targetRgb, excludeSpecial);
-  // 移除 distance 字段，因为调用者不需要
-  const { distance, ...colorInfo } = result;
-  return colorInfo;
+  // 使用快速查找表版本，享受缓存优化
+  const result = fastFindClosestMarkColor(targetRgb, excludeSpecial);
+  return { code: result.code, hex: result.hex, rgb: result.rgb };
 }
 
 /**
