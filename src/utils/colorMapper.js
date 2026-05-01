@@ -123,45 +123,79 @@ function getAlternativeCode(specialCode) {
 // 为平衡性能和内存，使用 8-bit 精度映射
 let colorLookupTable = null;
 
+// RGB 颜色缓存（LRU），避免对相同 RGB 值的重复查找
+const rgbCache = new Map();
+const RGB_CACHE_MAX = 4096;
+
+// 特殊色排除模式下的缓存
+const excludeSpecialCache = new Map();
+const EXCLUDE_SPECIAL_CACHE_MAX = 1024;
+
 /**
  * 构建快速颜色查找表
  * 将 RGB 空间量化到 32×32×32 = 32768 个 bucket
+ * 优化：避免函数调用，使用距离平方
  */
 function buildColorLookupTable() {
   if (colorLookupTable) return;
 
   const resolution = 32;
-  colorLookupTable = new Array(resolution * resolution * resolution);
+  const total = resolution * resolution * resolution;
+  colorLookupTable = new Array(total);
+
+  // 预计算量化值
+  const quantValues = [];
+  for (let i = 0; i < resolution; i++) {
+    quantValues[i] = Math.round(i * 255 / (resolution - 1));
+  }
+
+  // 预计算 markPalette 的 RGB 值，避免每次都访问
+  const paletteRgb = markPalette.map(c => c.rgb);
+  const paletteLen = paletteRgb.length;
 
   for (let r = 0; r < resolution; r++) {
+    const rVal = quantValues[r];
+    const rIdxOffset = r * resolution * resolution;
     for (let g = 0; g < resolution; g++) {
+      const gVal = quantValues[g];
+      const gIdxOffset = g * resolution;
       for (let b = 0; b < resolution; b++) {
-        const rgb = {
-          r: Math.round(r * 255 / (resolution - 1)),
-          g: Math.round(g * 255 / (resolution - 1)),
-          b: Math.round(b * 255 / (resolution - 1))
-        };
+        const bVal = quantValues[b];
 
-        // 找到最接近的 Mark 颜色
+        // 找到最接近的 Mark 颜色（使用距离平方避免 sqrt）
         let minDistance = Infinity;
         let closestColor = markPalette[0];
 
-        for (const color of markPalette) {
-          const distance = euclideanDistance(rgb, color.rgb);
-          if (distance < minDistance) {
-            minDistance = distance;
-            closestColor = color;
+        for (let i = 0; i < paletteLen; i++) {
+          const pr = paletteRgb[i].r - rVal;
+          const pg = paletteRgb[i].g - gVal;
+          const pb = paletteRgb[i].b - bVal;
+          const dist = pr * pr + pg * pg + pb * pb;
+          if (dist < minDistance) {
+            minDistance = dist;
+            closestColor = markPalette[i];
           }
         }
 
-        colorLookupTable[r * resolution * resolution + g * resolution + b] = closestColor;
+        colorLookupTable[rIdxOffset + gIdxOffset + b] = closestColor;
       }
     }
   }
 }
 
-// 初始化查找表
-buildColorLookupTable();
+// 延迟初始化查找表，避免阻塞小程序启动
+let lookupTableReady = false;
+
+/**
+ * 初始化查找表
+ */
+function initColorLookupTable() {
+  if (lookupTableReady) return;
+  buildColorLookupTable();
+  lookupTableReady = true;
+}
+
+// 不再在模块加载时同步初始化，改为延迟初始化
 
 /**
  * 计算两个 RGB 颜色之间的欧氏距离
@@ -223,6 +257,24 @@ function hexToRgb(hex) {
  * @returns {{code: string, hex: string, rgb: {r: number, g: number, b: number}}}
  */
 function fastFindClosestMarkColor(targetRgb, excludeSpecial = false) {
+  // 确保查找表已初始化（延迟初始化）
+  if (!lookupTableReady) {
+    initColorLookupTable();
+  }
+
+  // 使用更粗粒度的缓存键（除以4，64级）
+  const rq = Math.floor(targetRgb.r / 4);
+  const gq = Math.floor(targetRgb.g / 4);
+  const bq = Math.floor(targetRgb.b / 4);
+  const cacheKey = (rq << 12) | (gq << 6) | bq | (excludeSpecial ? 262144 : 0);
+
+  // 根据 excludeSpecial 选择不同的缓存
+  const cache = excludeSpecial ? excludeSpecialCache : rgbCache;
+
+  if (cache.has(cacheKey)) {
+    return cache.get(cacheKey);
+  }
+
   if (!colorLookupTable) {
     return findClosestMarkColor(targetRgb, excludeSpecial);
   }
@@ -241,6 +293,12 @@ function fastFindClosestMarkColor(targetRgb, excludeSpecial = false) {
     if (altColor) {
       result = altColor;
     }
+  }
+
+  // 缓存结果
+  const cacheMax = excludeSpecial ? EXCLUDE_SPECIAL_CACHE_MAX : RGB_CACHE_MAX;
+  if (cache.size < cacheMax) {
+    cache.set(cacheKey, result);
   }
 
   return result;

@@ -8,6 +8,7 @@
  */
 
 const { fastFindClosestMarkColor } = require('../utils/colorMapper');
+const { isSpecialColor } = require('../utils/colorMapper');
 
 /**
  * 计算颜色距离 (欧氏距离)
@@ -39,6 +40,8 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
   const scaleY = height / rows;
 
   const gridData = [];
+  const startTime = Date.now();
+  const precomputeStart = Date.now();
 
   // 预先计算每个网格区域的像素范围
   const gridRegions = [];
@@ -52,6 +55,7 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
       gridRegions[row][col] = { srcX, srcY, endX, endY };
     }
   }
+  console.log(`[processSimple] 预计算 gridRegions: ${Date.now() - precomputeStart}ms`);
 
   // 使用查找表加速颜色映射
 
@@ -62,6 +66,14 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
 
   // 鲜艳度预处理
   let processedPixelData = pixelData;
+
+  const loopStart = Date.now();
+  let enhanceCount = 0;
+  let findCount = 0;
+
+  // 缓存 fastFindClosestMarkColor 的结果
+  const markCache = new Map();
+  const MARK_CACHE_MAX = 8192;
 
   for (let row = 0; row < rows; row++) {
     gridData[row] = [];
@@ -90,11 +102,25 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
       // 鲜艳度增强：饱和度 + 亮度 + 对比度 组合调整
       let vibrantColor = dominantColor;
       if (vibrantScale > 0) {
-        vibrantColor = enhanceVibrant(dominantColor, vibrantScale / 10);
+        vibrantColor = cachedEnhanceVibrant(dominantColor, vibrantScale / 10);
+        enhanceCount++;
       }
 
-      // 使用快速查找
-      const markColor = fastFindClosestMarkColor(vibrantColor);
+      // 使用快速查找（带缓存）
+      const rq = Math.floor(vibrantColor.r / 4);
+      const gq = Math.floor(vibrantColor.g / 4);
+      const bq = Math.floor(vibrantColor.b / 4);
+      const cacheKeyV = (rq << 12) | (gq << 6) | bq;
+      let markColor;
+      if (markCache.has(cacheKeyV)) {
+        markColor = markCache.get(cacheKeyV);
+      } else {
+        markColor = fastFindClosestMarkColor(vibrantColor);
+        if (markCache.size < MARK_CACHE_MAX) {
+          markCache.set(cacheKeyV, markColor);
+        }
+      }
+      findCount++;
 
       gridData[row][col] = {
         x: col * gridSize,
@@ -109,11 +135,16 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
 
     }
   }
+  console.log(`[processSimple] 主循环: ${Date.now() - loopStart}ms, enhance=${enhanceCount}, find=${findCount}, markCache=${markCache.size}`);
 
   // 颜色聚合 - 将相近的原始 RGB 颜色映射到相同的 Mark 色号
   if (mergeThreshold > 0) {
+    const aggStart = Date.now();
     aggregateSimilarColors(gridData, rows, cols, mergeThreshold);
+    console.log(`[aggregate] 总耗时: ${Date.now() - startTime}ms`);
   }
+
+  console.log(`[processSimple] 总耗时: ${Date.now() - startTime}ms, ${rows}x${cols}=${rows*cols}个网格`);
 
   return { gridData, cols, rows, gridSize };
 }
@@ -160,6 +191,7 @@ function generatePlaceholderGrid(cols, rows, gridSize) {
  * @param {number} targetCount - 目标色块数量 (1-30)
  */
 function aggregateSimilarColors(gridData, rows, cols, targetCount) {
+  const startTime = Date.now();
   if (!gridData || targetCount <= 0) return gridData;
 
   
@@ -232,7 +264,10 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
 
   // 4. 减少迭代次数
   const maxIterations = 5;
+  const iterStart = Date.now();
+  let iterCount = 0;
   for (let iter = 0; iter < maxIterations; iter++) {
+    iterCount++;
     // 分配每个唯一颜色到最近的中心
     const clusters = Array.from({ length: centers.length }, () => []);
 
@@ -278,9 +313,12 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
 
     if (!changed) break;
   }
+  console.log(`[aggregate] K-means迭代: ${Date.now() - iterStart}ms, ${iterCount}次迭代`);
 
   // 5. 为每个聚类中心找到最接近的 Mark 色号
+  const centerStart = Date.now();
   const centerMarkColors = centers.map(center => fastFindClosestMarkColor(center));
+  console.log(`[aggregate] 中心色映射: ${Date.now() - centerStart}ms`);
 
   
 
@@ -331,8 +369,8 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
       }
     }
   }
-  
-  
+
+  console.log(`[aggregate] 总耗时: ${Date.now() - startTime}ms, 实际使用${usedCodes.size}个色号`);
   return gridData;
 }
 
@@ -1506,6 +1544,29 @@ function enhanceVibrant(rgb, scale) {
   };
 }
 
+// enhanceVibrant 缓存
+const enhanceCache = new Map();
+const ENHANCE_CACHE_MAX = 4096;
+
+function cachedEnhanceVibrant(rgb, scale) {
+  if (!rgb || scale <= 0) return rgb;
+
+  // 使用量化的 rgb 作为缓存键（number 类型）
+  const rq = Math.floor(rgb.r / 4);
+  const gq = Math.floor(rgb.g / 4);
+  const bq = Math.floor(rgb.b / 4);
+  const cacheKey = (rq << 12) | (gq << 6) | bq | (Math.floor(scale * 100) << 18);
+  if (enhanceCache.has(cacheKey)) {
+    return enhanceCache.get(cacheKey);
+  }
+
+  const result = enhanceVibrant(rgb, scale);
+  if (enhanceCache.size < ENHANCE_CACHE_MAX) {
+    enhanceCache.set(cacheKey, result);
+  }
+  return result;
+}
+
 module.exports = {
   processSimple,
   processWithSmartRegions,
@@ -1518,5 +1579,5 @@ module.exports = {
   findCropBoundaryFromGrid,
   convertSegmentsToGridData,
   aggregateSimilarColors,
-  enhanceVibrant
+  enhanceVibrant: cachedEnhanceVibrant
 };
