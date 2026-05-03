@@ -60,7 +60,7 @@
       <view class="picker-box mode-switch {{mirrorImage ? 'active' : ''}}" bindtap="onMirrorChange">
         <text class="picker-label">镜像</text>
       </view>
-      <view class="setting-item vibrant-slider" wx:if="{{processMode === 'cartoon'}}">
+      <view class="setting-item vibrant-slider" wx:if="{{processMode === 'cartoon' || processMode === 'mosaic'}}">
         <text class="switch-label">鲜艳</text>
         <slider min="0" max="10" value="{{vibrantScale}}" bindchange="onVibrantChange" show-value block-color="#4CAF50" />
       </view>

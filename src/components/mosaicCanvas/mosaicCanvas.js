@@ -144,8 +144,11 @@ Component({
         // 将 segments 转换为 2D gridData，复用卡通模式的渲染逻辑
         const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows);
 
-        // 替换特殊色为替代色（马赛克模式不应用鲜艳度增强，保持原始数据纯净）
+        // 替换特殊色为替代色
         this.replaceSpecialColors(gridData, result.rows, result.cols);
+
+        // 重新应用鲜艳度增强
+        this.reapplyVibrantScale(gridData, result.rows, result.cols);
 
         // 马赛克模式：检查 isEdge 标记并进行裁剪
         let hasExistingIsEdge = false;
