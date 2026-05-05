@@ -94,11 +94,18 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
         b: Math.round(b / count)
       } : { r: 0, g: 0, b: 0 };
 
-      // 鲜艳度增强：饱和度 + 亮度 + 对比度 组合调整
+      // 鲜艳度增强/降低：饱和度 + 亮度 + 对比度 组合调整
+      // vibrantScale 范围：-10 到 10
       let vibrantColor = dominantColor;
-      if (vibrantScale > 0) {
-        vibrantColor = cachedEnhanceVibrant(dominantColor, vibrantScale / 10);
-        enhanceCount++;
+      if (vibrantScale !== 0) {
+        if (vibrantScale > 0) {
+          // 正数：增强鲜艳度
+          vibrantColor = cachedEnhanceVibrant(dominantColor, vibrantScale / 10);
+          enhanceCount++;
+        } else {
+          // 负数：降低鲜艳度
+          vibrantColor = cachedReduceVibrant(dominantColor, Math.abs(vibrantScale) / 10);
+        }
       }
 
       // 使用快速查找（带缓存）
@@ -1555,6 +1562,79 @@ function cachedEnhanceVibrant(rgb, scale) {
   return result;
 }
 
+// 降低鲜艳度（让颜色更灰/暗淡）
+function reduceVibrant(rgb, scale) {
+  if (!rgb) return rgb;
+
+  const r = rgb.r / 255;
+  const g = rgb.g / 255;
+  const b = rgb.b / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+
+  // RGB 转 HSV
+  let h = 0, s = max === 0 ? 0 : d / max, v = max;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+  }
+
+  // 降低饱和度
+  s = Math.max(0, s * (1 - scale * 0.5));
+  // 略微降低亮度
+  v = Math.max(0, v * (1 - scale * 0.2));
+
+  // HSV 转 RGB
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s);
+  const q = v * (1 - f * s);
+  const t = v * (1 - (1 - f) * s);
+  let rn, gn, bn;
+
+  switch (i % 6) {
+    case 0: rn = v; gn = t; bn = p; break;
+    case 1: rn = q; gn = v; bn = p; break;
+    case 2: rn = p; gn = v; bn = t; break;
+    case 3: rn = p; gn = q; bn = v; break;
+    case 4: rn = t; gn = p; bn = v; break;
+    case 5: rn = v; gn = p; bn = q; break;
+  }
+
+  // 对比度降低
+  const contrast = 1.0 - scale * 0.3; // 1.0 到 0.7
+  return {
+    r: Math.max(0, Math.min(255, Math.round(128 + (rn * 255 - 128) * contrast))),
+    g: Math.max(0, Math.min(255, Math.round(128 + (gn * 255 - 128) * contrast))),
+    b: Math.max(0, Math.min(255, Math.round(128 + (bn * 255 - 128) * contrast)))
+  };
+}
+
+// reduceVibrant 缓存
+const reduceCache = new Map();
+const REDUCE_CACHE_MAX = 4096;
+
+function cachedReduceVibrant(rgb, scale) {
+  if (!rgb || scale <= 0) return rgb;
+
+  // 使用量化的 rgb 作为缓存键（number 类型）
+  const rq = Math.floor(rgb.r / 4);
+  const gq = Math.floor(rgb.g / 4);
+  const bq = Math.floor(rgb.b / 4);
+  const cacheKey = (rq << 12) | (gq << 6) | bq | (Math.floor(scale * 100) << 18);
+  if (reduceCache.has(cacheKey)) {
+    return reduceCache.get(cacheKey);
+  }
+
+  const result = reduceVibrant(rgb, scale);
+  if (reduceCache.size < REDUCE_CACHE_MAX) {
+    reduceCache.set(cacheKey, result);
+  }
+  return result;
+}
+
 module.exports = {
   processSimple,
   processWithSmartRegions,
@@ -1567,5 +1647,6 @@ module.exports = {
   findCropBoundaryFromGrid,
   convertSegmentsToGridData,
   aggregateSimilarColors,
-  enhanceVibrant: cachedEnhanceVibrant
+  enhanceVibrant: cachedEnhanceVibrant,
+  reduceVibrant: cachedReduceVibrant
 };

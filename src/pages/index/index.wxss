@@ -289,19 +289,79 @@
   gap: 6rpx;
 }
 
-/* 鲜艳度滑块 */
-.vibrant-slider {
-  flex: 1;
-  min-width: 200rpx;
+/* 鲜艳度滑块 - 单独一行样式 */
+.vibrant-row {
+  display: flex;
+  align-items: center;
+  padding: 10rpx 20rpx;
+  background-color: var(--bg-secondary);
+  border-radius: 8rpx;
+  margin-top: 10rpx;
 }
 
-.vibrant-slider .switch-label {
-  min-width: 60rpx;
+.vibrant-label {
+  font-size: 24rpx;
+  color: var(--text-primary);
+  min-width: 100rpx;
 }
 
-.vibrant-slider slider {
+.vibrant-row slider {
   flex: 1;
+  margin: 0 20rpx;
+}
+
+/* 从中心开始的滑块样式 */
+.vibrant-slider-center {
+  position: relative;
+  flex: 1;
+  height: 60rpx;
+  display: flex;
+  align-items: center;
   margin: 0 10rpx;
+}
+
+/* 中心刻度线 */
+.vibrant-center-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 20rpx;
+  background: linear-gradient(to bottom, transparent 49.5%, #f97316 50%, transparent 50.5%);
+  background-size: 6rpx 100%;
+  background-position: center;
+  background-repeat: no-repeat;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* 滑块主样式 */
+.my-slider {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+}
+
+/* 滑块样式 */
+.my-slider::-webkit-slider-thumb {
+  width: 18rpx;
+  height: 18rpx;
+  background: blue;
+  border-radius: 50%;
+  border: 2rpx solid #fff;
+  box-shadow: 0 1rpx 3rpx rgba(0, 0, 0, 0.15);
+  -webkit-appearance: none;
+}
+
+.vibrant-value-neg {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.vibrant-value-pos {
+  color: #4CAF50;
+  font-weight: 600;
 }
 
 .setting-label {

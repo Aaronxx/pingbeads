@@ -76,7 +76,8 @@ Page({
     mirrorImage: false,  // 是否镜像翻转
 
     // 鲜艳度增强
-    vibrantScale: 0,  // 鲜艳度增强系数 (0-1)，0 表示不增强
+    vibrantScale: 0,  // 鲜艳度增强系数 (-10 到 10)
+    vibrantBlockColor: '#9ca3af',  // 滑块颜色
 
     // 替换功能
     showReplacePanel: false,  // 是否显示替换面板
@@ -92,6 +93,10 @@ Page({
 
   onLoad() {
     // 页面加载
+    // 初始化鲜艳度滑块颜色
+    this.setData({
+      vibrantBlockColor: this.calculateVibrantBlockColor(0)
+    });
   },
 
   // 预览区点击事件（未选择图片时触发选择图片）
@@ -268,17 +273,45 @@ Page({
       return;
     }
 
-    // 直接使用滑块的值 (0-10)
+    // 计算滑块颜色：正数变红，负数变灰
+    const vibrantScale = e.detail.value;
+    const blockColor = this.calculateVibrantBlockColor(vibrantScale);
     this.setData({
-      vibrantScale: e.detail.value
+      vibrantScale: vibrantScale,
+      vibrantBlockColor: blockColor
     });
   },
 
   // 鲜艳度滑块拖动中（实时更新显示）
   onVibrantChanging(e) {
+    const vibrantScale = e.detail.value;
+    const blockColor = this.calculateVibrantBlockColor(vibrantScale);
     this.setData({
-      vibrantScale: e.detail.value
+      vibrantScale: vibrantScale,
+      vibrantBlockColor: blockColor
     });
+  },
+
+  // 计算滑块颜色：正数从绿变红，负数从绿变深灰，0为绿色
+  calculateVibrantBlockColor(vibrantScale) {
+    if (vibrantScale > 0) {
+      // 正数：从绿色渐变到红色
+      // #4CAF50 (76, 175, 80) -> #ef4444 (239, 68, 68)
+      const ratio = vibrantScale / 10;
+      const r = Math.round(76 + (239 - 76) * ratio);
+      const g = Math.round(175 + (68 - 175) * ratio);
+      const b = Math.round(80 + (68 - 80) * ratio);
+      return `rgb(${r}, ${g}, ${b})`;
+    } else if (vibrantScale < 0) {
+      // 负数：从绿色渐变到深灰色
+      // #4CAF50 (76, 175, 80) -> #4b5563 (75, 85, 99)
+      const ratio = Math.abs(vibrantScale) / 10;
+      const r = Math.round(76 + (75 - 76) * ratio);
+      const g = Math.round(175 + (85 - 175) * ratio);
+      const b = Math.round(80 + (99 - 80) * ratio);
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+    return '#4CAF50';
   },
 
   // 切换处理模式：卡通/马赛克
