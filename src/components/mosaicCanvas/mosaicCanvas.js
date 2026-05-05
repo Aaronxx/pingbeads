@@ -66,7 +66,7 @@ Component({
         }, 200);
       }
     },
-    'gridSize, mergeThreshold, previewQuality, processMode, useSpecialColors, removeEdge, vibrantScale, mirrorImage': function() {
+    'gridSize, mergeThreshold, previewQuality, processMode, useSpecialColors, removeEdge, mirrorImage': function() {
       if (this.data.processMode === 'mosaic') {
         this.cachedGridData = null;
         this.cachedGridInfo = null;
@@ -80,6 +80,25 @@ Component({
         }, 200);
       } else if (this.data.imagePath) {
         this.processImage(this.data.imagePath);
+      }
+    },
+    'vibrantScale': function() {
+      // 鲜艳度变化时，不清空缓存，直接重新应用鲜艳度
+      if (this.cachedGridData && this.cachedGridInfo) {
+        this.setData({ isProcessing: true });
+        setTimeout(() => {
+          const gridData = this.cachedGridData;
+          const { rows, cols, gridSize } = this.cachedGridInfo;
+          this.reapplyVibrantScale(gridData, rows, cols);
+          // 重新计算统计
+          const stats = this.calculateStats(gridData, rows, cols);
+          this.setData({
+            gridInfo: { cols, rows, gridSize },
+            isProcessing: false
+          });
+          this.triggerEvent('statsUpdate', { stats: stats });
+          this.renderToCanvas(gridData, cols, rows, gridSize);
+        }, 50);
       }
     },
     'scale': function() {
@@ -222,8 +241,7 @@ Component({
 
       // 替换特殊色为替代色
       this.replaceSpecialColors(result.gridData, result.rows, result.cols);
-      // 重新应用鲜艳度增强
-      this.reapplyVibrantScale(result.gridData, result.rows, result.cols);
+      // 鲜艳度增强已由 processSimple 内部应用，或由 Observer 的 vibrantScale 处理
 
       // 边缘底色检测与标记
       // 根据模式选择检测方式：马赛克模式用网格数据，卡通模式用原始像素
@@ -363,17 +381,17 @@ Component({
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
           const cell = gridData[row] && gridData[row][col];
-          if (!cell || !cell.originalRgb) continue;
+          if (!cell || !cell.rawRgb) continue;
 
           let processedColor;
           if (vibrantScale > 0) {
             // 正数：增强鲜艳度
             const scale = vibrantScale / 10;
-            processedColor = enhanceVibrant(cell.originalRgb, scale);
+            processedColor = enhanceVibrant(cell.rawRgb, scale);
           } else {
             // 负数：降低鲜艳度（让颜色更灰/暗淡）
             const scale = Math.abs(vibrantScale) / 10;
-            processedColor = this.reduceVibrant(cell.originalRgb, scale);
+            processedColor = this.reduceVibrant(cell.rawRgb, scale);
           }
 
           cellsToProcess.push({ row, col });
@@ -385,11 +403,12 @@ Component({
       const mappedColors = batchMapColors(colorsToMap);
 
       // 第二遍：应用映射结果，同时更新 originalRgb 为增强后的颜色（供颜色聚合使用）
+      // rawRgb 保持不变，作为真正的原始颜色
       for (let i = 0; i < cellsToProcess.length; i++) {
         const { row, col } = cellsToProcess[i];
         const cell = gridData[row][col];
         const markColor = mappedColors[i];
-        // 更新增强后的颜色到 originalRgb，这样颜色聚合会基于增强后的颜色
+        // 更新增强后的颜色到 originalRgb，但 rawRgb 保持不变
         cell.originalRgb = colorsToMap[i];
         cell.markCode = markColor.code;
         cell.markHex = markColor.hex;

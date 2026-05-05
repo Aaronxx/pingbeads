@@ -129,6 +129,7 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
         y: row * gridSize,
         width: gridSize,
         height: gridSize,
+        rawRgb: dominantColor,
         originalRgb: dominantColor,
         markCode: markColor.code,
         markHex: markColor.hex,
@@ -167,6 +168,7 @@ function generatePlaceholderGrid(cols, rows, gridSize) {
         y: row * gridSize,
         width: gridSize,
         height: gridSize,
+        rawRgb: { r, g, b },
         originalRgb: { r, g, b },
         markCode: markColor.code,
         markHex: markColor.hex,
@@ -471,8 +473,8 @@ function autoDetectBlockSize(pixelData, width, height, options = {}) {
   const vChangesCounts = []; // 每条垂直线的变化点数量
 
   // 扫描多条水平线（扫描整行，从0到width-1）
-  // 增加扫描线数量到30，提高检测准确性
-  const hScanCount = 30;
+  // 扫描15条水平线，提高检测准确性
+  const hScanCount = 15;
   for (let i = 0; i < hScanCount; i++) {
     const y = Math.floor(height * i / (hScanCount - 1));
     const changes = [];
@@ -501,7 +503,7 @@ function autoDetectBlockSize(pixelData, width, height, options = {}) {
   }
 
   // 扫描多条垂直线（扫描整列，从0到height-1）
-  const vScanCount = 30;
+  const vScanCount = 15;
   for (let i = 0; i < vScanCount; i++) {
     const x = Math.floor(width * i / (vScanCount - 1));
     const changes = [];
@@ -1471,6 +1473,7 @@ function convertSegmentsToGridData(segments, cols, rows) {
           height: seg.height,
           col: col,
           row: row,
+          rawRgb: seg.avgColor,
           originalRgb: seg.avgColor,
           markCode: seg.markCode,
           markHex: seg.markHex,
