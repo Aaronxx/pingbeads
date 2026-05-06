@@ -1835,11 +1835,9 @@ Component({
       }
 
       if (count === 0) {
-        console.log('[DEBUG] _replaceColorInSegments no match:', { fromCode, sampleCodes: segments.slice(0, 5).map(s => s.markCode) });
         return { success: false, message: '没有找到匹配的色块', count: 0 };
       }
 
-      console.log('[DEBUG] _replaceColorInSegments replaced:', { count, samplePositions: replacedPositions.slice(0, 3) });
 
       // 重新计算统计
       const stats = this.calculateStats(gridData, rows, cols);
@@ -1890,7 +1888,6 @@ Component({
         return { success: false, message: '替换色号不存在' };
       }
 
-      console.log('[DEBUG] _replaceColorInSegments:', { fromCode, toCode, cols, rows, gridSize });
 
       // 确定需要替换的范围
       let startCol = 0, endCol = cols - 1, startRow = 0, endRow = rows - 1;
@@ -1937,11 +1934,9 @@ Component({
       }
 
       if (count === 0) {
-        console.log('[DEBUG] _replaceColorInSegments no match:', { fromCode, sampleCodes: gridData.flat().filter(c => c).slice(0, 5).map(c => c.markCode) });
         return { success: false, message: '没有找到匹配的色块', count: 0 };
       }
 
-      console.log('[DEBUG] _replaceColorInSegments replaced:', { count, samplePositions: replacedPositions.slice(0, 3) });
 
       // 同步更新 cachedSegments
       if (this.cachedSegments) {
@@ -1983,7 +1978,6 @@ Component({
       // 获取目标大区内的所有色块位置
       const positions = getRegionCells(regionCode, cols, rows);
 
-      console.log('[DEBUG] _replaceByRegionInSegments:', { regionCode, cols, rows, positionsCount: positions.length });
 
       if (positions.length === 0) {
         return { success: false, message: '大区编号无效或超出范围' };
@@ -2029,7 +2023,6 @@ Component({
             regionCodes.push(cell.markCode);
           }
         }
-        console.log('[DEBUG] _replaceByRegionInSegments no match:', { fromCode, regionCodes: [...new Set(regionCodes)].slice(0, 10) });
         return { success: false, message: '该大区内没有匹配的色块', count: 0 };
       }
 
@@ -2062,7 +2055,6 @@ Component({
 
     // 大区替换：替换指定大区内的指定色号
     replaceByRegion(regionCode, fromCode, toCode) {
-      console.log('[DEBUG] replaceByRegion called:', { processMode: this.data.processMode, hasGridData: !!this.cachedGridData, hasGridInfo: !!this.cachedGridInfo });
       // 马赛克模式使用 cachedGridData（转换后的 2D 网格）
       if (this.data.processMode === 'mosaic' && this.cachedGridData && this.cachedGridInfo) {
         return this._replaceByRegionInSegments(regionCode, fromCode, toCode);
