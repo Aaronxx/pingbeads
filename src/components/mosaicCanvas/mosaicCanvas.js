@@ -523,17 +523,8 @@ Component({
     resetToOriginalColors(gridData, rows, cols) {
       const snapshot = this.cachedGridDataSnapshot;
       if (!snapshot) {
-        console.error('[调试] 没有找到初始快照，无法恢复');
         return;
       }
-
-      console.log('[调试] resetToOriginalColors 被调用', {
-        '快照是否存在': !!snapshot,
-        'gridData 行数': rows,
-        'gridData 列数': cols,
-        '快照行数': snapshot.length,
-        '快照首行列数': snapshot[0] ? snapshot[0].length : 0
-      });
 
       const { isSpecialColor, getAlternativeColor } = require('../../utils/colorMapper');
 
