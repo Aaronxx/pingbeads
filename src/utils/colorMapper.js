@@ -129,6 +129,15 @@ function getAlternativeCode(specialCode) {
   return SPECIAL_ALTERNATIVES[specialCode] || null;
 }
 
+/**
+ * 根据色号获取完整的 Mark 颜色信息
+ * @param {string} code - Mark 色号（如 A1, B2 等）
+ * @returns {{code: string, hex: string, rgb: {r: number, g: number, b: number}}|null}
+ */
+function getMarkColorInfoByCode(code) {
+  return markPalette.find(c => c.code === code) || null;
+}
+
 // 预计算 256×256×256 RGB 到 Mark 的映射表
 // 为平衡性能和内存，使用 8-bit 精度映射
 let colorLookupTable = null;
@@ -401,5 +410,6 @@ module.exports = {
   SPECIAL_SERIES,
   SPECIAL_ALTERNATIVES,
   getAlternativeColor,
-  getAlternativeCode
+  getAlternativeCode,
+  getMarkColorInfoByCode
 };

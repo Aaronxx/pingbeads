@@ -48,6 +48,9 @@ Component({
   // 智能模式下的色段数据
   cachedSegments: null,
 
+  // 原始 gridData 快照（用于鲜艳度恢复），深拷贝，永远不修改原数据
+  cachedGridDataSnapshot: null,
+
   // Canvas 渲染相关
   canvasCtx: null,
   canvasNode: null,
@@ -66,7 +69,8 @@ Component({
         }, 200);
       }
     },
-    'gridSize, mergeThreshold, previewQuality, processMode, useSpecialColors, removeEdge, mirrorImage': function() {
+    'gridSize, mergeThreshold, previewQuality, processMode': function() {
+      // 这些参数变化时需要完全重新生成
       if (this.data.processMode === 'mosaic') {
         this.cachedGridData = null;
         this.cachedGridInfo = null;
@@ -80,6 +84,36 @@ Component({
         }, 200);
       } else if (this.data.imagePath) {
         this.processImage(this.data.imagePath);
+      }
+    },
+    'useSpecialColors': function() {
+      // 特殊色开关变化时，需要恢复原始预览图后再进行特殊色转换
+      if (this.cachedGridData && this.cachedGridInfo) {
+        setTimeout(() => {
+          // 先恢复原始颜色（基于 rawRgb 和 originalMarkCode）
+          this.resetToOriginalColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
+          // 再应用特殊色映射
+          this.remapSpecialColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
+          const stats = this.calculateStats(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
+          this.triggerEvent('statsUpdate', { stats: stats });
+          this.renderToCanvas(this.cachedGridData, this.cachedGridInfo.cols, this.cachedGridInfo.rows, this.cachedGridInfo.gridSize);
+        }, 50);
+      }
+    },
+    'removeEdge': function() {
+      // 去边缘开关变化时，不需要重新生成 gridData，只重新渲染
+      if (this.cachedGridData && this.cachedGridInfo) {
+        setTimeout(() => {
+          this.renderToCanvas(this.cachedGridData, this.cachedGridInfo.cols, this.cachedGridInfo.rows, this.cachedGridInfo.gridSize);
+        }, 50);
+      }
+    },
+    'mirrorImage': function() {
+      // 镜像开关变化时，只需要重新渲染
+      if (this.cachedGridData && this.cachedGridInfo) {
+        setTimeout(() => {
+          this.renderToCanvas(this.cachedGridData, this.cachedGridInfo.cols, this.cachedGridInfo.rows, this.cachedGridInfo.gridSize);
+        }, 50);
       }
     },
     'vibrantScale': function() {
@@ -163,6 +197,9 @@ Component({
         // 将 segments 转换为 2D gridData，复用卡通模式的渲染逻辑
         const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows);
 
+        // 【重要】在修改数据之前先保存快照，用于后续鲜艳度恢复
+        this.cachedGridDataSnapshot = this.deepCloneGridData(gridData, result.rows, result.cols);
+
         // 替换特殊色为替代色
         this.replaceSpecialColors(gridData, result.rows, result.cols);
 
@@ -212,6 +249,8 @@ Component({
         this.cachedSegmentsWidth = cachedWidth;
         this.cachedSegmentsHeight = cachedHeight;
         this.cachedSegmentsGridSize = qualityGridSize;
+        // 保存原始 gridData 快照，用于鲜艳度恢复
+        this.cachedGridDataSnapshot = this.deepCloneGridData(gridData, result.rows, result.cols);
 
         // 计算统计结果（基于 gridData）
         const stats = this.calculateStats(gridData, result.rows, result.cols);
@@ -322,6 +361,8 @@ Component({
       // 保存 gridData 引用，供导出使用（通过方法获取）
       this.cachedGridData = result.gridData;
       this.cachedGridInfo = { cols: result.cols, rows: result.rows, gridSize: qualityGridSize };
+      // 保存原始 gridData 快照，用于鲜艳度恢复
+      this.cachedGridDataSnapshot = this.deepCloneGridData(result.gridData, result.rows, result.cols);
 
       // 触发完成事件
       this.triggerEvent('mosaicGenerated', {
@@ -364,15 +405,63 @@ Component({
       }
     },
 
+    // 根据 useSpecialColors 状态重新映射色号（不重新生成 gridData）
+    remapSpecialColors(gridData, rows, cols) {
+      const useSpecial = this.data.useSpecialColors;
+      const { fastFindClosestMarkColor, getMarkColorInfoByCode } = require('../../utils/colorMapper');
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const cell = gridData[row] && gridData[row][col];
+          if (!cell || !cell.originalMarkCode || !cell.originalRgb) continue;
+
+          const originalCode = cell.originalMarkCode;
+
+          if (useSpecial) {
+            // 使用特殊色：直接使用 originalCode 的完整信息
+            cell.markCode = originalCode;
+            const markInfo = getMarkColorInfoByCode(originalCode);
+            if (markInfo) {
+              cell.markHex = markInfo.hex;
+              cell.markRgb = markInfo.rgb;
+            }
+          } else {
+            // 不使用特殊色：如果 originalCode 是特殊色，用其替代色
+            if (isSpecialColor(originalCode)) {
+              const altColor = getAlternativeColor(originalCode);
+              if (altColor) {
+                cell.markCode = altColor.code;
+                cell.markHex = altColor.hex;
+                cell.markRgb = altColor.rgb;
+              }
+            } else {
+              // 否则基于 originalRgb 找最接近的非特殊色
+              const markColor = fastFindClosestMarkColor(cell.originalRgb, true);
+              if (markColor) {
+                cell.markCode = markColor.code;
+                cell.markHex = markColor.hex;
+                cell.markRgb = markColor.rgb;
+              }
+            }
+          }
+        }
+      }
+    },
+
     // 重新应用鲜艳度增强（在 replaceSpecialColors 之后调用）
     // 使用批量处理优化性能
     // vibrantScale 范围：-10 到 10，负数表示降低鲜艳度，正数表示增强
     reapplyVibrantScale(gridData, rows, cols) {
       const vibrantScale = this.data.vibrantScale;
-      if (vibrantScale === 0) return;
 
       const { batchMapColors, markPalette } = require('../../utils/colorMapper');
       const { aggregateSimilarColors, enhanceVibrant } = require('../../utils/imageProcessor');
+
+      // 如果鲜艳度为0，恢复原始颜色（基于 rawRgb 重新映射）
+      if (vibrantScale === 0) {
+        this.resetToOriginalColors(gridData, rows, cols);
+        return;
+      }
 
       // 第一遍：收集所有需要处理的格子位置和计算增强后的颜色
       const cellsToProcess = [];
@@ -425,6 +514,109 @@ Component({
       if (!this.data.useSpecialColors) {
         this.replaceSpecialColors(gridData, rows, cols);
       }
+    },
+
+    // 恢复原始颜色（鲜艳度为0时调用）
+    // 目标：恢复到"初始生成时"的完全相同状态
+    // 方法：直接从快照复制完整的最终结果，不再重新计算
+    // 【关键】不再重新执行 aggregateSimilarColors，因为会产生不确定的结果
+    resetToOriginalColors(gridData, rows, cols) {
+      const snapshot = this.cachedGridDataSnapshot;
+      if (!snapshot) {
+        console.error('[调试] 没有找到初始快照，无法恢复');
+        return;
+      }
+
+      console.log('[调试] resetToOriginalColors 被调用', {
+        '快照是否存在': !!snapshot,
+        'gridData 行数': rows,
+        'gridData 列数': cols,
+        '快照行数': snapshot.length,
+        '快照首行列数': snapshot[0] ? snapshot[0].length : 0
+      });
+
+      const { isSpecialColor, getAlternativeColor } = require('../../utils/colorMapper');
+
+      const useSpecial = this.data.useSpecialColors;
+
+      // 遍历所有格子，从快照恢复完整的最终结果
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const cell = gridData[row] && gridData[row][col];
+          const snapCell = snapshot[row] && snapshot[row][col];
+          if (!cell || !snapCell) continue;
+
+          // 恢复 rawRgb 和 originalRgb（原始像素数据）
+          cell.rawRgb = snapCell.rawRgb ? { ...snapCell.rawRgb } : null;
+          cell.originalRgb = snapCell.rawRgb ? { ...snapCell.rawRgb } : null;
+          cell.originalMarkCode = snapCell.originalMarkCode;
+
+          // 恢复最终的 markCode/markHex/markRgb
+          // 根据当前 useSpecialColors 状态决定如何处理
+          if (useSpecial) {
+            // 使用特殊色：直接使用快照中的最终值（已经过聚合和特殊色处理）
+            cell.markCode = snapCell.markCode;
+            cell.markHex = snapCell.markHex;
+            cell.markRgb = snapCell.markRgb ? { ...snapCell.markRgb } : null;
+          } else {
+            // 不使用特殊色：如果快照中的最终值是特殊色，用替代色
+            const finalCode = snapCell.markCode;
+            if (isSpecialColor(finalCode)) {
+              const altColor = getAlternativeColor(finalCode);
+              if (altColor) {
+                cell.markCode = altColor.code;
+                cell.markHex = altColor.hex;
+                cell.markRgb = altColor.rgb;
+              }
+            } else {
+              // 非特殊色，直接使用
+              cell.markCode = finalCode;
+              cell.markHex = snapCell.markHex;
+              cell.markRgb = snapCell.markRgb ? { ...snapCell.markRgb } : null;
+            }
+          }
+        }
+      }
+      // 【重要】不再重新执行 aggregateSimilarColors，因为：
+      // 1. 快照中的 markCode 已经是正确的聚合结果
+      // 2. 重新执行会产生不确定的结果（K-means 随机初始化）
+    },
+
+    // 深拷贝 gridData（用于保存原始快照）
+    // 保存完整的初始颜色信息：markCode, markHex, markRgb
+    // 这样恢复时直接使用，不重新计算，保证完全一致
+    deepCloneGridData(gridData, rows, cols) {
+      const cloned = [];
+      for (let row = 0; row < rows; row++) {
+        cloned[row] = [];
+        for (let col = 0; col < cols; col++) {
+          const cell = gridData[row] && gridData[row][col];
+          if (cell) {
+            cloned[row][col] = {
+              x: cell.x,
+              y: cell.y,
+              width: cell.width,
+              height: cell.height,
+              row: cell.row,
+              col: cell.col,
+              rawRgb: cell.rawRgb ? { ...cell.rawRgb } : null,
+              originalRgb: cell.originalRgb ? { ...cell.originalRgb } : null,
+              originalMarkCode: cell.originalMarkCode,
+              // 保存完整的初始颜色信息，不再重新计算
+              initialMarkCode: cell.markCode,
+              initialMarkHex: cell.markHex,
+              initialMarkRgb: cell.markRgb ? { ...cell.markRgb } : null,
+              markCode: cell.markCode,
+              markHex: cell.markHex,
+              markRgb: cell.markRgb ? { ...cell.markRgb } : null,
+              isEdge: cell.isEdge
+            };
+          } else {
+            cloned[row][col] = null;
+          }
+        }
+      }
+      return cloned;
     },
 
     // 降低鲜艳度（让颜色更灰/暗淡）
@@ -868,6 +1060,8 @@ Component({
       // 保存引用
       this.cachedGridData = result.gridData;
       this.cachedGridInfo = { cols: result.cols, rows: result.rows, gridSize: qualityGridSize };
+      // 保存原始 gridData 快照，用于鲜艳度恢复
+      this.cachedGridDataSnapshot = this.deepCloneGridData(result.gridData, result.rows, result.cols);
 
       this.triggerEvent('mosaicGenerated', {
         gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize }
@@ -978,6 +1172,9 @@ Component({
         result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
       }
 
+      // 【重要】在修改数据之前先保存快照，用于后续鲜艳度恢复
+      this.cachedGridDataSnapshot = this.deepCloneGridData(result.gridData, result.rows, result.cols);
+
       // 替换特殊色为替代色
       this.replaceSpecialColors(result.gridData, result.rows, result.cols);
       // 重新应用鲜艳度增强
@@ -1065,6 +1262,8 @@ Component({
       // 保存引用
       this.cachedGridData = result.gridData;
       this.cachedGridInfo = { cols: result.cols, rows: result.rows, gridSize: qualityGridSize };
+      // 保存原始 gridData 快照，用于鲜艳度恢复
+      this.cachedGridDataSnapshot = this.deepCloneGridData(result.gridData, result.rows, result.cols);
 
       this.triggerEvent('mosaicGenerated', {
         gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize }

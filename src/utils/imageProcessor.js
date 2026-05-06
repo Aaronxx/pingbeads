@@ -131,6 +131,7 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
         height: gridSize,
         rawRgb: dominantColor,
         originalRgb: dominantColor,
+        originalMarkCode: markColor.code,  // 保存原始色号
         markCode: markColor.code,
         markHex: markColor.hex,
         markRgb: markColor.rgb
@@ -170,6 +171,7 @@ function generatePlaceholderGrid(cols, rows, gridSize) {
         height: gridSize,
         rawRgb: { r, g, b },
         originalRgb: { r, g, b },
+        originalMarkCode: markColor.code,  // 保存原始色号
         markCode: markColor.code,
         markHex: markColor.hex,
         markRgb: markColor.rgb,
@@ -1475,6 +1477,7 @@ function convertSegmentsToGridData(segments, cols, rows) {
           row: row,
           rawRgb: seg.avgColor,
           originalRgb: seg.avgColor,
+          originalMarkCode: seg.markCode,  // 保存原始色号
           markCode: seg.markCode,
           markHex: seg.markHex,
           markRgb: seg.markRgb,
