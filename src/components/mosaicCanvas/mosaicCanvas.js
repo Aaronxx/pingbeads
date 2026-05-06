@@ -1835,8 +1835,11 @@ Component({
       }
 
       if (count === 0) {
+        console.log('[DEBUG] _replaceColorInSegments no match:', { fromCode, sampleCodes: segments.slice(0, 5).map(s => s.markCode) });
         return { success: false, message: '没有找到匹配的色块', count: 0 };
       }
+
+      console.log('[DEBUG] _replaceColorInSegments replaced:', { count, samplePositions: replacedPositions.slice(0, 3) });
 
       // 重新计算统计
       const stats = this.calculateStats(gridData, rows, cols);
@@ -1872,10 +1875,12 @@ Component({
       return null;
     },
 
-    // 马赛克模式：在 segments 中替换颜色
+    // 马赛克模式：在 cachedGridData 中替换颜色
     _replaceColorInSegments(fromCode, toCode, scope, positions) {
-      const segments = this.cachedSegments;
-      if (!segments || segments.length === 0) {
+      const { cols, rows, gridSize } = this.cachedGridInfo;
+      const gridData = this.cachedGridData;
+
+      if (!gridData) {
         return { success: false, message: '没有可替换的数据' };
       }
 
@@ -1885,17 +1890,7 @@ Component({
         return { success: false, message: '替换色号不存在' };
       }
 
-      // 计算行列数
-      let maxCol = 0, maxRow = 0;
-      for (const seg of segments) {
-        if (seg.col !== undefined) {
-          maxCol = Math.max(maxCol, seg.col);
-          maxRow = Math.max(maxRow, seg.row);
-        }
-      }
-      const cols = maxCol + 1;
-      const rows = maxRow + 1;
-      const gridSize = this.cachedSegmentsGridSize || 10;
+      console.log('[DEBUG] _replaceColorInSegments:', { fromCode, toCode, cols, rows, gridSize });
 
       // 确定需要替换的范围
       let startCol = 0, endCol = cols - 1, startRow = 0, endRow = rows - 1;
@@ -1913,56 +1908,58 @@ Component({
       const replacedPositions = [];
       let count = 0;
 
-      for (const segment of segments) {
-        const { col, row } = segment;
-        if (col === undefined || row === undefined) continue;
+      for (let row = startRow; row <= endRow; row++) {
+        for (let col = startCol; col <= endCol; col++) {
+          const cell = gridData[row] && gridData[row][col];
+          if (!cell || !cell.markCode) continue;
 
-        // 检查是否在替换范围内
-        if (col < startCol || col > endCol || row < startRow || row > endRow) continue;
+          // 如果指定了位置列表，检查当前位置是否在列表中
+          if (positionList) {
+            const pos = positionList.find(p => (p.row !== undefined ? p.row : p[0]) === row && (p.col !== undefined ? p.col : p[1]) === col);
+            if (!pos) continue;
+          }
 
-        // 如果指定了位置列表，检查当前位置是否在列表中
-        if (positionList) {
-          const pos = positionList.find(p => (p.row !== undefined ? p.row : p[0]) === row && (p.col !== undefined ? p.col : p[1]) === col);
-          if (!pos) continue;
-        }
+          // 检查是否匹配被替换的色号
+          if (cell.markCode === fromCode) {
+            replacedPositions.push({
+              row,
+              col,
+              oldCode: cell.markCode,
+              oldHex: cell.markHex
+            });
 
-        // 检查是否匹配被替换的色号
-        if (segment.markCode === fromCode) {
-          replacedPositions.push({
-            row,
-            col,
-            oldCode: segment.markCode,
-            oldHex: segment.markHex
-          });
-
-          // 替换
-          segment.markCode = toCode;
-          segment.markHex = toColorHex;
-          count++;
-        }
-      }
-
-      if (count === 0) {
-        return { success: false, message: '没有找到匹配的色块', count: 0 };
-      }
-
-      // 同步更新 cachedGridData
-      if (this.cachedGridData) {
-        for (const pos of replacedPositions) {
-          const cell = this.cachedGridData[pos.row] && this.cachedGridData[pos.row][pos.col];
-          if (cell) {
+            // 替换
             cell.markCode = toCode;
             cell.markHex = toColorHex;
+            count++;
           }
         }
       }
 
-      // 重新计算统计（使用 gridData）
-      const gridData = this.cachedGridData;
+      if (count === 0) {
+        console.log('[DEBUG] _replaceColorInSegments no match:', { fromCode, sampleCodes: gridData.flat().filter(c => c).slice(0, 5).map(c => c.markCode) });
+        return { success: false, message: '没有找到匹配的色块', count: 0 };
+      }
+
+      console.log('[DEBUG] _replaceColorInSegments replaced:', { count, samplePositions: replacedPositions.slice(0, 3) });
+
+      // 同步更新 cachedSegments
+      if (this.cachedSegments) {
+        for (const pos of replacedPositions) {
+          const segment = this.cachedSegments.find(s => s.row === pos.row && s.col === pos.col);
+          if (segment) {
+            segment.markCode = toCode;
+            segment.markHex = toColorHex;
+          }
+        }
+      }
+
+
+      // 重新计算统计
       const stats = this.calculateStats(gridData, rows, cols);
       this.triggerEvent('statsUpdate', { stats: stats });
 
-      // 重新渲染 - 使用 renderToCanvas（使用前面已声明的 gridSize）
+      // 重新渲染
       setTimeout(() => {
         this.renderToCanvas(gridData, cols, rows, gridSize);
       }, 50);
@@ -1974,26 +1971,19 @@ Component({
       };
     },
 
-    // 马赛克模式：大区替换
+    // 马赛克模式：大区替换（使用已裁剪的 cachedGridData）
     _replaceByRegionInSegments(regionCode, fromCode, toCode) {
-      const segments = this.cachedSegments;
-      if (!segments || segments.length === 0) {
+      const { cols, rows, gridSize } = this.cachedGridInfo;
+      const gridData = this.cachedGridData;
+
+      if (!gridData) {
         return { success: false, message: '没有可替换的数据' };
       }
 
-      // 计算行列数
-      let maxCol = 0, maxRow = 0;
-      for (const seg of segments) {
-        if (seg.col !== undefined) {
-          maxCol = Math.max(maxCol, seg.col);
-          maxRow = Math.max(maxRow, seg.row);
-        }
-      }
-      const cols = maxCol + 1;
-      const rows = maxRow + 1;
-
       // 获取目标大区内的所有色块位置
       const positions = getRegionCells(regionCode, cols, rows);
+
+      console.log('[DEBUG] _replaceByRegionInSegments:', { regionCode, cols, rows, positionsCount: positions.length });
 
       if (positions.length === 0) {
         return { success: false, message: '大区编号无效或超出范围' };
@@ -2005,55 +1995,60 @@ Component({
         return { success: false, message: '替换色号不存在' };
       }
 
-      // 执行替换
+      // 执行替换（使用 cachedGridData，与卡通模式一致）
       const replacedPositions = [];
       let count = 0;
 
-      for (const segment of segments) {
-        const { col, row } = segment;
-        if (col === undefined || row === undefined) continue;
-
-        // 检查是否在大区内
-        const pos = positions.find(p => p.row === row && p.col === col);
-        if (!pos) continue;
+      for (let i = 0; i < positions.length; i++) {
+        const { row, col } = positions[i];
+        const cell = gridData[row] && gridData[row][col];
+        if (!cell || !cell.markCode) continue;
 
         // 检查是否匹配被替换的色号
-        if (segment.markCode === fromCode) {
+        if (cell.markCode === fromCode) {
           replacedPositions.push({
             row,
             col,
-            oldCode: segment.markCode,
-            oldHex: segment.markHex
+            oldCode: cell.markCode,
+            oldHex: cell.markHex
           });
 
           // 替换
-          segment.markCode = toCode;
-          segment.markHex = toColorHex;
+          cell.markCode = toCode;
+          cell.markHex = toColorHex;
           count++;
         }
       }
 
       if (count === 0) {
+        // 调试：检查大区范围内有哪些色号
+        const regionCodes = [];
+        for (const pos of positions) {
+          const cell = gridData[pos.row] && gridData[pos.row][pos.col];
+          if (cell && cell.markCode) {
+            regionCodes.push(cell.markCode);
+          }
+        }
+        console.log('[DEBUG] _replaceByRegionInSegments no match:', { fromCode, regionCodes: [...new Set(regionCodes)].slice(0, 10) });
         return { success: false, message: '该大区内没有匹配的色块', count: 0 };
       }
 
-      // 同步更新 cachedGridData
-      if (this.cachedGridData) {
+      // 同步更新 cachedSegments（用于保持一致性）
+      if (this.cachedSegments) {
         for (const pos of replacedPositions) {
-          const cell = this.cachedGridData[pos.row] && this.cachedGridData[pos.row][pos.col];
-          if (cell) {
-            cell.markCode = toCode;
-            cell.markHex = toColorHex;
+          const segment = this.cachedSegments.find(s => s.row === pos.row && s.col === pos.col);
+          if (segment) {
+            segment.markCode = toCode;
+            segment.markHex = toColorHex;
           }
         }
       }
 
       // 重新计算统计（使用 gridData）
-      const gridData = this.cachedGridData;
       const stats = this.calculateStats(gridData, rows, cols);
       this.triggerEvent('statsUpdate', { stats: stats });
 
-      // 重新渲染 - 使用 renderToCanvas（使用前面已声明的 gridSize）
+      // 重新渲染
       setTimeout(() => {
         this.renderToCanvas(gridData, cols, rows, gridSize);
       }, 50);
@@ -2067,6 +2062,7 @@ Component({
 
     // 大区替换：替换指定大区内的指定色号
     replaceByRegion(regionCode, fromCode, toCode) {
+      console.log('[DEBUG] replaceByRegion called:', { processMode: this.data.processMode, hasGridData: !!this.cachedGridData, hasGridInfo: !!this.cachedGridInfo });
       // 马赛克模式使用 cachedGridData（转换后的 2D 网格）
       if (this.data.processMode === 'mosaic' && this.cachedGridData && this.cachedGridInfo) {
         return this._replaceByRegionInSegments(regionCode, fromCode, toCode);
