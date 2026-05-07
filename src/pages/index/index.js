@@ -33,6 +33,11 @@ Page({
     // 真机调试时的 canvasId
     canvasId: 'export-canvas',
 
+    // 设置面板是否展开
+    isPanelOpen: false,
+    // 设置面板是否最小化
+    isPanelMinimized: false,
+
     // 下拉框选项
     qualityOptions: [
       { name: '低', value: 1 },
@@ -108,6 +113,63 @@ Page({
         imagePicker.chooseImage();
       }
     }
+  },
+
+  // 切换设置面板
+  toggleSettingsPanel() {
+    this.setData({
+      isPanelOpen: !this.data.isPanelOpen
+    });
+  },
+
+  // 关闭设置面板
+  closeSettingsPanel() {
+    this.setData({
+      isPanelOpen: false,
+      isPanelMinimized: false
+    });
+  },
+
+  // 面板拖动相关变量
+  _panelTouchStartY: 0,
+  _panelMinHeight: 200,
+  _panelMaxHeight: 0,
+
+  // 面板拖动开始
+  onPanelTouchStart(e) {
+    this._panelTouchStartY = e.touches[0].clientY;
+    // 获取屏幕高度计算面板最大高度
+    const sysInfo = wx.getSystemInfoSync();
+    this._panelMaxHeight = sysInfo.windowHeight * 0.75;
+  },
+
+  // 面板拖动中（向上拖动缩小，向下拖动放大）
+  onPanelTouchMove(e) {
+    const currentY = e.touches[0].clientY;
+    const deltaY = this._panelTouchStartY - currentY;
+
+    // 如果向上拖动超过阈值，缩小面板
+    if (deltaY > 50 && !this.data.isPanelMinimized) {
+      this.setData({ isPanelMinimized: true });
+      this._panelTouchStartY = currentY;
+    }
+    // 如果向下拖动超过阈值，放大面板
+    else if (deltaY < -50 && this.data.isPanelMinimized) {
+      this.setData({ isPanelMinimized: false });
+      this._panelTouchStartY = currentY;
+    }
+  },
+
+  // 面板拖动结束
+  onPanelTouchEnd(e) {
+    // 无需额外处理
+  },
+
+  // 点击拖动条切换面板大小
+  onPanelHandleTap() {
+    this.setData({
+      isPanelMinimized: !this.data.isPanelMinimized
+    });
   },
 
   // 图片选择回调

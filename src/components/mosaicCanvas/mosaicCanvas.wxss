@@ -12,8 +12,9 @@
   height: 100%;
   background: linear-gradient(135deg, #f5f7fa 0%, #e4e7eb 100%);
   border-radius: 16rpx;
-  overflow: visible;
+  overflow: hidden;
   box-sizing: border-box;
+  z-index: 1;
 }
 
 /* 滚动区域 */

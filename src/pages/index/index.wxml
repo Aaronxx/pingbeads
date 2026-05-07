@@ -1,107 +1,60 @@
 <!--pages/index/index.wxml-->
 <view class="container">
-  <!-- 顶部固定按钮行 -->
+  <!-- ========================
+     顶部固定栏（简化后）
+     ======================== -->
   <view class="top-fixed-bar">
-    <!-- 按钮行：宽度90% -->
     <view class="button-row">
-      <!-- 左侧按钮：选择图片 + 原图模式 + 设置 -->
+      <!-- 左侧：imagePicker 组件 + 原图/卡通模式切换 -->
       <view class="button-left">
+        <!-- imagePicker 组件（自带选择/重选按钮） -->
         <imagePicker id="image-picker" bind:imageSelected="onImageSelected" bind:imageCleared="onImageCleared" />
-        <!-- 原图模式切换 -->
+
+        <!-- 原图/卡通模式切换 -->
         <view class="setting-item" wx:if="{{imagePath}}">
-          <view class="picker-box mode-switch {{processMode === 'mosaic' ? 'active' : ''}}" bindtap="toggleProcessMode">
-            <text class="picker-label">原图</text>
-            <text class="picker-value">{{processMode === 'mosaic' ? '马赛克' : '卡通'}}</text>
-          </view>
-        </view>
-        <!-- 左侧设置：网格和色彩（仅卡通模式显示） -->
-        <view class="setting-items-left" wx:if="{{imagePath && processMode === 'cartoon'}}">
-          <view class="setting-item">
-            <picker mode="selector" range="{{gridOptions}}" range-key="name" value="{{gridOptionIndex}}" bindchange="onGridSizeChange">
-              <view class="picker-box">
-                <text class="picker-label">豆豆数</text>
-                <text class="picker-value">{{gridOptions[gridOptionIndex].name}}</text>
-              </view>
-            </picker>
-          </view>
-          <view class="setting-item">
-            <picker mode="selector" range="{{thresholdOptions}}" range-key="name" value="{{thresholdOptionIndex}}" bindchange="onThresholdChange">
-              <view class="picker-box">
-                <text class="picker-label">色彩</text>
-                <text class="picker-value">{{thresholdOptions[thresholdOptionIndex].name}}</text>
-              </view>
-            </picker>
+          <view class="mode-switch-btn {{processMode === 'mosaic' ? 'active' : ''}}" bindtap="toggleProcessMode">
+            <text class="mode-icon">🎨</text>
+            <text class="mode-text">{{processMode === 'mosaic' ? '马赛克' : '卡通'}}</text>
           </view>
         </view>
       </view>
 
-      <!-- 右侧按钮：替换和撤销 -->
-      <view class="button-right" wx:if="{{mosaicData}}">
-        <!-- 替换按钮 -->
-        <view class="action-btn replace-btn {{showReplacePanel ? 'active' : ''}}" bindtap="toggleReplacePanel">
-          <text>替换</text>
-        </view>
-        <!-- 撤销按钮 -->
-        <view class="action-btn undo-btn {{canUndo ? '' : 'disabled'}}" bindtap="onUndo">
-          <text>撤销</text>
-        </view>
-      </view>
+      <!-- 右侧：豆豆数和色彩下拉 -->
+      <view class="button-right" wx:if="{{imagePath && processMode === 'cartoon'}}">
+        <picker mode="selector" range="{{gridOptions}}" range-key="name" value="{{gridOptionIndex}}" bindchange="onGridSizeChange">
+          <view class="dropdown-btn">
+            <text class="dropdown-label">豆豆数</text>
+            <text class="dropdown-value">{{gridOptions[gridOptionIndex].name}}</text>
+          </view>
+        </picker>
 
-    </view>
-
-    <!-- 第二行：特殊色按钮、去边缘按钮、镜像按钮（卡通模式显示鲜艳滑块） -->
-    <view class="special-color-row" wx:if="{{imagePath}}">
-      <view class="picker-box mode-switch {{useSpecialColors ? 'active' : ''}}" bindtap="onSpecialColorsChange">
-        <text class="picker-label">特殊色</text>
-      </view>
-      <view class="picker-box mode-switch {{removeEdge ? 'active' : ''}}" bindtap="onRemoveEdgeChange">
-        <text class="picker-label">去边缘</text>
-      </view>
-      <view class="picker-box mode-switch {{mirrorImage ? 'active' : ''}}" bindtap="onMirrorChange">
-        <text class="picker-label">镜像</text>
-      </view>
-    </view>
-    <!-- 第三行：鲜艳度滑块（单独一行，从中心0开始） -->
-    <view class="vibrant-row" wx:if="{{imagePath && (processMode === 'cartoon' || processMode === 'mosaic')}}">
-      <text class="vibrant-label">鲜艳度</text>
-      <view class="vibrant-slider-center">
-        <view style="position:absolute;left:44%;top:50%;margin-top:-8rpx;width:0;height:16rpx;border-left:2rpx solid #f97316;z-index:0;"></view>
-        <slider min="-10" max="10" value="{{vibrantScale}}" bindchange="onVibrantChange" bindchanging="onVibrantChanging" show-value block-color="{{vibrantBlockColor}}" selected-color="#e5e7eb" />
-      </view>
-    </view>
-
-    <!-- 替换功能面板：展开时显示在按钮行下方 -->
-    <view class="replace-panel" wx:if="{{showReplacePanel && mosaicData}}">
-      <view class="replace-inputs">
-        <input class="replace-input" placeholder="被替换" value="{{replaceFromCode}}" bindinput="onReplaceFromInput" />
-        <input class="replace-input" placeholder="替换为" value="{{replaceToCode}}" bindinput="onReplaceToInput" />
-      </view>
-      <view class="replace-options">
-        <radio-group class="replace-radio-group" bindchange="onReplaceScopeChange">
-          <label class="radio-label">
-            <radio value="all" checked="{{replaceScope === 'all'}}" color="#4CAF50" />
-            <text>全图</text>
-          </label>
-          <label class="radio-label">
-            <radio value="region" checked="{{replaceScope === 'region'}}" color="#4CAF50" />
-            <text>大区</text>
-          </label>
-        </radio-group>
-      </view>
-      <view class="replace-region-input" wx:if="{{replaceScope === 'region'}}">
-        <input class="replace-input region-input" placeholder="大区编号（如 A1）" value="{{replaceRegionCode}}" bindinput="onReplaceRegionInput" />
-      </view>
-      <view class="replace-confirm">
-        <view class="confirm-btn" bindtap="onReplaceConfirm">
-          <text>确认</text>
-        </view>
+        <picker mode="selector" range="{{thresholdOptions}}" range-key="name" value="{{thresholdOptionIndex}}" bindchange="onThresholdChange">
+          <view class="dropdown-btn">
+            <text class="dropdown-label">色彩</text>
+            <text class="dropdown-value">{{thresholdOptions[thresholdOptionIndex].name}}</text>
+          </view>
+        </picker>
       </view>
     </view>
   </view>
 
-  <!-- 大外框：宽95%，高98% -->
+  <!-- ========================
+     主预览区域（带小动物贴纸）
+     ======================== -->
   <view class="main-wrapper">
-    <!-- 预览区：宽高90% -->
+    <!-- 小动物贴纸层 -->
+    <view class="sticker-layer">
+      <text class="sticker sticker-1" style="left: 3%; top: 5%;">🐱</text>
+      <text class="sticker sticker-2" style="right: 6%; top: 10%;">🐰</text>
+      <text class="sticker sticker-3" style="left: 8%; bottom: 18%;">🐻</text>
+      <text class="sticker sticker-4" style="right: 4%; bottom: 22%;">🐶</text>
+      <text class="sticker sticker-5" style="left: 45%; top: 3%;">🐼</text>
+      <text class="sticker sticker-6" style="right: 12%; bottom: 8%;">🦝</text>
+      <text class="sticker sticker-7" style="left: 25%; top: 12%;">🐨</text>
+      <text class="sticker sticker-8" style="right: 25%; top: 18%;">🐯</text>
+    </view>
+
+    <!-- 预览区 -->
     <view class="preview-area" bindtap="onPreviewAreaClick">
       <mosaicCanvas
         wx:if="{{imagePath}}"
@@ -125,31 +78,185 @@
       <!-- 空状态 -->
       <view wx:else class="placeholder">
         <text class="placeholder-icon">🎨</text>
-        <text class="placeholder-text">选择图片生成拼豆图纸</text>
+        <text class="placeholder-text">点击选择图片生成拼豆图纸</text>
       </view>
     </view>
   </view>
 
-  <!-- 底部：颜色统计 -->
+  <!-- ========================
+     底部统计面板
+     ======================== -->
   <view class="stats-panel" wx:if="{{mosaicData}}">
     <view class="stats-header">
-      <text class="stats-title">颜色统计</text>
+      <text class="stats-title">🐾 颜色统计</text>
       <text class="stats-count">共 {{mosaicData.cols * mosaicData.rows}} 格</text>
     </view>
     <colorStats flatCells="{{flatCells}}" highlightCode="{{highlightCode || ''}}" bind:codeClick="onCodeClick" />
   </view>
 
-  <!-- 底部悬浮框：宽度与屏幕同宽 -->
+  <!-- ========================
+     底部悬浮保存按钮
+     ======================== -->
   <view class="bottom-fixed-bar" wx:if="{{mosaicData}}">
-    <view 
-      class="save-btn-full {{isExporting ? 'exporting' : ''}} {{isExporting ? 'disabled' : ''}}" 
-      bindtap="exportPNG"
-    >
-      <text wx:if="{{isExporting}}" class="btn-text exporting-text">导出中...</text>
-      <text wx:else class="btn-text">保存图片</text>
+    <view class="save-btn-full" bindtap="exportPNG">
+      <text>🐾 保存图片</text>
     </view>
   </view>
-  
-  <!-- 隐藏的导出用 canvas - 使用 type="2d" -->
+
+  <!-- ========================
+     悬浮设置按钮（右下角）
+     ======================== -->
+  <view
+    wx:if="{{mosaicData}}"
+    class="fab-button {{isPanelOpen ? 'fab-close' : ''}}"
+    bindtap="toggleSettingsPanel"
+  >
+    <text class="fab-icon">{{isPanelOpen ? '✕' : '✨'}}</text>
+  </view>
+
+  <!-- ========================
+     功能面板遮罩
+     ======================== -->
+  <view
+    class="settings-overlay {{isPanelOpen ? 'show' : ''}}"
+    bindtap="closeSettingsPanel"
+  ></view>
+
+  <!-- ========================
+     功能面板（从底部升起，支持拖动缩小）
+     ======================== -->
+  <view
+    class="settings-panel {{isPanelOpen ? 'show' : ''}} {{isPanelMinimized ? 'minimized' : ''}}"
+    bindtouchstart="onPanelTouchStart"
+    bindtouchmove="onPanelTouchMove"
+    bindtouchend="onPanelTouchEnd"
+  >
+    <!-- 拖动指示条 -->
+    <view class="panel-handle" catchtap="onPanelHandleTap">
+      <view class="handle-bar"></view>
+    </view>
+
+    <!-- 面板标题栏 -->
+    <view class="panel-header">
+      <view class="panel-title">
+        <text class="panel-title-icon">🐱</text>
+        <text class="panel-title-text">功能面板</text>
+      </view>
+      <view class="panel-close" bindtap="closeSettingsPanel">
+        <text>✕</text>
+      </view>
+    </view>
+
+    <!-- 面板内容 -->
+    <scroll-view class="panel-content" scroll-y>
+
+      <!-- 第一组：开关按钮 -->
+      <view class="setting-group">
+        <view class="group-title">🔧 快捷设置</view>
+        <view class="switch-row">
+          <view
+            class="switch-btn {{useSpecialColors ? 'active' : ''}}"
+            bindtap="onSpecialColorsChange"
+          >
+            <text>✨ 特殊色</text>
+          </view>
+          <view
+            class="switch-btn {{removeEdge ? 'active' : ''}}"
+            bindtap="onRemoveEdgeChange"
+          >
+            <text>🪄 去边缘</text>
+          </view>
+          <view
+            class="switch-btn {{mirrorImage ? 'active' : ''}}"
+            bindtap="onMirrorChange"
+          >
+            <text>🔄 镜像</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 第二组：鲜艳度滑块 -->
+      <view class="setting-group">
+        <view class="group-title">🎨 鲜艳度</view>
+        <view class="vibrant-control">
+          <text class="vibrant-label-left">柔和</text>
+          <view class="vibrant-slider-outer">
+            <view class="vibrant-slider-wrapper">
+              <slider
+                min="-10"
+                max="10"
+                value="{{vibrantScale}}"
+                bindchange="onVibrantChange"
+                block-color="#ff9ecd"
+                selected-color="#ffb6d9"
+              />
+              <view class="vibrant-center-mark"></view>
+            </view>
+          </view>
+          <text class="vibrant-label-right">鲜艳</text>
+        </view>
+      </view>
+
+      <!-- 第三组：替换功能 -->
+      <view class="setting-group">
+        <view class="group-title">🔄 颜色替换</view>
+        <view class="replace-form">
+          <view class="replace-row">
+            <view class="replace-field">
+              <text class="field-label">被替换</text>
+              <input
+                class="replace-input"
+                placeholder="色号"
+                value="{{replaceFromCode}}"
+                bindinput="onReplaceFromInput"
+              />
+            </view>
+            <text class="replace-arrow">→</text>
+            <view class="replace-field">
+              <text class="field-label">替换为</text>
+              <input
+                class="replace-input"
+                placeholder="色号"
+                value="{{replaceToCode}}"
+                bindinput="onReplaceToInput"
+              />
+            </view>
+          </view>
+
+          <view class="replace-options-row">
+            <radio-group class="replace-radio-group" bindchange="onReplaceScopeChange">
+              <label class="radio-item-inline">
+                <radio value="all" checked="{{replaceScope === 'all'}}" color="#10b981" />
+                <text>全图</text>
+              </label>
+              <label class="radio-item-inline">
+                <radio value="region" checked="{{replaceScope === 'region'}}" color="#10b981" />
+                <text>大区</text>
+              </label>
+            </radio-group>
+
+            <input
+              wx:if="{{replaceScope === 'region'}}"
+              class="region-input-inline"
+              placeholder="大区编号"
+              value="{{replaceRegionCode}}"
+              bindinput="onReplaceRegionInput"
+            />
+
+            <view class="confirm-btn-small" bindtap="onReplaceConfirm">
+              <text>替换</text>
+            </view>
+
+            <view class="confirm-btn-small undo-btn" bindtap="onUndo" wx:if="{{canUndo}}">
+              <text>撤销</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+    </scroll-view>
+  </view>
+
+  <!-- 隐藏的导出用 canvas -->
   <canvas type="2d" id="export-canvas" style="width: 1px; height: 1px; position: fixed; left: -100px; top: -100px;" />
 </view>

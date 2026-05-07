@@ -4,18 +4,18 @@
   display: inline-block;
 }
 
-/* 选择按钮 - 和保存按钮一致的样式但更小 */
+/* 选择按钮 - 可爱粉色风格 */
 .picker-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(135deg, #ff9ecd 0%, #ff6bb3 100%);
   color: #fff;
   font-size: 24rpx;
   font-weight: 500;
   padding: 12rpx 20rpx;
-  border-radius: 8rpx;
-  box-shadow: 0 4rpx 12rpx rgba(59, 130, 246, 0.35);
+  border-radius: 20rpx;
+  box-shadow: 0 4rpx 12rpx rgba(255, 107, 179, 0.4);
   border: none;
   transition: all 0.2s ease;
   white-space: nowrap;
@@ -23,7 +23,7 @@
 
 .picker-button:active {
   transform: translateY(1rpx);
-  box-shadow: 0 2rpx 6rpx rgba(59, 130, 246, 0.3);
+  box-shadow: 0 2rpx 6rpx rgba(255, 107, 179, 0.3);
 }
 
 /* 按钮组 */
