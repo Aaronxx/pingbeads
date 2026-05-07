@@ -681,10 +681,45 @@
   font-weight: 600;
   border-radius: 40rpx;
   box-shadow: 0 4rpx 20rpx rgba(255, 107, 179, 0.4);
+  transition: all 0.3s ease;
 }
 
 .save-btn-full:active {
   transform: scale(0.98);
+}
+
+/* 导出中状态 */
+.save-btn-full.exporting {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  box-shadow: 0 4rpx 20rpx rgba(245, 158, 11, 0.5);
+  animation: savePulse 1.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* 导出中内容布局 */
+.btn-exporting {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+/* 旋转小圆圈 */
+.export-spinner {
+  width: 28rpx;
+  height: 28rpx;
+  border: 4rpx solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes savePulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.96); opacity: 0.85; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* 为底部按钮留出空间 */

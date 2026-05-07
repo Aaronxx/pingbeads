@@ -90,40 +90,9 @@ Component({
       // 特殊色开关变化时，从快照恢复并根据当前开关状态处理颜色
       const tryApply = () => {
         if (this.cachedGridData && this.cachedGridInfo) {
-          const useSpecial = this.data.useSpecialColors;
-          const { isSpecialColor } = require('../../utils/colorMapper');
-
-          // 切换前采样几个格子的颜色
-          const sampleCells = [];
-          for (let r = 0; r < Math.min(3, this.cachedGridInfo.rows); r++) {
-            for (let c = 0; c < Math.min(3, this.cachedGridInfo.cols); c++) {
-              const cell = this.cachedGridData[r] && this.cachedGridData[r][c];
-              if (cell) sampleCells.push({ r, c, code: cell.markCode, isSpecial: isSpecialColor(cell.markCode) });
-            }
-          }
-
-          // resetToOriginalColors 根据 useSpecialColors 处理特殊色↔替代色，保留K-means聚类
           this.resetToOriginalColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
-
-          // 切换后采样相同格子
-          const afterSamples = [];
-          for (const s of sampleCells) {
-            const cell = this.cachedGridData[s.r] && this.cachedGridData[s.r][s.c];
-            if (cell) afterSamples.push({ r: s.r, c: s.c, code: cell.markCode, isSpecial: isSpecialColor(cell.markCode) });
-          }
-
-          // 检查是否有变化
-          let changedCount = 0;
-          for (let i = 0; i < sampleCells.length; i++) {
-            if (sampleCells[i].code !== afterSamples[i].code) changedCount++;
-          }
-          console.log('[DIAG] 切换 useSpecialColors=' + useSpecial + ' 采样' + sampleCells.length + '格 变化' + changedCount + '格');
-          if (changedCount > 0) {
-            console.log('[DIAG] 变化示例: ' + sampleCells[0].code + '→' + afterSamples[0].code);
-          }
-
+          this.remapSpecialColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
           const stats = this.calculateStats(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
-          console.log('[DIAG] stats: colorCount=' + stats.colorCount);
           this.triggerEvent('statsUpdate', { stats: stats });
           this.renderToCanvas(this.cachedGridData, this.cachedGridInfo.cols, this.cachedGridInfo.rows, this.cachedGridInfo.gridSize);
         } else {
@@ -558,48 +527,27 @@ Component({
     // 从快照恢复所有属性，同时根据当前 useSpecialColors 状态处理特殊色
     resetToOriginalColors(gridData, rows, cols) {
       const snapshot = this.cachedGridDataSnapshot;
-      if (!snapshot) {
-        console.log('[DIAG] resetToOriginalColors: 快照不存在！');
-        return;
-      }
+      if (!snapshot) return;
 
       const { isSpecialColor, getAlternativeColor } = require('../../utils/colorMapper');
       const useSpecial = this.data.useSpecialColors;
-
-      let changedCount = 0;
-      let snapSpecialCount = 0;
-      let curSpecialCount = 0;
-      let skippedCount = 0;
 
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
           const cell = gridData[row] && gridData[row][col];
           const snapCell = snapshot[row] && snapshot[row][col];
-          if (!cell || !snapCell) {
-            skippedCount++;
-            continue;
-          }
+          if (!cell || !snapCell) continue;
 
-          // 恢复原始像素数据
           cell.rawRgb = snapCell.rawRgb ? { ...snapCell.rawRgb } : null;
           cell.originalRgb = snapCell.rawRgb ? { ...snapCell.rawRgb } : null;
           cell.originalMarkCode = snapCell.originalMarkCode;
           cell.isEdge = snapCell.isEdge;
 
-          // 统计快照中的特殊色
-          if (isSpecialColor(snapCell.markCode)) snapSpecialCount++;
-          if (isSpecialColor(cell.markCode)) curSpecialCount++;
-
-          const oldCode = cell.markCode;
-
-          // 根据当前特殊色开关状态决定 markCode/markHex/markRgb
           if (useSpecial) {
-            // 使用特殊色：直接使用快照中的值
             cell.markCode = snapCell.markCode;
             cell.markHex = snapCell.markHex;
             cell.markRgb = snapCell.markRgb ? { ...snapCell.markRgb } : null;
           } else {
-            // 不使用特殊色：快照中可能是特殊色，需要替换为替代色
             const finalCode = snapCell.markCode;
             if (isSpecialColor(finalCode)) {
               const altColor = getAlternativeColor(finalCode);
@@ -618,13 +566,8 @@ Component({
               cell.markRgb = snapCell.markRgb ? { ...snapCell.markRgb } : null;
             }
           }
-          if (oldCode !== cell.markCode) changedCount++;
         }
       }
-      console.log('[DIAG] resetToOriginalColors: useSpecial=' + useSpecial + ' rows=' + rows + ' cols=' + cols +
-        ' snapRows=' + snapshot.length + ' snapCols=' + (snapshot[0]||[]).length +
-        ' 快照特殊色=' + snapSpecialCount + ' 当前特殊色=' + curSpecialCount +
-        ' 跳过格=' + skippedCount + ' 变化格=' + changedCount);
     },
 
     // 深拷贝 gridData（用于保存原始快照）
@@ -1286,52 +1229,11 @@ Component({
       // ========== 保存快照（裁剪后、颜色处理前，保留 K-means 聚类结果）==========
       this.cachedGridDataSnapshot = this.deepCloneGridData(result.gridData, result.rows, result.cols);
 
-      // [DIAG]
-      const { isSpecialColor } = require('../../utils/colorMapper');
-      let snapSpecialCount = 0;
-      let snapTotalUnique = new Set();
-      for (let r = 0; r < result.rows; r++) {
-        for (let c = 0; c < result.cols; c++) {
-          const cell = result.gridData[r] && result.gridData[r][c];
-          if (cell && cell.markCode) {
-            snapTotalUnique.add(cell.markCode);
-            if (isSpecialColor(cell.markCode)) snapSpecialCount++;
-          }
-        }
-      }
-      console.log('[DIAG] 快照保存后: 唯一色号=' + snapTotalUnique.size + ' 特殊色格子数=' + snapSpecialCount + ' useSpecialColors=' + this.data.useSpecialColors + ' vibrantScale=' + this.data.vibrantScale + ' mergeThreshold=' + this.data.mergeThreshold);
-
       // ========== 替换特殊色为替代色 ==========
       this.replaceSpecialColors(result.gridData, result.rows, result.cols);
 
-      let afterReplaceUnique = new Set();
-      let afterReplaceSpecial = 0;
-      for (let r = 0; r < result.rows; r++) {
-        for (let c = 0; c < result.cols; c++) {
-          const cell = result.gridData[r] && result.gridData[r][c];
-          if (cell && cell.markCode) {
-            afterReplaceUnique.add(cell.markCode);
-            if (isSpecialColor(cell.markCode)) afterReplaceSpecial++;
-          }
-        }
-      }
-      console.log('[DIAG] replaceSpecialColors后: 唯一色号=' + afterReplaceUnique.size + ' 特殊色格子数=' + afterReplaceSpecial);
-
       // ========== 重新应用鲜艳度增强 ==========
       this.reapplyVibrantScale(result.gridData, result.rows, result.cols);
-
-      let afterVibrantUnique = new Set();
-      let afterVibrantSpecial = 0;
-      for (let r = 0; r < result.rows; r++) {
-        for (let c = 0; c < result.cols; c++) {
-          const cell = result.gridData[r] && result.gridData[r][c];
-          if (cell && cell.markCode) {
-            afterVibrantUnique.add(cell.markCode);
-            if (isSpecialColor(cell.markCode)) afterVibrantSpecial++;
-          }
-        }
-      }
-      console.log('[DIAG] reapplyVibrantScale后: 唯一色号=' + afterVibrantUnique.size + ' 特殊色格子数=' + afterVibrantSpecial);
 
       // ========== 统计与渲染 ==========
       const stats = this.calculateStats(result.gridData, result.rows, result.cols);

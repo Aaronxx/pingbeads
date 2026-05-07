@@ -98,8 +98,12 @@
      底部悬浮保存按钮
      ======================== -->
   <view class="bottom-fixed-bar" wx:if="{{mosaicData}}">
-    <view class="save-btn-full" bindtap="exportPNG">
-      <text>🐾 保存图片</text>
+    <view class="save-btn-full {{isExporting ? 'exporting' : ''}}" bindtap="exportPNG">
+      <view wx:if="{{isExporting}}" class="btn-exporting">
+        <view class="export-spinner"></view>
+        <text>导出中...</text>
+      </view>
+      <text wx:else>🐾 保存图片</text>
     </view>
   </view>
 
