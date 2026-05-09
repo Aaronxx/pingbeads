@@ -87,14 +87,15 @@ Component({
       }
     },
     'useSpecialColors': function() {
-      // 特殊色开关变化时，从快照恢复并根据当前开关状态处理颜色
+      // 特殊色开关变化时，从快照恢复并重新应用鲜艳度处理
       const tryApply = () => {
         if (this.cachedGridData && this.cachedGridInfo) {
-          this.resetToOriginalColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
-          this.remapSpecialColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
-          const stats = this.calculateStats(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
+          const { rows, cols, gridSize } = this.cachedGridInfo;
+          this.resetToOriginalColors(this.cachedGridData, rows, cols);
+          this.reapplyVibrantScale(this.cachedGridData, rows, cols);
+          const stats = this.calculateStats(this.cachedGridData, rows, cols);
           this.triggerEvent('statsUpdate', { stats: stats });
-          this.renderToCanvas(this.cachedGridData, this.cachedGridInfo.cols, this.cachedGridInfo.rows, this.cachedGridInfo.gridSize);
+          this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
         } else {
           setTimeout(tryApply, 100);
         }
@@ -411,50 +412,6 @@ Component({
       }
     },
 
-    // 根据 useSpecialColors 状态重新映射色号（不重新生成 gridData）
-    // 快照中 markCode 未经 replaceSpecialColors 处理，可能包含特殊色
-    remapSpecialColors(gridData, rows, cols) {
-      const useSpecial = this.data.useSpecialColors;
-      const { isSpecialColor, getAlternativeColor, fastFindClosestMarkColor, getMarkColorInfoByCode } = require('../../utils/colorMapper');
-
-      for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
-          const cell = gridData[row] && gridData[row][col];
-          if (!cell || !cell.originalMarkCode || !cell.originalRgb) continue;
-
-          const originalCode = cell.originalMarkCode;
-
-          if (useSpecial) {
-            // 使用特殊色：恢复为 originalMarkCode 对应的完整颜色信息
-            cell.markCode = originalCode;
-            const markInfo = getMarkColorInfoByCode(originalCode);
-            if (markInfo) {
-              cell.markHex = markInfo.hex;
-              cell.markRgb = markInfo.rgb;
-            }
-          } else {
-            // 不使用特殊色：如果 originalCode 是特殊色，替换为替代色
-            if (isSpecialColor(originalCode)) {
-              const altColor = getAlternativeColor(originalCode);
-              if (altColor) {
-                cell.markCode = altColor.code;
-                cell.markHex = altColor.hex;
-                cell.markRgb = altColor.rgb;
-              }
-            } else {
-              // 非特殊色：基于 originalRgb 找最接近的非特殊色
-              const markColor = fastFindClosestMarkColor(cell.originalRgb, true);
-              if (markColor) {
-                cell.markCode = markColor.code;
-                cell.markHex = markColor.hex;
-                cell.markRgb = markColor.rgb;
-              }
-            }
-          }
-        }
-      }
-    },
-
     // 重新应用鲜艳度增强（在 replaceSpecialColors 之后调用）
     // 使用批量处理优化性能
     // vibrantScale 范围：-10 到 10，负数表示降低鲜艳度，正数表示增强
@@ -464,9 +421,12 @@ Component({
       const { batchMapColors, markPalette } = require('../../utils/colorMapper');
       const { aggregateSimilarColors, enhanceVibrant } = require('../../utils/imageProcessor');
 
-      // 如果鲜艳度为0，恢复原始颜色（基于 rawRgb 重新映射）
+      // 如果鲜艳度为0，恢复原始颜色
       if (vibrantScale === 0) {
         this.resetToOriginalColors(gridData, rows, cols);
+        if (!this.data.useSpecialColors) {
+          this.replaceSpecialColors(gridData, rows, cols);
+        }
         return;
       }
 
@@ -523,14 +483,10 @@ Component({
       }
     },
 
-    // 恢复原始颜色（鲜艳度为0时调用，特殊色开关切换时也调用）
-    // 从快照恢复所有属性，同时根据当前 useSpecialColors 状态处理特殊色
+    // 从快照恢复原始颜色数据（仅恢复数据，不做特殊色处理）
     resetToOriginalColors(gridData, rows, cols) {
       const snapshot = this.cachedGridDataSnapshot;
       if (!snapshot) return;
-
-      const { isSpecialColor, getAlternativeColor } = require('../../utils/colorMapper');
-      const useSpecial = this.data.useSpecialColors;
 
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
@@ -541,31 +497,10 @@ Component({
           cell.rawRgb = snapCell.rawRgb ? { ...snapCell.rawRgb } : null;
           cell.originalRgb = snapCell.rawRgb ? { ...snapCell.rawRgb } : null;
           cell.originalMarkCode = snapCell.originalMarkCode;
+          cell.markCode = snapCell.markCode;
+          cell.markHex = snapCell.markHex;
+          cell.markRgb = snapCell.markRgb ? { ...snapCell.markRgb } : null;
           cell.isEdge = snapCell.isEdge;
-
-          if (useSpecial) {
-            cell.markCode = snapCell.markCode;
-            cell.markHex = snapCell.markHex;
-            cell.markRgb = snapCell.markRgb ? { ...snapCell.markRgb } : null;
-          } else {
-            const finalCode = snapCell.markCode;
-            if (isSpecialColor(finalCode)) {
-              const altColor = getAlternativeColor(finalCode);
-              if (altColor) {
-                cell.markCode = altColor.code;
-                cell.markHex = altColor.hex;
-                cell.markRgb = altColor.rgb;
-              } else {
-                cell.markCode = finalCode;
-                cell.markHex = snapCell.markHex;
-                cell.markRgb = snapCell.markRgb ? { ...snapCell.markRgb } : null;
-              }
-            } else {
-              cell.markCode = finalCode;
-              cell.markHex = snapCell.markHex;
-              cell.markRgb = snapCell.markRgb ? { ...snapCell.markRgb } : null;
-            }
-          }
         }
       }
     },
@@ -1373,9 +1308,17 @@ Component({
           const visibleTop = -buffer;
           const visibleBottom = actualCanvasHeight + buffer;
 
-          // 计算可见的行列范围
-          const startCol = Math.max(0, Math.floor((visibleLeft - offsetX) / cellSize));
-          const endCol = Math.min(cols - 1, Math.ceil((visibleRight - offsetX) / cellSize));
+          // 计算可见的行列范围（镜像时需用镜像后的坐标反推原始列号）
+          let startCol, endCol;
+          if (that.data.mirrorImage) {
+            // 镜像后 cell 左边缘 = actualCanvasWidth - offsetX - (col+1)*cellSize
+            // 可见条件：左边缘 < visibleRight 且 右边缘 > visibleLeft
+            startCol = Math.max(0, Math.ceil((actualCanvasWidth - offsetX - visibleRight - cellSize) / cellSize));
+            endCol = Math.min(cols - 1, Math.floor((actualCanvasWidth - offsetX - visibleLeft) / cellSize));
+          } else {
+            startCol = Math.max(0, Math.floor((visibleLeft - offsetX) / cellSize));
+            endCol = Math.min(cols - 1, Math.ceil((visibleRight - offsetX) / cellSize));
+          }
           const startRow = Math.max(0, Math.floor((visibleTop - offsetY) / cellSize));
           const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - offsetY) / cellSize));
 
@@ -1421,10 +1364,10 @@ Component({
           }
 
           // 绘制参考线（只绘制可见区域内的）
-          that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow);
+          that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
 
           // 绘制大区水印（只绘制可见区域内的）
-          that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow);
+          that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
 
           // 渲染完成，释放节流标志
           that.isRendering = false;
@@ -1432,7 +1375,7 @@ Component({
     },
 
     // 绘制参考线（只绘制可见区域内的）
-    drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow) {
+    drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, mirrorImage, canvasWidth) {
       const lineColor = 'rgba(70, 130, 180, 0.8)';
       const lineWidth = 1;
       const cellSize = gridSize * scale;
@@ -1444,7 +1387,8 @@ Component({
       const firstLineCol = Math.ceil(startCol / 10) * 10;
       // 绘制垂直参考线（每10列，只画可见的）
       for (let col = firstLineCol; col <= endCol; col += 10) {
-        const x = offsetX + col * cellSize;
+        let x = offsetX + col * cellSize;
+        if (mirrorImage) x = canvasWidth - x;
         ctx.beginPath();
         ctx.moveTo(x, offsetY + startRow * cellSize);
         ctx.lineTo(x, offsetY + (endRow + 1) * cellSize);
@@ -1457,14 +1401,20 @@ Component({
       for (let row = firstLineRow; row <= endRow; row += 10) {
         const y = offsetY + row * cellSize;
         ctx.beginPath();
-        ctx.moveTo(offsetX + startCol * cellSize, y);
-        ctx.lineTo(offsetX + (endCol + 1) * cellSize, y);
+        let leftX = offsetX + startCol * cellSize;
+        let rightX = offsetX + (endCol + 1) * cellSize;
+        if (mirrorImage) {
+          leftX = canvasWidth - leftX;
+          rightX = canvasWidth - rightX;
+        }
+        ctx.moveTo(Math.min(leftX, rightX), y);
+        ctx.lineTo(Math.max(leftX, rightX), y);
         ctx.stroke();
       }
     },
 
     // 绘制大区水印（只绘制可见区域内的）
-    drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow) {
+    drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, mirrorImage, canvasWidth) {
       const cellSize = gridSize * scale;
       const regionPixelSize = REGION_SIZE * cellSize; // 大区像素尺寸
 
@@ -1492,7 +1442,8 @@ Component({
       for (let regionRow = regionStartRow; regionRow < regionEndRow && regionRow < totalRegionRows; regionRow++) {
         for (let regionCol = regionStartCol; regionCol < regionEndCol && regionCol < totalRegionCols; regionCol++) {
           // 计算大区中心位置
-          const regionCenterX = offsetX + (regionCol * REGION_SIZE + REGION_SIZE / 2) * cellSize;
+          let regionCenterX = offsetX + (regionCol * REGION_SIZE + REGION_SIZE / 2) * cellSize;
+          if (mirrorImage) regionCenterX = canvasWidth - regionCenterX;
           const regionCenterY = offsetY + (regionRow * REGION_SIZE + REGION_SIZE / 2) * cellSize;
 
           // 生成大区编号：列编号 + 行号（从 1 开始）
@@ -1693,17 +1644,24 @@ Component({
 
           // 绘制参考线和大区编号
           if (segments.length > 0) {
-            // 计算可见的行列范围
-            const startCol = Math.max(0, Math.floor((visibleLeft - offsetX) / cellSize));
-            const endCol = Math.min(cols - 1, Math.ceil((visibleRight - offsetX) / cellSize));
+            const cellSize = gridSize * scale;
+            // 计算可见的行列范围（镜像时需反推原始列号）
+            let startCol, endCol;
+            if (that.data.mirrorImage) {
+              startCol = Math.max(0, Math.ceil((actualCanvasWidth - offsetX - visibleRight - cellSize) / cellSize));
+              endCol = Math.min(cols - 1, Math.floor((actualCanvasWidth - offsetX - visibleLeft) / cellSize));
+            } else {
+              startCol = Math.max(0, Math.floor((visibleLeft - offsetX) / cellSize));
+              endCol = Math.min(cols - 1, Math.ceil((visibleRight - offsetX) / cellSize));
+            }
             const startRow = Math.max(0, Math.floor((visibleTop - offsetY) / cellSize));
             const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - offsetY) / cellSize));
 
             // 绘制参考线
-            that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow);
+            that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
 
             // 绘制大区编号
-            that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow);
+            that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
           }
 
           // 渲染完成
