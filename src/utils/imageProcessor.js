@@ -473,7 +473,6 @@ function autoDetectBlockSize(pixelData, width, height, options = {}) {
   const darkRatio = sampleCount > 0 ? darkPixelCount / sampleCount : 0;
   const lightRatio = sampleCount > 0 ? lightPixelCount / sampleCount : 0;
   const extremeRatio = Math.max(darkRatio, lightRatio);
-  console.log(`[imageProcessor] 像素采样：共${sampleCount}个（全图稀疏），暗=${darkPixelCount}(${(darkRatio*100).toFixed(1)}%)，亮=${lightPixelCount}(${(lightRatio*100).toFixed(1)}%)，极端色比=${(extremeRatio*100).toFixed(1)}%，颜色范围=RGB(${minR}~${maxR}, ${minG}~${maxG}, ${minB}~${maxB})`);
 
   // 收集所有距离值和变化点数量
   const hDistances = [];
@@ -556,9 +555,8 @@ function autoDetectBlockSize(pixelData, width, height, options = {}) {
   const vConsistency = vDistances.length > 0 ? vConsistent / vDistances.length : 0;
   const scanLineConsistent = (hConsistency > 0.5 && vConsistency > 0.5) && hDistances.length >= 20 && vDistances.length >= 20;
 
-  // 综合判定：极端色比例 OR 扫描线规律性
-  const hasGridLines = extremeRatio > 0.03 || scanLineConsistent;
-  console.log(`[imageProcessor] 扫描线：水平间距${hDistances.length}个(众数=${hMode},一致率=${(hConsistency*100).toFixed(0)}%)，垂直间距${vDistances.length}个(众数=${vMode},一致率=${(vConsistency*100).toFixed(0)}%)，扫描线判定=${scanLineConsistent ? '有规律' : '无规律'}，综合判定=${hasGridLines ? '有分界线' : '无分界线'}`);
+  // 综合判定：极端色比例 AND 扫描线规律性（两者必须同时满足）
+  const hasGridLines = extremeRatio > 0.03 && scanLineConsistent;
 
   // 网格数 = 变化点数量 + 1（直接数出来！）
   // 取多条扫描线的中位数并取整
@@ -1294,20 +1292,19 @@ function processWithSmartRegions(pixelData, width, height, gridSize) {
 
 
   // 根据是否有分界线选择不同的计算方法
-  let cols, rows;
+  // 两路均使用 Math.ceil + startX/Y=0，区别仅在 actualGridSize 的来源
+  let cols, rows, startX, startY;
   if (hasGridLines) {
-    // 有分界线：使用扫描线算法检测到的格子数量
-    cols = validRange.cols;
-    rows = validRange.rows;
-  } else {
-    // 无分界线：直接用格子大小除图像尺寸
     cols = Math.ceil(width / actualGridSize);
     rows = Math.ceil(height / actualGridSize);
+    startX = 0;
+    startY = 0;
+  } else {
+    cols = Math.ceil(width / actualGridSize);
+    rows = Math.ceil(height / actualGridSize);
+    startX = 0;
+    startY = 0;
   }
-
-  // 使用检测到的有效范围
-  const startX = validRange.startX;
-  const startY = validRange.startY;
 
 
   // 大区检测暂时禁用，等采样方法稳定后再启用
