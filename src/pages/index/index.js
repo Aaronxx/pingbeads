@@ -612,12 +612,13 @@ Page({
     const mosaicHeight = rows * exportGridSize;
 
     // 标尺区域尺寸
-    const rulerWidth = 40;   // 左侧标尺宽度
-    const rulerHeight = 30;  // 顶部标尺高度
+    const titleHeight = 180; // 顶部标题高度
+    const rulerWidth = 50;   // 左/右侧标尺宽度
+    const rulerHeight = 40;  // 上/下方标尺高度
 
-    // 包含标尺的画布尺寸
-    const canvasWidth = mosaicWidth + rulerWidth;
-    const canvasHeight = mosaicHeight + rulerHeight + statsHeight;
+    // 包含标尺的画布尺寸（标题 + 左右标尺 + 上下标尺）
+    const canvasWidth = mosaicWidth + rulerWidth * 2;
+    const canvasHeight = titleHeight + rulerHeight * 2 + mosaicHeight + statsHeight;
     
     // 使用节点查询获取 canvas
     const query = wx.createSelectorQuery();
@@ -640,60 +641,116 @@ Page({
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
+        // 0.1 绘制顶部标题栏
+        ctx.fillStyle = '#f5f5f5';
+        ctx.fillRect(0, 0, canvasWidth, titleHeight);
+        const titleFontSize = 162;
+        ctx.font = `bold ${titleFontSize}px "KaiTi", "STKaiti", "楷体", "PingFang SC", cursive, sans-serif`;
+        ctx.fillStyle = '#ff7eb3';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`🐱 拼豆酥（${rows}行×${cols}列）`, rulerWidth + 12, titleHeight / 2);
+
         // 1. 绘制顶部列标尺 - 每个色块显示列号
-        ctx.fillStyle = '#f0f0f0';
-        ctx.fillRect(rulerWidth, 0, mosaicWidth, rulerHeight);
-        ctx.strokeStyle = '#cccccc';
+        const topRulerY = titleHeight;
+        ctx.fillStyle = '#d0d0d0';
+        ctx.fillRect(rulerWidth, topRulerY, mosaicWidth, rulerHeight);
+        ctx.strokeStyle = '#999999';
         ctx.lineWidth = 1;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
         // 动态计算字体大小，确保能显示下所有列号
-        const colFontSize = Math.max(6, Math.min(10, mosaicWidth / cols * 0.7));
+        const colFontSize = Math.max(7, Math.min(12, mosaicWidth / cols * 0.7));
         ctx.font = `${colFontSize}px sans-serif`;
 
         for (let col = 1; col <= cols; col++) {
           const x = rulerWidth + (col - 0.5) * gridSize * exportScale;
           // 刻度线
           ctx.beginPath();
-          ctx.moveTo(rulerWidth + (col - 1) * gridSize * exportScale, rulerHeight - 5);
-          ctx.lineTo(rulerWidth + (col - 1) * gridSize * exportScale, rulerHeight);
+          ctx.moveTo(rulerWidth + (col - 1) * gridSize * exportScale, topRulerY + rulerHeight - 8);
+          ctx.lineTo(rulerWidth + (col - 1) * gridSize * exportScale, topRulerY + rulerHeight);
           ctx.stroke();
           // 列号（从1开始）
-          ctx.fillStyle = '#666666';
-          ctx.fillText(col.toString(), x, rulerHeight / 2);
+          ctx.fillStyle = '#333333';
+          ctx.fillText(col.toString(), x, topRulerY + rulerHeight / 2);
         }
 
         // 2. 绘制左侧行标尺 - 每个色块显示行号
-        ctx.fillStyle = '#f0f0f0';
-        ctx.fillRect(0, rulerHeight, rulerWidth, mosaicHeight);
+        const leftRulerX = 0;
+        ctx.fillStyle = '#d0d0d0';
+        ctx.fillRect(leftRulerX, topRulerY + rulerHeight, rulerWidth, mosaicHeight);
         // 标尺分隔线
         ctx.beginPath();
-        ctx.moveTo(rulerWidth, 0);
-        ctx.lineTo(rulerWidth, mosaicHeight + rulerHeight);
+        ctx.moveTo(rulerWidth, topRulerY);
+        ctx.lineTo(rulerWidth, topRulerY + rulerHeight + mosaicHeight + rulerHeight);
         ctx.stroke();
 
         // 动态计算字体大小
-        const rowFontSize = Math.max(6, Math.min(10, mosaicHeight / rows * 0.7));
+        const rowFontSize = Math.max(7, Math.min(12, mosaicHeight / rows * 0.7));
         ctx.font = `${rowFontSize}px sans-serif`;
 
         for (let row = 1; row <= rows; row++) {
-          const y = rulerHeight + (row - 0.5) * gridSize * exportScale;
+          const y = topRulerY + rulerHeight + (row - 0.5) * gridSize * exportScale;
           // 刻度线
           ctx.beginPath();
-          ctx.moveTo(rulerWidth - 5, rulerHeight + (row - 1) * gridSize * exportScale);
-          ctx.lineTo(rulerWidth, rulerHeight + (row - 1) * gridSize * exportScale);
+          ctx.moveTo(rulerWidth - 8, topRulerY + rulerHeight + (row - 1) * gridSize * exportScale);
+          ctx.lineTo(rulerWidth, topRulerY + rulerHeight + (row - 1) * gridSize * exportScale);
           ctx.stroke();
           // 行号（从1开始）
-          ctx.fillStyle = '#666666';
+          ctx.fillStyle = '#333333';
           ctx.textAlign = 'right';
-          ctx.fillText(row.toString(), rulerWidth - 5, y);
+          ctx.fillText(row.toString(), rulerWidth - 8, y);
+        }
+
+        // 2.1 绘制右侧行标尺
+        const rightRulerX = rulerWidth + mosaicWidth;
+        ctx.fillStyle = '#d0d0d0';
+        ctx.fillRect(rightRulerX, topRulerY + rulerHeight, rulerWidth, mosaicHeight);
+        ctx.font = `${rowFontSize}px sans-serif`;
+        ctx.textAlign = 'left';
+
+        for (let row = 1; row <= rows; row++) {
+          const y = topRulerY + rulerHeight + (row - 0.5) * gridSize * exportScale;
+          // 刻度线
+          ctx.beginPath();
+          ctx.moveTo(rightRulerX, topRulerY + rulerHeight + (row - 1) * gridSize * exportScale);
+          ctx.lineTo(rightRulerX + 8, topRulerY + rulerHeight + (row - 1) * gridSize * exportScale);
+          ctx.stroke();
+          // 行号
+          ctx.fillStyle = '#333333';
+          ctx.fillText(row.toString(), rightRulerX + 8, y);
+        }
+
+        // 2.2 绘制下方列标尺
+        const bottomRulerY = topRulerY + rulerHeight + mosaicHeight;
+        ctx.fillStyle = '#d0d0d0';
+        ctx.fillRect(rulerWidth, bottomRulerY, mosaicWidth, rulerHeight);
+        // 分隔线
+        ctx.beginPath();
+        ctx.moveTo(rulerWidth, bottomRulerY);
+        ctx.lineTo(canvasWidth - rulerWidth, bottomRulerY);
+        ctx.stroke();
+
+        ctx.font = `${colFontSize}px sans-serif`;
+        ctx.textAlign = 'center';
+
+        for (let col = 1; col <= cols; col++) {
+          const x = rulerWidth + (col - 0.5) * gridSize * exportScale;
+          // 刻度线
+          ctx.beginPath();
+          ctx.moveTo(rulerWidth + (col - 1) * gridSize * exportScale, bottomRulerY);
+          ctx.lineTo(rulerWidth + (col - 1) * gridSize * exportScale, bottomRulerY + 8);
+          ctx.stroke();
+          // 列号
+          ctx.fillStyle = '#333333';
+          ctx.fillText(col.toString(), x, bottomRulerY + rulerHeight / 2);
         }
 
         // 3. 绘制马赛克主体（使用放大后的格子）
         // 偏移位置：加上标尺的宽度和高度
         const offsetX = rulerWidth;
-        const offsetY = rulerHeight;
+        const offsetY = titleHeight + rulerHeight;
 
         if (isMosaicMode && gridData) {
           // 智能模式：使用裁剪后的 gridData 绘制
@@ -836,11 +893,11 @@ Page({
         this.drawExportGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize * exportScale);
 
         // 2. 绘制统计行（底部）- 玻璃拟态圆角按钮样式
-        // 统计行位置（加上顶部标尺高度）
-        const statsY = rulerHeight + mosaicHeight + 10;
+        // 统计行位置（标题 + 上标尺 + 马赛克 + 下标尺）
+        const statsY = titleHeight + rulerHeight + mosaicHeight + rulerHeight + 10;
         ctx.fillStyle = '#f8f9fa';
-        // 统计行背景（从标尺下方开始）
-        ctx.fillRect(0, rulerHeight + mosaicHeight, canvasWidth, statsHeight);
+        // 统计行背景
+        ctx.fillRect(0, titleHeight + rulerHeight + mosaicHeight + rulerHeight, canvasWidth, statsHeight);
 
         // 每行10个，与图片等宽
         const itemsPerRow = 10;
