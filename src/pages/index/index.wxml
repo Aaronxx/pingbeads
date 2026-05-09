@@ -89,7 +89,7 @@
   <view class="stats-panel" wx:if="{{mosaicData}}">
     <view class="stats-header">
       <text class="stats-title">🐾 颜色统计</text>
-      <text class="stats-count">共 {{mosaicData.cols * mosaicData.rows}} 格</text>
+      <text class="stats-count">共 {{mosaicData.cols * mosaicData.rows}} 格（{{mosaicData.cols}}列 × {{mosaicData.rows}}行）</text>
     </view>
     <colorStats flatCells="{{flatCells}}" highlightCode="{{highlightCode || ''}}" bind:codeClick="onCodeClick" />
   </view>
