@@ -181,200 +181,23 @@ Component({
       const pixelData = this.getCachedPixelData();
       const cachedWidth = this.cachedWidth;
       const cachedHeight = this.cachedHeight;
-
       if (!pixelData || cachedWidth === 0) return;
 
       const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
 
-      // 根据处理模式选择不同的处理方法
-      let result;
       if (this.data.processMode === 'mosaic') {
-        // 智能模式：扫描线识别马赛克色块
         try {
-          result = processWithSmartRegions(pixelData, cachedWidth, cachedHeight, qualityGridSize);
+          const result = processWithSmartRegions(pixelData, cachedWidth, cachedHeight, qualityGridSize);
+          this._finishMosaicResult(result, qualityGridSize, cachedWidth, cachedHeight);
         } catch (e) {
           console.error('马赛克模式处理失败:', e);
           wx.showToast({ title: '处理失败，请重试', icon: 'none' });
           this.setData({ isProcessing: false });
-          return;
         }
-
-        // 马赛克模式的边缘底色检测与标记（需要在统计和渲染之前执行）
-        const edgeDetection = detectEdgeColorFromSegments(result.segments, result.cols, result.rows, 30);
-        if (edgeDetection && edgeDetection.hasEdge) {
-          filterEdgeSegments(result.segments, result.cols, result.rows, edgeDetection.edgeColor, 25);
-        }
-
-        // 将 segments 转换为 2D gridData，复用卡通模式的渲染逻辑
-        const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows);
-
-        // ========== 边缘底色检测与裁剪（在颜色处理之前，保证快照尺寸正确）==========
-        let hasExistingIsEdge = false;
-        let edgeCount = 0;
-        let nonEdgeCount = 0;
-        for (let r = 0; r < result.rows; r++) {
-          for (let c = 0; c < result.cols; c++) {
-            const cell = gridData[r] && gridData[r][c];
-            if (cell) {
-              if (cell.isEdge) {
-                edgeCount++;
-              } else {
-                nonEdgeCount++;
-              }
-            }
-          }
-        }
-
-        if (nonEdgeCount > 0) {
-          hasExistingIsEdge = edgeCount > 0;
-        }
-
-        if (hasExistingIsEdge) {
-          const contentBoundary = findCropBoundaryFromGrid(gridData, result.rows, result.cols);
-          if (contentBoundary.hasContent) {
-            const cropResult = cropMosaicData(
-              { gridData: gridData, rows: result.rows, cols: result.cols, gridSize: result.gridSize },
-              contentBoundary
-            );
-            if (cropResult.gridData) {
-              gridData.splice(0, gridData.length, ...cropResult.gridData);
-              result.rows = cropResult.rows;
-              result.cols = cropResult.cols;
-            }
-          }
-        }
-
-        // ========== 保存快照（裁剪后、颜色处理前，保留原始颜色信息）==========
-        this.cachedGridDataSnapshot = this.deepCloneGridData(gridData, result.rows, result.cols);
-
-        // 替换特殊色为替代色
-        this.replaceSpecialColors(gridData, result.rows, result.cols);
-
-        // 重新应用鲜艳度增强
-        this.reapplyVibrantScale(gridData, result.rows, result.cols);
-
-        // 保存数据
-        this.cachedSegments = result.segments;
-        this.cachedGridData = gridData;
-        this.cachedGridInfo = { cols: result.cols, rows: result.rows, gridSize: result.gridSize };
-        this.cachedSegmentsWidth = cachedWidth;
-        this.cachedSegmentsHeight = cachedHeight;
-        this.cachedSegmentsGridSize = qualityGridSize;
-        // 快照已在上面保存，此处不再覆盖
-
-        // 计算统计结果（基于 gridData）
-        const stats = this.calculateStats(gridData, result.rows, result.cols);
-
-        this.setData({
-          gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
-          isProcessing: false
-        });
-
-        // 触发统计更新事件
-        this.triggerEvent('statsUpdate', { stats: stats });
-
-        // 渲染到 Canvas（复用卡通模式的渲染逻辑）
-        setTimeout(() => {
-          this.renderToCanvas(gridData, result.cols, result.rows, result.gridSize);
-        }, 100);
-
-        // 触发完成事件
-        this.triggerEvent('mosaicGenerated', {
-          gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize }
-        });
-        return;
       } else {
-        // 普通模式：传入 mergeThreshold 参数，在颜色映射阶段进行颜色聚合
-        result = processSimple(pixelData, cachedWidth, cachedHeight, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
+        const result = processSimple(pixelData, cachedWidth, cachedHeight, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
+        this._finishSimpleResult(result, qualityGridSize);
       }
-
-      // ========== 边缘底色检测与裁剪（在颜色处理之前，保证快照尺寸正确）==========
-      try {
-        let edgeDetection = null;
-        let boundary = { hasEdge: false };
-
-        let hasExistingIsEdge = false;
-        if (this.data.processMode === 'mosaic') {
-          for (let r = 0; r < result.rows; r++) {
-            for (let c = 0; c < result.cols; c++) {
-              const cell = result.gridData[r] && result.gridData[r][c];
-              if (cell && cell.isEdge) {
-                hasExistingIsEdge = true;
-                break;
-              }
-            }
-            if (hasExistingIsEdge) break;
-          }
-        }
-
-        if (this.data.processMode === 'mosaic') {
-          if (hasExistingIsEdge) {
-            edgeDetection = { hasEdge: true, edgeColor: null };
-            boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
-          } else {
-            edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
-            if (edgeDetection && edgeDetection.hasEdge) {
-              boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
-            }
-          }
-        } else if (pixelData && cachedWidth > 0 && cachedHeight > 0) {
-          edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
-          if (edgeDetection && edgeDetection.hasEdge) {
-            boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
-          }
-        }
-
-        if (edgeDetection && edgeDetection.hasEdge) {
-          const cropResult = filterEdgeBlocks(result.gridData, result.rows, result.cols, qualityGridSize, edgeDetection.edgeColor, boundary);
-          if (cropResult.marked) {
-            const contentBoundary = findCropBoundaryFromGrid(result.gridData, result.rows, result.cols);
-            if (contentBoundary.hasContent) {
-              const finalCropResult = cropMosaicData(
-                { gridData: result.gridData, rows: result.rows, cols: result.cols, gridSize: qualityGridSize },
-                contentBoundary
-              );
-              if (finalCropResult.gridData) {
-                result.gridData = finalCropResult.gridData;
-                result.rows = finalCropResult.rows;
-                result.cols = finalCropResult.cols;
-              }
-            }
-          }
-        }
-      } catch (e) {
-        // 边缘检测错误被忽略
-      }
-
-      // ========== 保存快照（裁剪后、颜色处理前，保留 K-means 聚类结果）==========
-      this.cachedGridDataSnapshot = this.deepCloneGridData(result.gridData, result.rows, result.cols);
-
-      // ========== 替换特殊色为替代色 ==========
-      this.replaceSpecialColors(result.gridData, result.rows, result.cols);
-
-      // ========== 重新应用鲜艳度增强 ==========
-      this.reapplyVibrantScale(result.gridData, result.rows, result.cols);
-
-      // ========== 统计与渲染 ==========
-      const stats = this.calculateStats(result.gridData, result.rows, result.cols);
-
-      this.setData({
-        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
-        isProcessing: false
-      });
-
-      this.triggerEvent('statsUpdate', { stats: stats });
-
-      setTimeout(() => {
-        this.renderToCanvas(result.gridData, result.cols, result.rows, qualityGridSize);
-      }, 100);
-
-      this.cachedGridData = result.gridData;
-      this.cachedGridInfo = { cols: result.cols, rows: result.rows, gridSize: qualityGridSize };
-      // 快照已在上面保存，此处不再覆盖
-
-      this.triggerEvent('mosaicGenerated', {
-        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize }
-      });
     },
 
     // 计算统计结果（基于 gridData）
@@ -629,41 +452,6 @@ Component({
       };
     },
 
-    // 计算统计结果（基于 segments 数组）
-    calculateStatsFromSegments(segments) {
-      // 根据 removeEdge 设置决定是否跳过边缘单元格
-      const shouldRemoveEdge = this.data.removeEdge !== false;  // 默认去除边缘
-
-      const colorCounts = {};
-      let totalCount = 0;
-
-      for (const segment of segments) {
-        if (!segment.markCode) continue;
-        // 根据 removeEdge 设置决定是否跳过边缘底色色块
-        if (shouldRemoveEdge && segment.isEdge) continue;
-        const code = segment.markCode;
-        // 使用格式化后的色号作为key（去掉前导0）
-          const formattedCode = formatMarkCode(code);
-        if (!colorCounts[formattedCode]) {
-          colorCounts[formattedCode] = {
-            code: formattedCode,
-            originalCode: code,
-            hex: segment.markHex || '#000000',
-            count: 0
-          };
-        }
-        // 每个 segment 算一个色块
-        colorCounts[formattedCode].count++;
-        totalCount++;
-      }
-
-      return {
-        colorCount: Object.keys(colorCounts).length,
-        totalCount: totalCount,
-        sortedByCount: Object.values(colorCounts).sort((a, b) => b.count - a.count)
-      };
-    },
-
     // 获取导出数据（供导出使用）
     getExportData() {
       // 马赛克模式返回转换后的 gridData
@@ -682,6 +470,133 @@ Component({
       };
     },
     
+    _finishMosaicResult(result, qualityGridSize, srcWidth, srcHeight) {
+      const edgeDetection = detectEdgeColorFromSegments(result.segments, result.cols, result.rows, 30);
+      if (edgeDetection && edgeDetection.hasEdge) {
+        filterEdgeSegments(result.segments, result.cols, result.rows, edgeDetection.edgeColor, 25);
+      }
+
+      const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows);
+
+      let edgeCount = 0, nonEdgeCount = 0;
+      for (let r = 0; r < result.rows; r++) {
+        for (let c = 0; c < result.cols; c++) {
+          const cell = gridData[r] && gridData[r][c];
+          if (cell) {
+            if (cell.isEdge) edgeCount++;
+            else nonEdgeCount++;
+          }
+        }
+      }
+
+      if (nonEdgeCount > 0 && edgeCount > 0) {
+        const contentBoundary = findCropBoundaryFromGrid(gridData, result.rows, result.cols);
+        if (contentBoundary.hasContent) {
+          const cropResult = cropMosaicData(
+            { gridData, rows: result.rows, cols: result.cols, gridSize: result.gridSize },
+            contentBoundary
+          );
+          if (cropResult.gridData) {
+            gridData.splice(0, gridData.length, ...cropResult.gridData);
+            result.rows = cropResult.rows;
+            result.cols = cropResult.cols;
+          }
+        }
+      }
+
+      this.cachedGridDataSnapshot = this.deepCloneGridData(gridData, result.rows, result.cols);
+      this.replaceSpecialColors(gridData, result.rows, result.cols);
+      this.reapplyVibrantScale(gridData, result.rows, result.cols);
+
+      this.cachedSegments = result.segments;
+      this.cachedGridData = gridData;
+      this.cachedGridInfo = { cols: result.cols, rows: result.rows, gridSize: result.gridSize };
+      this.cachedSegmentsWidth = srcWidth;
+      this.cachedSegmentsHeight = srcHeight;
+      this.cachedSegmentsGridSize = qualityGridSize;
+
+      const stats = this.calculateStats(gridData, result.rows, result.cols);
+      this.setData({
+        gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize },
+        isProcessing: false
+      });
+      this.triggerEvent('statsUpdate', { stats });
+
+      setTimeout(() => {
+        this.renderToCanvas(gridData, result.cols, result.rows, result.gridSize);
+      }, 100);
+
+      this.triggerEvent('mosaicGenerated', {
+        gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize }
+      });
+    },
+
+    _finishSimpleResult(result, qualityGridSize) {
+      try {
+        const pixelData = this.getCachedPixelData();
+        const hasPixelData = pixelData && this.cachedWidth > 0 && this.cachedHeight > 0;
+
+        const hasExistingIsEdge = result.gridData.some(row =>
+          row && row.some(cell => cell && cell.isEdge)
+        );
+
+        let edgeDetection = null;
+        let boundary = { hasEdge: false };
+
+        if (hasExistingIsEdge) {
+          edgeDetection = { hasEdge: true, edgeColor: null };
+          boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
+        } else if (hasPixelData) {
+          edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
+          if (edgeDetection && edgeDetection.hasEdge) {
+            boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
+          }
+        }
+
+        if (edgeDetection && edgeDetection.hasEdge) {
+          const cropResult = filterEdgeBlocks(result.gridData, result.rows, result.cols, qualityGridSize, edgeDetection.edgeColor, boundary);
+          if (cropResult.marked) {
+            const contentBoundary = findCropBoundaryFromGrid(result.gridData, result.rows, result.cols);
+            if (contentBoundary.hasContent) {
+              const finalCropResult = cropMosaicData(
+                { gridData: result.gridData, rows: result.rows, cols: result.cols, gridSize: qualityGridSize },
+                contentBoundary
+              );
+              if (finalCropResult.gridData) {
+                result.gridData = finalCropResult.gridData;
+                result.rows = finalCropResult.rows;
+                result.cols = finalCropResult.cols;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      this.cachedGridDataSnapshot = this.deepCloneGridData(result.gridData, result.rows, result.cols);
+      this.replaceSpecialColors(result.gridData, result.rows, result.cols);
+      this.reapplyVibrantScale(result.gridData, result.rows, result.cols);
+
+      const stats = this.calculateStats(result.gridData, result.rows, result.cols);
+      this.setData({
+        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
+        isProcessing: false
+      });
+      this.triggerEvent('statsUpdate', { stats });
+
+      this.cachedGridData = result.gridData;
+      this.cachedGridInfo = { cols: result.cols, rows: result.rows, gridSize: qualityGridSize };
+
+      setTimeout(() => {
+        this.renderToCanvas(result.gridData, result.cols, result.rows, qualityGridSize);
+      }, 100);
+
+      this.triggerEvent('mosaicGenerated', {
+        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize }
+      });
+    },
+
     getQualityGridSize(quality) {
       const baseGridSize = this.data.gridSize;
       // 调整：让预览使用更大的格子，保持高分辨率
@@ -804,397 +719,40 @@ Component({
 
     processWithSimpleAlgorithm(width, height, _gridSize) {
       this.setData({ isProcessing: false });
-
       const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
-
-      // 尝试获取像素数据进行边缘检测
       let pixelData = this.getCachedPixelData();
 
-      // 根据处理模式选择不同的处理方法
-      let result;
       if (this.data.processMode === 'mosaic') {
-        result = processWithSmartRegions(null, width, height, qualityGridSize);
-
-        // 马赛克模式的边缘底色检测与标记（需要在统计和渲染之前执行）
-        const edgeDetection = detectEdgeColorFromSegments(result.segments, result.cols, result.rows, 30);
-        if (edgeDetection && edgeDetection.hasEdge) {
-          filterEdgeSegments(result.segments, result.cols, result.rows, edgeDetection.edgeColor, 25);
-        }
-
-        // 将 segments 转换为 2D gridData，复用卡通模式的渲染逻辑
-        const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows);
-
-        // ========== 边缘底色检测与裁剪（在颜色处理之前，保证快照尺寸正确）==========
-        let hasExistingIsEdge = false;
-        let edgeCount = 0;
-        let nonEdgeCount = 0;
-        for (let r = 0; r < result.rows; r++) {
-          for (let c = 0; c < result.cols; c++) {
-            const cell = gridData[r] && gridData[r][c];
-            if (cell) {
-              if (cell.isEdge) {
-                edgeCount++;
-              } else {
-                nonEdgeCount++;
-              }
-            }
-          }
-        }
-
-        if (nonEdgeCount > 0) {
-          hasExistingIsEdge = edgeCount > 0;
-        }
-
-        if (hasExistingIsEdge) {
-          const contentBoundary = findCropBoundaryFromGrid(gridData, result.rows, result.cols);
-          if (contentBoundary.hasContent) {
-            const cropResult = cropMosaicData(
-              { gridData: gridData, rows: result.rows, cols: result.cols, gridSize: result.gridSize },
-              contentBoundary
-            );
-            if (cropResult.gridData) {
-              gridData.splice(0, gridData.length, ...cropResult.gridData);
-              result.rows = cropResult.rows;
-              result.cols = cropResult.cols;
-            }
-          }
-        }
-
-        // ========== 保存快照（裁剪后、颜色处理前，保留原始颜色信息）==========
-        this.cachedGridDataSnapshot = this.deepCloneGridData(gridData, result.rows, result.cols);
-
-        // 替换特殊色为替代色
-        this.replaceSpecialColors(gridData, result.rows, result.cols);
-
-        // 重新应用鲜艳度增强
-        this.reapplyVibrantScale(gridData, result.rows, result.cols);
-
-        // 保存数据
-        this.cachedSegments = result.segments;
-        this.cachedGridData = gridData;
-        this.cachedGridInfo = { cols: result.cols, rows: result.rows, gridSize: result.gridSize };
-        this.cachedSegmentsWidth = width;
-        this.cachedSegmentsHeight = height;
-        this.cachedSegmentsGridSize = qualityGridSize;
-        // 快照已在上面保存，此处不再覆盖
-
-        // 计算统计结果（基于 gridData）
-        const stats = this.calculateStats(gridData, result.rows, result.cols);
-
-        this.setData({
-          gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize },
-          isProcessing: false
-        });
-
-        // 触发统计更新事件
-        this.triggerEvent('statsUpdate', { stats: stats });
-
-        // 渲染到 Canvas（复用卡通模式的渲染逻辑）
-        setTimeout(() => {
-          this.renderToCanvas(gridData, result.cols, result.rows, result.gridSize);
-        }, 100);
-
-        this.triggerEvent('mosaicGenerated', {
-          gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize }
-        });
+        const result = processWithSmartRegions(null, width, height, qualityGridSize);
+        this._finishMosaicResult(result, qualityGridSize, width, height);
         return;
-      } else {
-        // 传入 mergeThreshold 参数
-        result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
       }
 
-      // ========== 边缘底色检测与裁剪（在颜色处理之前，保证快照尺寸正确）==========
-      try {
-        let edgeDetection = null;
-        let boundary = { hasEdge: false };
-
-        let hasExistingIsEdge = false;
-        if (this.data.processMode === 'mosaic') {
-          for (let r = 0; r < result.rows; r++) {
-            for (let c = 0; c < result.cols; c++) {
-              const cell = result.gridData[r] && result.gridData[r][c];
-              if (cell && cell.isEdge) {
-                hasExistingIsEdge = true;
-                break;
-              }
-            }
-            if (hasExistingIsEdge) break;
-          }
-        }
-
-        if (this.data.processMode === 'mosaic') {
-          if (hasExistingIsEdge) {
-            edgeDetection = { hasEdge: true, edgeColor: null };
-            boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
-          } else {
-            edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
-            if (edgeDetection && edgeDetection.hasEdge) {
-              boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
-            }
-          }
-        } else if (pixelData && width > 0 && height > 0) {
-          edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
-          if (edgeDetection && edgeDetection.hasEdge) {
-            boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
-          }
-        }
-
-        if (edgeDetection && edgeDetection.hasEdge) {
-          const cropResult = filterEdgeBlocks(result.gridData, result.rows, result.cols, qualityGridSize, edgeDetection.edgeColor, boundary);
-          if (cropResult.marked) {
-            const contentBoundary = findCropBoundaryFromGrid(result.gridData, result.rows, result.cols);
-            if (contentBoundary.hasContent) {
-              const finalCropResult = cropMosaicData(
-                { gridData: result.gridData, rows: result.rows, cols: result.cols, gridSize: qualityGridSize },
-                contentBoundary
-              );
-              if (finalCropResult.gridData) {
-                result.gridData = finalCropResult.gridData;
-                result.rows = finalCropResult.rows;
-                result.cols = finalCropResult.cols;
-              }
-            }
-          }
-        }
-      } catch (e) {
-        // 边缘检测错误被忽略
-      }
-
-      // ========== 保存快照（裁剪后、颜色处理前，保留 K-means 聚类结果）==========
-      this.cachedGridDataSnapshot = this.deepCloneGridData(result.gridData, result.rows, result.cols);
-
-      // ========== 替换特殊色为替代色 ==========
-      this.replaceSpecialColors(result.gridData, result.rows, result.cols);
-
-      // ========== 重新应用鲜艳度增强 ==========
-      this.reapplyVibrantScale(result.gridData, result.rows, result.cols);
-
-      // ========== 统计与渲染 ==========
-      const stats = this.calculateStats(result.gridData, result.rows, result.cols);
-
-      this.setData({
-        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
-        isProcessing: false
-      });
-
-      this.triggerEvent('statsUpdate', { stats: stats });
-
-      setTimeout(() => {
-        this.renderToCanvas(result.gridData, result.cols, result.rows, qualityGridSize);
-      }, 100);
-
-      this.cachedGridData = result.gridData;
-      this.cachedGridInfo = { cols: result.cols, rows: result.rows, gridSize: qualityGridSize };
-      // 快照已在上面保存，此处不再覆盖
-
-      this.triggerEvent('mosaicGenerated', {
-        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize }
-      });
+      const result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
+      this._finishSimpleResult(result, qualityGridSize);
     },
 
     processPixelData(pixelData, width, height) {
-      // 保存像素数据缓存，供后续鲜艳度调整使用
-      // 深拷贝避免原始数据被修改
       this.cachedPixelData = new Uint8ClampedArray(pixelData);
       this.cachedWidth = width;
       this.cachedHeight = height;
-
       this.setData({ isProcessing: true });
 
       const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
 
-      // 根据处理模式选择不同的处理方法
-      let result;
       if (this.data.processMode === 'mosaic') {
         try {
-          result = processWithSmartRegions(pixelData, width, height, qualityGridSize);
+          const result = processWithSmartRegions(pixelData, width, height, qualityGridSize);
+          this._finishMosaicResult(result, qualityGridSize, width, height);
         } catch (e) {
           console.error('马赛克模式处理失败:', e);
           wx.showToast({ title: '处理失败，请重试', icon: 'none' });
           this.setData({ isProcessing: false });
-          return;
         }
-
-        // 马赛克模式的边缘底色检测与标记（需要在统计和渲染之前执行）
-        const edgeDetection = detectEdgeColorFromSegments(result.segments, result.cols, result.rows, 30);
-        if (edgeDetection && edgeDetection.hasEdge) {
-          filterEdgeSegments(result.segments, result.cols, result.rows, edgeDetection.edgeColor, 25);
-        }
-
-        // 将 segments 转换为 2D gridData，复用卡通模式的渲染逻辑
-        const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows);
-
-        // ========== 边缘底色检测与裁剪（在颜色处理之前，保证快照尺寸正确）==========
-        let hasExistingIsEdge = false;
-        let edgeCount = 0;
-        let nonEdgeCount = 0;
-        for (let r = 0; r < result.rows; r++) {
-          for (let c = 0; c < result.cols; c++) {
-            const cell = gridData[r] && gridData[r][c];
-            if (cell) {
-              if (cell.isEdge) {
-                edgeCount++;
-              } else {
-                nonEdgeCount++;
-              }
-            }
-          }
-        }
-
-        if (nonEdgeCount > 0) {
-          hasExistingIsEdge = edgeCount > 0;
-        }
-
-        if (hasExistingIsEdge) {
-          const contentBoundary = findCropBoundaryFromGrid(gridData, result.rows, result.cols);
-          if (contentBoundary.hasContent) {
-            const cropResult = cropMosaicData(
-              { gridData: gridData, rows: result.rows, cols: result.cols, gridSize: result.gridSize },
-              contentBoundary
-            );
-            if (cropResult.gridData) {
-              gridData.splice(0, gridData.length, ...cropResult.gridData);
-              result.rows = cropResult.rows;
-              result.cols = cropResult.cols;
-            }
-          }
-        }
-
-        // ========== 保存快照（裁剪后、颜色处理前，保留原始颜色信息）==========
-        this.cachedGridDataSnapshot = this.deepCloneGridData(gridData, result.rows, result.cols);
-
-        // 替换特殊色为替代色
-        this.replaceSpecialColors(gridData, result.rows, result.cols);
-
-        // 重新应用鲜艳度增强
-        this.reapplyVibrantScale(gridData, result.rows, result.cols);
-
-        // 保存数据
-        this.cachedSegments = result.segments;
-        this.cachedGridData = gridData;
-        this.cachedGridInfo = { cols: result.cols, rows: result.rows, gridSize: result.gridSize };
-        this.cachedSegmentsWidth = width;
-        this.cachedSegmentsHeight = height;
-        this.cachedSegmentsGridSize = qualityGridSize;
-        // 快照已在上面保存，此处不再覆盖
-
-        // 计算统计结果（基于 gridData）
-        const stats = this.calculateStats(gridData, result.rows, result.cols);
-
-        this.setData({
-          gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize },
-          isProcessing: false
-        });
-
-        // 触发统计更新事件
-        this.triggerEvent('statsUpdate', { stats: stats });
-
-        // 渲染到 Canvas（复用卡通模式的渲染逻辑）
-        setTimeout(() => {
-          this.renderToCanvas(gridData, result.cols, result.rows, result.gridSize);
-        }, 100);
-
-        this.triggerEvent('mosaicGenerated', {
-          gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize }
-        });
-        return;
       } else {
-        // 传入 mergeThreshold 参数，在颜色映射阶段进行颜色聚合
-        result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
+        const result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
+        this._finishSimpleResult(result, qualityGridSize);
       }
-
-      // ========== 边缘底色检测与裁剪（在颜色处理之前，保证快照尺寸正确）==========
-      try {
-        let edgeDetection = null;
-        let boundary = { hasEdge: false };
-
-        // 检查是否已有 isEdge 标记（马赛克模式从 segments 转换而来）
-        let hasExistingIsEdge = false;
-        if (this.data.processMode === 'mosaic') {
-          for (let r = 0; r < result.rows; r++) {
-            for (let c = 0; c < result.cols; c++) {
-              const cell = result.gridData[r] && result.gridData[r][c];
-              if (cell && cell.isEdge) {
-                hasExistingIsEdge = true;
-                break;
-              }
-            }
-            if (hasExistingIsEdge) break;
-          }
-        }
-
-        if (this.data.processMode === 'mosaic') {
-          if (hasExistingIsEdge) {
-            edgeDetection = { hasEdge: true, edgeColor: null };
-            boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
-          } else {
-            edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
-            if (edgeDetection && edgeDetection.hasEdge) {
-              boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
-            }
-          }
-        } else if (pixelData && width > 0 && height > 0) {
-          edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
-          if (edgeDetection && edgeDetection.hasEdge) {
-            boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
-          }
-        }
-
-        if (edgeDetection && edgeDetection.hasEdge) {
-          const cropResult = filterEdgeBlocks(result.gridData, result.rows, result.cols, qualityGridSize, edgeDetection.edgeColor, boundary);
-          if (cropResult.marked) {
-            const contentBoundary = findCropBoundaryFromGrid(result.gridData, result.rows, result.cols);
-            if (contentBoundary.hasContent) {
-              const finalCropResult = cropMosaicData(
-                { gridData: result.gridData, rows: result.rows, cols: result.cols, gridSize: qualityGridSize },
-                contentBoundary
-              );
-              if (finalCropResult.gridData) {
-                result.gridData = finalCropResult.gridData;
-                result.rows = finalCropResult.rows;
-                result.cols = finalCropResult.cols;
-              }
-            }
-          }
-        }
-      } catch (e) {
-        // 边缘检测错误被忽略
-      }
-
-      // ========== 保存快照（裁剪后、颜色处理前，保留 K-means 聚类结果）==========
-      this.cachedGridDataSnapshot = this.deepCloneGridData(result.gridData, result.rows, result.cols);
-
-      // ========== 替换特殊色为替代色 ==========
-      this.replaceSpecialColors(result.gridData, result.rows, result.cols);
-
-      // ========== 重新应用鲜艳度增强 ==========
-      this.reapplyVibrantScale(result.gridData, result.rows, result.cols);
-
-      // ========== 统计与渲染 ==========
-      const stats = this.calculateStats(result.gridData, result.rows, result.cols);
-
-
-      this.setData({
-        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
-        isProcessing: false
-      });
-
-      // 触发统计更新事件
-      this.triggerEvent('statsUpdate', { stats: stats });
-
-      // 渲染到 Canvas
-      setTimeout(() => {
-        this.renderToCanvas(result.gridData, result.cols, result.rows, qualityGridSize);
-      }, 100);
-
-      // 保存引用
-      this.cachedGridData = result.gridData;
-      this.cachedGridInfo = { cols: result.cols, rows: result.rows, gridSize: qualityGridSize };
-      // 快照已在处理前保存，此处不再覆盖
-
-      this.triggerEvent('mosaicGenerated', {
-        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize }
-      });
     },
 
     // 渲染马赛克到 Canvas
