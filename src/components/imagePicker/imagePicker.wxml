@@ -11,7 +11,10 @@
 
   <!-- 重新选择按钮（已选择图片时显示） -->
   <view wx:if="{{hasImage}}" class="picker-actions">
-    <view class="picker-button" bindtap="reselectImage">
+    <view wx:if="{{isChecking}}" class="picker-button checking">
+      <text>检测中...</text>
+    </view>
+    <view wx:else class="picker-button" bindtap="reselectImage">
       <text>重选</text>
     </view>
   </view>

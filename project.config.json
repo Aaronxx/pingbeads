@@ -15,6 +15,7 @@
     "minifyWXML": true,
     "lazyCodeLoading": "requiredComponents"
   },
+  "cloudfunctionRoot": "cloudfunctions/",
   "compileType": "miniprogram",
   "simulatorPluginLibVersion": {},
   "packOptions": {
