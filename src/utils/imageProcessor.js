@@ -448,25 +448,32 @@ function autoDetectBlockSize(pixelData, width, height, options = {}) {
     return mode;
   }
 
-  // 判断是否有分界线：采样检测是否有大量接近黑色的像素（分界线通常是黑色）
+  // 判断是否有分界线：全图稀疏采样，检测黑色或白色分界线像素
   let darkPixelCount = 0;
+  let lightPixelCount = 0;
   let sampleCount = 0;
-  for (let y = 0; y < Math.min(height, 50); y += 5) {
-    for (let x = 0; x < Math.min(width, 100); x += 5) {
+  let minR = 255, minG = 255, minB = 255, maxR = 0, maxG = 0, maxB = 0;
+  const sampleStepX = Math.max(5, Math.floor(width / 30));
+  const sampleStepY = Math.max(5, Math.floor(height / 30));
+  for (let y = 0; y < height; y += sampleStepY) {
+    for (let x = 0; x < width; x += sampleStepX) {
       const idx = (y * width + x) * 4;
       const r = pixelData[idx];
       const g = pixelData[idx + 1];
       const b = pixelData[idx + 2];
-      // 检测接近黑色的像素（RGB都小于50）
-      if (r < 50 && g < 50 && b < 50) {
-        darkPixelCount++;
-      }
+      // 记录颜色范围
+      if (r < minR) minR = r; if (g < minG) minG = g; if (b < minB) minB = b;
+      if (r > maxR) maxR = r; if (g > maxG) maxG = g; if (b > maxB) maxB = b;
+      // 检测接近黑色（RGB都<50）或接近白色（RGB都>200）
+      if (r < 50 && g < 50 && b < 50) darkPixelCount++;
+      else if (r > 200 && g > 200 && b > 200) lightPixelCount++;
       sampleCount++;
     }
   }
-  const darkPixelRatio = sampleCount > 0 ? darkPixelCount / sampleCount : 0;
-  // 如果有大量黑色像素，说明有分界线
-  const hasGridLines = darkPixelRatio > 0.05; // 超过5%的黑色像素
+  const darkRatio = sampleCount > 0 ? darkPixelCount / sampleCount : 0;
+  const lightRatio = sampleCount > 0 ? lightPixelCount / sampleCount : 0;
+  const extremeRatio = Math.max(darkRatio, lightRatio);
+  console.log(`[imageProcessor] 像素采样：共${sampleCount}个（全图稀疏），暗=${darkPixelCount}(${(darkRatio*100).toFixed(1)}%)，亮=${lightPixelCount}(${(lightRatio*100).toFixed(1)}%)，极端色比=${(extremeRatio*100).toFixed(1)}%，颜色范围=RGB(${minR}~${maxR}, ${minG}~${maxG}, ${minB}~${maxB})`);
 
   // 收集所有距离值和变化点数量
   const hDistances = [];
@@ -540,6 +547,18 @@ function autoDetectBlockSize(pixelData, width, height, options = {}) {
   // 限制色块大小在合理范围（5-30像素）
   // 限制色块大小在合理范围（8-30像素）
   const primarySize = Math.max(8, Math.min(30, Math.round((hMode + vMode) / 2)));
+
+  // 扫描线一致性检测：变化点间距是否规律（规律=有分界线）
+  let hConsistent = 0, vConsistent = 0;
+  for (const d of hDistances) { if (Math.abs(d - hMode) <= 2) hConsistent++; }
+  for (const d of vDistances) { if (Math.abs(d - vMode) <= 2) vConsistent++; }
+  const hConsistency = hDistances.length > 0 ? hConsistent / hDistances.length : 0;
+  const vConsistency = vDistances.length > 0 ? vConsistent / vDistances.length : 0;
+  const scanLineConsistent = (hConsistency > 0.5 && vConsistency > 0.5) && hDistances.length >= 20 && vDistances.length >= 20;
+
+  // 综合判定：极端色比例 OR 扫描线规律性
+  const hasGridLines = extremeRatio > 0.03 || scanLineConsistent;
+  console.log(`[imageProcessor] 扫描线：水平间距${hDistances.length}个(众数=${hMode},一致率=${(hConsistency*100).toFixed(0)}%)，垂直间距${vDistances.length}个(众数=${vMode},一致率=${(vConsistency*100).toFixed(0)}%)，扫描线判定=${scanLineConsistent ? '有规律' : '无规律'}，综合判定=${hasGridLines ? '有分界线' : '无分界线'}`);
 
   // 网格数 = 变化点数量 + 1（直接数出来！）
   // 取多条扫描线的中位数并取整
