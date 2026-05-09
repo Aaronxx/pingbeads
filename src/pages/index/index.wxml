@@ -10,8 +10,8 @@
         <!-- imagePicker 组件（自带选择/重选按钮） -->
         <imagePicker id="image-picker" bind:imageSelected="onImageSelected" bind:imageCleared="onImageCleared" />
 
-        <!-- 原图/卡通模式切换 -->
-        <view class="setting-item" wx:if="{{imagePath}}">
+        <!-- 原图/马赛克模式切换（始终显示） -->
+        <view class="setting-item">
           <view class="mode-switch-btn {{processMode === 'mosaic' ? 'active' : ''}}" bindtap="toggleProcessMode">
             <text class="mode-icon">🎨</text>
             <text class="mode-text">{{processMode === 'mosaic' ? '马赛克' : '卡通'}}</text>
