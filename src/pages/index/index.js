@@ -97,11 +97,17 @@ Page({
   },
 
   onLoad() {
-    // 页面加载
-    // 初始化鲜艳度滑块颜色
     this.setData({
       vibrantBlockColor: this.calculateVibrantBlockColor(0)
     });
+  },
+
+  _checkExporting() {
+    if (this.data.isExporting) {
+      wx.showToast({ title: '导出中，请稍候', icon: 'none' });
+      return true;
+    }
+    return false;
   },
 
   // 预览区点击事件（未选择图片时触发选择图片）
@@ -181,8 +187,7 @@ Page({
       imagePath: path,
       currentStep: 1,
       mosaicData: null,
-      highlightCode: '',
-      scale: 1
+      highlightCode: ''
     });
   },
 
@@ -228,10 +233,7 @@ Page({
   // 调整预览质量
   onPreviewQualityChange(e) {
     // 导出中禁止调整
-    if (this.data.isExporting) {
-      wx.showToast({ title: '导出中，请稍候', icon: 'none' });
-      return;
-    }
+    if (this._checkExporting()) return;
 
     const index = parseInt(e.detail.value) || 0;
     const newQuality = this.data.qualityOptions[index].value;
@@ -248,10 +250,7 @@ Page({
   // 调整网格大小
   onGridSizeChange(e) {
     // 导出中禁止调整
-    if (this.data.isExporting) {
-      wx.showToast({ title: '导出中，请稍候', icon: 'none' });
-      return;
-    }
+    if (this._checkExporting()) return;
 
     const index = parseInt(e.detail.value) || 0;
     const newGridSize = this.data.gridOptions[index].value;
@@ -268,10 +267,7 @@ Page({
   // 调整合并阈值
   onThresholdChange(e) {
     // 导出中禁止调整
-    if (this.data.isExporting) {
-      wx.showToast({ title: '导出中，请稍候', icon: 'none' });
-      return;
-    }
+    if (this._checkExporting()) return;
 
     const index = parseInt(e.detail.value) || 0;
     const newThreshold = this.data.thresholdOptions[index].value;
@@ -288,10 +284,7 @@ Page({
   // 切换是否使用特殊色
   onSpecialColorsChange() {
     // 导出中禁止调整
-    if (this.data.isExporting) {
-      wx.showToast({ title: '导出中，请稍候', icon: 'none' });
-      return;
-    }
+    if (this._checkExporting()) return;
 
     // 直接取反当前值
     this.setData({
@@ -302,10 +295,7 @@ Page({
   // 去除边缘开关变化
   onRemoveEdgeChange() {
     // 导出中禁止调整
-    if (this.data.isExporting) {
-      wx.showToast({ title: '导出中，请稍候', icon: 'none' });
-      return;
-    }
+    if (this._checkExporting()) return;
 
     // 直接取反当前值
     this.setData({
@@ -316,10 +306,7 @@ Page({
   // 镜像翻转开关变化
   onMirrorChange() {
     // 导出中禁止调整
-    if (this.data.isExporting) {
-      wx.showToast({ title: '导出中，请稍候', icon: 'none' });
-      return;
-    }
+    if (this._checkExporting()) return;
 
     // 直接取反当前值
     this.setData({
@@ -330,10 +317,7 @@ Page({
   // 鲜艳度滑块变化
   onVibrantChange(e) {
     // 导出中禁止调整
-    if (this.data.isExporting) {
-      wx.showToast({ title: '导出中，请稍候', icon: 'none' });
-      return;
-    }
+    if (this._checkExporting()) return;
 
     // 计算滑块颜色：正数变红，负数变灰
     const vibrantScale = e.detail.value;
@@ -379,10 +363,7 @@ Page({
   // 切换处理模式：卡通/马赛克
   toggleProcessMode() {
     // 导出中禁止调整
-    if (this.data.isExporting) {
-      wx.showToast({ title: '导出中，请稍候', icon: 'none' });
-      return;
-    }
+    if (this._checkExporting()) return;
 
     const newMode = this.data.processMode === 'cartoon' ? 'mosaic' : 'cartoon';
     this.setData({

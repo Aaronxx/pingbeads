@@ -1375,19 +1375,20 @@ Component({
       };
     },
 
-    // 根据色号查找颜色hex
+    // 根据色号查找颜色hex（懒初始化 Map 缓存，O(1) 查找）
     _findColorHexByCode(code) {
-      const colorPalettes = require('../../data/colorPalettes.js');
-      const colorMapping = colorPalettes.colorMapping;
-
-      // 遍历 colorMapping 查找匹配的色号
-      for (const hex in colorMapping) {
-        const color = colorMapping[hex];
-        if (color.MARD === code) {
-          return hex;
+      if (!this._codeToHexCache) {
+        const colorPalettes = require('../../data/colorPalettes.js');
+        const colorMapping = colorPalettes.colorMapping;
+        this._codeToHexCache = new Map();
+        for (const hex in colorMapping) {
+          const color = colorMapping[hex];
+          if (color.MARD) {
+            this._codeToHexCache.set(color.MARD, hex);
+          }
         }
       }
-      return null;
+      return this._codeToHexCache.get(code) || null;
     },
 
     // 马赛克模式：在 cachedGridData 中替换颜色
