@@ -18,7 +18,7 @@ Page({
     // 网格大小
     gridSize: 10,
     // 色彩阈值
-    mergeThreshold: 50,
+    mergeThreshold: 15,
     // 处理模式: 'cartoon' | 'mosaic' - cartoon=卡通(普通模式), mosaic=马赛克(智能模式)
     processMode: 'cartoon',
     // 预览质量: 1=低(快速), 2=中, 3=高(精细)
