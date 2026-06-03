@@ -7,8 +7,8 @@
  * 3. 边缘检测与裁剪
  */
 
-const { fastFindClosestMarkColor } = require('../utils/colorMapper');
-const { isSpecialColor } = require('../utils/colorMapper');
+const { fastFindClosestMarkColor, isSpecialColor } = require('../utils/colorMapper');
+const { MosaicProcessor } = require('./mosaicProcessor');
 
 /**
  * 计算颜色距离 (欧氏距离)
@@ -1657,6 +1657,24 @@ function cachedReduceVibrant(rgb, scale) {
   return result;
 }
 
+/**
+ * 马赛克模式 V2 处理 - 基于扫描线算法
+ * @param {Uint8Array} pixelData - 像素数据
+ * @param {number} width - 图片宽度
+ * @param {number} height - 图片高度
+ * @param {object} options - 配置参数
+ * @returns {object} { segments, segmentCount, cols, rows, gridSize, hasGridLines, width, height }
+ */
+function processMosaicV2(pixelData, width, height, options = {}) {
+  const processor = new MosaicProcessor();
+  return processor.process(pixelData, width, height, {
+    fallbackGridSize: options.gridSize || 10,
+    colorDistThreshold: options.mergeThreshold || 30,
+    clusterGap: 5,
+    minCellArea: options.minCellArea || 4
+  });
+}
+
 module.exports = {
   processSimple,
   processWithSmartRegions,
@@ -1670,5 +1688,6 @@ module.exports = {
   convertSegmentsToGridData,
   aggregateSimilarColors,
   enhanceVibrant: cachedEnhanceVibrant,
-  reduceVibrant: cachedReduceVibrant
+  reduceVibrant: cachedReduceVibrant,
+  processMosaicV2
 };

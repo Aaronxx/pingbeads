@@ -734,11 +734,13 @@ Page({
         const offsetY = titleHeight + rulerHeight;
 
         if (isMosaicMode && gridData) {
-          // 智能模式：使用裁剪后的 gridData 绘制
+          // 马赛克模式：基于 gridData 二维数组绘制固定大小色块
           // 根据 removeEdge 设置决定是否跳过边缘单元格
           const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
           const shouldMirror = that.data.mirrorImage;  // 是否镜像
+          // 固定格子大小，天然紧密排列无间隙
           const cellWidth = gridSize * exportScale;
+          const cellHeight = gridSize * exportScale;
           for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
               const cell = gridData[row] && gridData[row][col];
@@ -746,9 +748,7 @@ Page({
               if (!cell || !cell.markCode || (shouldRemoveEdge && cell.isEdge)) continue;
 
               let x = offsetX + col * cellWidth;
-              const y = offsetY + row * gridSize * exportScale;
-              const width = (cell.width || gridSize) * exportScale;
-              const height = (cell.height || gridSize) * exportScale;
+              const y = offsetY + row * cellHeight;
 
               // 应用镜像变换
               if (shouldMirror) {
@@ -757,22 +757,22 @@ Page({
 
               // 绘制色块
               ctx.fillStyle = cell.markHex || '#cccccc';
-              ctx.fillRect(x, y, width, height);
+              ctx.fillRect(x, y, cellWidth, cellHeight);
 
               // 绘制色块边框
               ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
               ctx.lineWidth = 1;
-              ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(width) - 1, Math.ceil(height) - 1);
+              ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
 
-              // 绘制色号（降低阈值到 4 像素，确保小图也能显示色号）
-              if (width >= 4 && height >= 4) {
+              // 绘制色号
+              if (cellWidth >= 4 && cellHeight >= 4) {
                 const isLight = isLightColor(cell.markHex);
                 ctx.fillStyle = isLight ? '#333' : '#fff';
-                const fontSize = Math.max(4, Math.min(width, height) * 0.35);
+                const fontSize = Math.max(4, Math.min(cellWidth, cellHeight) * 0.35);
                 ctx.font = `bold ${fontSize.toFixed(0)}px sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(formatMarkCode(cell.markCode), x + width / 2, y + height / 2);
+                ctx.fillText(formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
               }
             }
           }
@@ -799,9 +799,9 @@ Page({
               x = offsetX + mosaicWidth - segment.width * segScaleX - x + offsetX;
             }
 
-            // 绘制色段
+            // 绘制色段（取整消除间隙）
             ctx.fillStyle = segment.markHex || '#cccccc';
-            ctx.fillRect(x, y, width, height);
+            ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(width), Math.ceil(height));
 
             // 绘制色块边框
             ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
@@ -1119,16 +1119,19 @@ Page({
         canvas.width = width;
         canvas.height = height;
 
-        // 绘制
+        // 绘制（基于二维数组固定格子大小）
         // 根据 removeEdge 设置决定是否跳过边缘单元格
         const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
+        const { gridSize } = exportData.gridInfo;
+        const cellSizeX = width / cols;
+        const cellSizeY = height / rows;
         for (let row = 0; row < rows; row++) {
           for (let col = 0; col < cols; col++) {
             const cell = gridData[row] && gridData[row][col];
             // 跳过无效格子、边缘底色格子（根据 removeEdge 设置）
             if (cell && cell.markCode && (!shouldRemoveEdge || !cell.isEdge)) {
               ctx.fillStyle = cell.markHex;
-              ctx.fillRect(cell.x, cell.y, cell.width, cell.height);
+              ctx.fillRect(col * cellSizeX, row * cellSizeY, cellSizeX, cellSizeY);
             }
           }
         }
@@ -1247,15 +1250,17 @@ Page({
           canvas.width = width;
           canvas.height = height;
           
-          // 绘制马赛克
+          // 绘制马赛克（基于二维数组固定格子大小）
           // 根据 removeEdge 设置决定是否跳过边缘单元格
           const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
+          const cellSizeX = width / cols;
+          const cellSizeY = height / rows;
           for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
               const cell = gridData[row] && gridData[row][col];
               if (cell && cell.markCode && !cell.isRegionMember && (!shouldRemoveEdge || !cell.isEdge)) {
                 ctx.fillStyle = cell.markHex;
-                ctx.fillRect(cell.x, cell.y, cell.width, cell.height);
+                ctx.fillRect(col * cellSizeX, row * cellSizeY, cellSizeX, cellSizeY);
               }
             }
           }

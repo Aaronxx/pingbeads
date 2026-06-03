@@ -1,5 +1,5 @@
 // components/mosaicCanvas/mosaicCanvas.js
-const { processSimple, processWithSmartRegions, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData } = require('../../utils/imageProcessor');
+const { processSimple, processWithSmartRegions, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData, processMosaicV2 } = require('../../utils/imageProcessor');
 const { isLightColor, formatMarkCode } = require('../../utils/colorHelpers');
 const { REGION_SIZE, getColCode, getRegionCells } = require('../../utils/regionUtils');
 const { isSpecialColor, getAlternativeColor } = require('../../utils/colorMapper');
@@ -187,12 +187,19 @@ Component({
 
       if (this.data.processMode === 'mosaic') {
         try {
-          const result = processWithSmartRegions(pixelData, cachedWidth, cachedHeight, qualityGridSize);
+          const result = processMosaicV2(pixelData, cachedWidth, cachedHeight, {
+            gridSize: qualityGridSize,
+            blurRadius: 2,
+            morphRadius: 1,
+            minCellArea: 30,
+            mergeThreshold: this.data.mergeThreshold
+          });
           this._finishMosaicResult(result, qualityGridSize, cachedWidth, cachedHeight);
         } catch (e) {
           console.error('马赛克模式处理失败:', e);
-          wx.showToast({ title: '处理失败，请重试', icon: 'none' });
-          this.setData({ isProcessing: false });
+          console.warn('回退到旧版算法');
+          const result = processWithSmartRegions(pixelData, cachedWidth, cachedHeight, qualityGridSize);
+          this._finishMosaicResult(result, qualityGridSize, cachedWidth, cachedHeight);
         }
       } else {
         const result = processSimple(pixelData, cachedWidth, cachedHeight, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
@@ -742,12 +749,19 @@ Component({
 
       if (this.data.processMode === 'mosaic') {
         try {
-          const result = processWithSmartRegions(pixelData, width, height, qualityGridSize);
+          const result = processMosaicV2(pixelData, width, height, {
+            gridSize: qualityGridSize,
+            blurRadius: 2,
+            morphRadius: 1,
+            minCellArea: 30,
+            mergeThreshold: this.data.mergeThreshold
+          });
           this._finishMosaicResult(result, qualityGridSize, width, height);
         } catch (e) {
           console.error('马赛克模式处理失败:', e);
-          wx.showToast({ title: '处理失败，请重试', icon: 'none' });
-          this.setData({ isProcessing: false });
+          console.warn('回退到旧版算法');
+          const result = processWithSmartRegions(pixelData, width, height, qualityGridSize);
+          this._finishMosaicResult(result, qualityGridSize, width, height);
         }
       } else {
         const result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
