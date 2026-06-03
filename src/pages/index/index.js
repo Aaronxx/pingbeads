@@ -18,7 +18,7 @@ Page({
     // 网格大小
     gridSize: 10,
     // 色彩阈值
-    mergeThreshold: 15,
+    mergeThreshold: 50,
     // 处理模式: 'cartoon' | 'mosaic' - cartoon=卡通(普通模式), mosaic=马赛克(智能模式)
     processMode: 'cartoon',
     // 预览质量: 1=低(快速), 2=中, 3=高(精细)
@@ -69,7 +69,7 @@ Page({
     ],
     // 当前选项索引（用于 picker 绑定）
     gridOptionIndex: 2,  // 默认 10 (gridOptions[2].value = 10)
-    thresholdOptionIndex: 3,  // 默认 15 (thresholdOptions[3].value = 15)
+    thresholdOptionIndex: 6,  // 默认 50 (thresholdOptions[6].value = 50)
 
     // 特殊色设置
     useSpecialColors: false,  // 是否使用特殊色（P、Q、R、T、ZG系列）
@@ -625,12 +625,12 @@ Page({
         // 0.1 绘制顶部标题栏
         ctx.fillStyle = '#f5f5f5';
         ctx.fillRect(0, 0, canvasWidth, titleHeight);
-        const titleFontSize = 162;
+        const titleFontSize = 120;
         ctx.font = `bold ${titleFontSize}px "KaiTi", "STKaiti", "楷体", "PingFang SC", cursive, sans-serif`;
         ctx.fillStyle = '#ff7eb3';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(`🐱 拼豆酥（${rows}行×${cols}列）`, rulerWidth + 12, titleHeight / 2);
+        ctx.fillText(`🐱 微信小程序：拼豆酥（${rows}行×${cols}列）`, rulerWidth + 12, titleHeight / 2);
 
         // 1. 绘制顶部列标尺 - 每个色块显示列号
         const topRulerY = titleHeight;

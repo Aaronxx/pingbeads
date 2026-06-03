@@ -478,10 +478,7 @@ Component({
     },
     
     _finishMosaicResult(result, qualityGridSize, srcWidth, srcHeight) {
-      console.log('[_finishMosaicResult] 输入: segments=' + result.segments.length + ', cols=' + result.cols + ', rows=' + result.rows + ', gridSize=' + result.gridSize);
-
       const edgeDetection = detectEdgeColorFromSegments(result.segments, result.cols, result.rows, 30);
-      console.log('[_finishMosaicResult] 边缘检测: hasEdge=' + (edgeDetection && edgeDetection.hasEdge) + ', edgeColor=' + JSON.stringify(edgeDetection && edgeDetection.edgeColor));
       if (edgeDetection && edgeDetection.hasEdge) {
         filterEdgeSegments(result.segments, result.cols, result.rows, edgeDetection.edgeColor, 25);
       }
@@ -497,11 +494,9 @@ Component({
           else { nonEdgeCount++; }
         }
       }
-      console.log('[_finishMosaicResult] 格子统计: nonEdge=' + nonEdgeCount + ', edge=' + edgeCount + ', null=' + nullCount + ', 总计=' + (result.rows * result.cols));
 
       if (nonEdgeCount > 0 && edgeCount > 0) {
         const contentBoundary = findCropBoundaryFromGrid(gridData, result.rows, result.cols);
-        console.log('[_finishMosaicResult] 裁剪边界: hasContent=' + contentBoundary.hasContent + ', top=' + contentBoundary.top + ', bottom=' + contentBoundary.bottom + ', left=' + contentBoundary.left + ', right=' + contentBoundary.right);
         if (contentBoundary.hasContent) {
           const cropResult = cropMosaicData(
             { gridData, rows: result.rows, cols: result.cols, gridSize: result.gridSize },
@@ -511,11 +506,8 @@ Component({
             gridData.splice(0, gridData.length, ...cropResult.gridData);
             result.rows = cropResult.rows;
             result.cols = cropResult.cols;
-            console.log('[_finishMosaicResult] 裁剪后: cols=' + result.cols + ', rows=' + result.rows);
           }
         }
-      } else if (nonEdgeCount === 0) {
-        console.log('[_finishMosaicResult] ⚠️ 所有格子都被标记为边缘，内容为空！');
       }
 
       this.cachedGridDataSnapshot = this.deepCloneGridData(gridData, result.rows, result.cols);
