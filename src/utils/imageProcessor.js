@@ -1677,10 +1677,9 @@ function processMosaicV2(pixelData, width, height, options = {}) {
   // 当网格线检测失败时，用 autoDetectBlockSize 推断更合理的 gridSize
   if (!result.hasGridLines && pixelData && pixelData.length > 0) {
     const detected = autoDetectBlockSize(pixelData, width, height);
-    if (detected.primarySize && detected.primarySize > result.gridSize) {
+    if (detected.primarySize) {
       console.log('[processMosaicV2] autoDetectBlockSize 检测到 primarySize=' + detected.primarySize + '，替换 gridSize=' + result.gridSize);
-      result.gridSize = detected.primarySize;
-      // 重新计算 segments
+      // 用检测到的 gridSize 重新处理
       const reprocessed = processor.process(pixelData, width, height, {
         fallbackGridSize: detected.primarySize,
         colorDistThreshold: options.mergeThreshold || 30,
