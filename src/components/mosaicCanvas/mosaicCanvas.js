@@ -248,7 +248,7 @@ Component({
     reapplyVibrantScale(gridData, rows, cols) {
       const vibrantScale = this.data.vibrantScale;
 
-      const { batchMapColors, markPalette } = require('../../utils/colorMapper');
+      const { batchMapColors } = require('../../utils/colorMapper');
       const { aggregateSimilarColors, enhanceVibrant } = require('../../utils/imageProcessor');
 
       // 如果鲜艳度为0，恢复原始颜色
@@ -508,6 +508,8 @@ Component({
             result.cols = cropResult.cols;
           }
         }
+      } else if (nonEdgeCount === 0) {
+        console.log('[_finishMosaicResult] ⚠️ 所有格子都被标记为边缘，内容为空！');
       }
 
       this.cachedGridDataSnapshot = this.deepCloneGridData(gridData, result.rows, result.cols);
@@ -1546,14 +1548,6 @@ Component({
       }
 
       if (count === 0) {
-        // 调试：检查大区范围内有哪些色号
-        const regionCodes = [];
-        for (const pos of positions) {
-          const cell = gridData[pos.row] && gridData[pos.row][pos.col];
-          if (cell && cell.markCode) {
-            regionCodes.push(cell.markCode);
-          }
-        }
         return { success: false, message: '该大区内没有匹配的色块', count: 0 };
       }
 
