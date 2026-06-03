@@ -1122,7 +1122,6 @@ Page({
         // 绘制（基于二维数组固定格子大小）
         // 根据 removeEdge 设置决定是否跳过边缘单元格
         const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
-        const { gridSize } = exportData.gridInfo;
         const cellSizeX = width / cols;
         const cellSizeY = height / rows;
         for (let row = 0; row < rows; row++) {
