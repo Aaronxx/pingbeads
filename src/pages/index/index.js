@@ -86,7 +86,7 @@ Page({
 
     // 自定义网格大小
     useCustomGridSize: false,  // 是否启用自定义网格大小
-    customGridSize: 5,  // 自定义网格大小（5-20）
+    customGridSize: 10,  // 自定义网格大小（3-30）
 
     // 替换功能
     showReplacePanel: false,  // 是否显示替换面板
@@ -218,7 +218,9 @@ Page({
     this.setData({
       mosaicData: gridInfo,
       currentStep: 2,
-      hasGridLinesDetected: e.detail.hasGridLines || false
+      hasGridLinesDetected: e.detail.hasGridLines || false,
+      // 同步实际色块大小到自定义网格默认值
+      customGridSize: Math.min(50, Math.max(3, gridInfo.gridSize))
     });
   },
 
@@ -270,7 +272,8 @@ Page({
       gridSize: newGridSize,
       gridOptionIndex: index,
       mosaicData: null,
-      currentStep: 1
+      currentStep: 1,
+      customGridSize: Math.min(50, Math.max(3, newGridSize))
     });
   },
 
@@ -411,9 +414,9 @@ Page({
       // 豆豆数、色彩
       gridOptionIndex: 2,
       thresholdOptionIndex: 6,
-      // 自定义网格
+      // 自定义网格（默认为当前豆豆数，限制在滑块范围内）
       useCustomGridSize: false,
-      customGridSize: 5,
+      customGridSize: Math.min(50, Math.max(3, this.data.gridSize)),
       // 特殊设置
       useSpecialColors: false,
       removeEdge: true,

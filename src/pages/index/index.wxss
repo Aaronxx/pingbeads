@@ -512,11 +512,19 @@
 .grid-checkbox-label {
   display: flex;
   align-items: center;
-  font-size: 28rpx;
-  font-weight: 500;
-  color: var(--text-primary);
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--primary);
+  letter-spacing: 2rpx;
   margin-bottom: 16rpx;
   font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+}
+
+.grid-current-value {
+  margin-left: 8rpx;
+  font-size: 22rpx;
+  color: var(--primary-dark);
+  font-weight: 700;
 }
 
 /* 自定义可爱 checkbox */

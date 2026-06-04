@@ -29,6 +29,8 @@ Component({
     isProcessing: false,
     gridInfo: null,
     scale: 1,
+    // 用户是否进行过缩放/拖拽操作（初始false，不显示色号）
+    hasUserZoomed: false,
     // 拖动偏移量
     offsetX: 0,
     offsetY: 0,
@@ -70,7 +72,10 @@ Component({
         }, 200);
       }
     },
-    'gridSize, mergeThreshold, previewQuality, processMode, forceGridSize': function() {
+    'gridSize, mergeThreshold, previewQuality, processMode': function() {
+      // 防止重复处理
+      if (this.data.isProcessing) return;
+
       // 这些参数变化时需要完全重新生成
       if (this.data.processMode === 'mosaic') {
         this.cachedGridData = null;
@@ -148,6 +153,10 @@ Component({
       tryApply();
     },
     'scale': function() {
+      // 用户进行了缩放，标记状态
+      if (!this.data.hasUserZoomed) {
+        this.setData({ hasUserZoomed: true });
+      }
       if (this.cachedGridData && this.cachedGridInfo) {
         const { cols, rows, gridSize } = this.cachedGridInfo;
         this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
@@ -171,7 +180,8 @@ Component({
       this.setData({
         scale: 1,
         offsetX: 0,
-        offsetY: 0
+        offsetY: 0,
+        hasUserZoomed: false
       });
     },
 
@@ -209,8 +219,13 @@ Component({
         } catch (e) {
           console.error('马赛克模式处理失败:', e);
           console.warn('回退到旧版算法');
-          const result = processWithSmartRegions(pixelData, cachedWidth, cachedHeight, qualityGridSize);
-          this._finishMosaicResult(result, qualityGridSize, cachedWidth, cachedHeight);
+          try {
+            const result = processWithSmartRegions(pixelData, cachedWidth, cachedHeight, qualityGridSize);
+            this._finishSimpleResult(result, qualityGridSize);
+          } catch (e2) {
+            console.error('回退也失败了:', e2);
+            this.setData({ isProcessing: false });
+          }
         }
       } else {
         const result = processSimple(pixelData, cachedWidth, cachedHeight, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
@@ -939,7 +954,7 @@ Component({
 
               // 绘制色号（根据 removeEdge 设置决定是否绘制边缘色号）
               const size = Math.min(cellWidth, cellHeight);
-              if (that.data.showCode && size >= 8 && (!shouldRemoveEdge || !cell.isEdge)) {
+              if (that.data.showCode && that.data.hasUserZoomed && size >= 8 && (!shouldRemoveEdge || !cell.isEdge)) {
             const isLight = that.isLightColor(cell.markHex);
                 ctx.fillStyle = isLight ? '#333333' : '#ffffff';
                 ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
@@ -1219,7 +1234,7 @@ Component({
 
             // 绘制色号（根据 removeEdge 设置决定是否绘制边缘色号）- 使用实际的 cell 尺寸
             const cellSize = Math.min(width, height);
-            if (that.data.showCode && cellSize >= 8 && (!shouldRemoveEdge || !segment.isEdge)) {
+            if (that.data.showCode && that.data.hasUserZoomed && cellSize >= 8 && (!shouldRemoveEdge || !segment.isEdge)) {
             const isLight = that.isLightColor(segment.markHex);
               ctx.fillStyle = isLight ? '#333333' : '#ffffff';
               ctx.font = `${Math.max(6, cellSize * 0.25)}px sans-serif`;
@@ -1729,7 +1744,7 @@ Component({
 
           // 绘制色号（根据 removeEdge 设置决定是否绘制边缘色号）
           const size = Math.min(cellWidth, cellHeight);
-          if (this.data.showCode && size >= 8 && (!shouldRemoveEdge || !cell.isEdge)) {
+          if (this.data.showCode && this.data.hasUserZoomed && size >= 8 && (!shouldRemoveEdge || !cell.isEdge)) {
             const isLight = isLightColor(cell.markHex);
             ctx.fillStyle = isLight ? '#333333' : '#ffffff';
             ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;

@@ -268,7 +268,6 @@ class MosaicProcessor {
 
     // 强制网格大小：跳过扫描线检测，直接均匀切割
     if (forceGridSize && forceGridSize > 0) {
-      console.log('[算法] 强制均匀切割模式: forceGridSize=' + forceGridSize);
       return this._processNoGridLines(pixelData, width, height, forceGridSize, minCellArea);
     }
 
@@ -373,7 +372,6 @@ class MosaicProcessor {
       lineThickness = 0;
       confidence = 0;
       // 无分界线模式：使用固定网格 + 中位数取色
-      console.log('[算法] 无网格线模式: 均匀切割 cellSize=' + cellSize);
       return this._processNoGridLines(pixelData, width, height, cellSize, minCellArea);
     }
 
@@ -392,14 +390,11 @@ class MosaicProcessor {
 
     if (hLineRatio < minLineRatio || vLineRatio < minLineRatio) {
       // 网格线数量不足，但cellSize已检测到，用检测到的cellSize做均匀切割
-      console.log('[算法] 网格线不足(' + (hLineRatio * 100).toFixed(0) + '%/' + (vLineRatio * 100).toFixed(0) + '%): 用检测到的cellSize=' + cellSize + ' 均匀切割');
       return this._processNoGridLines(pixelData, width, height, cellSize, minCellArea);
     }
 
     // 推断分界线颜色（用于识别哪些像素属于分界线）
     const lineColor = inferLineColor(pixelData, width, height, hLines, vLines);
-
-    console.log('[算法] 扫描线网格切割模式: cellSize=' + cellSize + ', 网格线 h=' + hLineCenters.length + '/v=' + vLineCenters.length + ', 置信度=' + (confidence * 100).toFixed(0) + '%');
 
     // ===== 步骤4: 构建网格 =====
     // 从分界线位置推断色块边界

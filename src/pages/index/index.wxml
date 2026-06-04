@@ -210,15 +210,16 @@
             <label class="grid-checkbox-label">
               <checkbox value="custom" checked="{{useCustomGridSize}}" />
               <text>自定义网格大小</text>
+              <text class="grid-current-value">{{customGridSize}}px</text>
             </label>
           </checkbox-group>
           <view class="grid-control-row {{useCustomGridSize ? '' : 'disabled'}}">
-            <text class="grid-min-label">5</text>
+            <text class="grid-min-label">3</text>
             <view class="grid-slider-outer">
               <view class="grid-slider-wrapper">
                 <slider
-                  min="5"
-                  max="20"
+                  min="3"
+                  max="50"
                   value="{{customGridSize}}"
                   disabled="{{!useCustomGridSize}}"
                   bindchange="onCustomGridSizeChange"
@@ -227,7 +228,7 @@
                 />
               </view>
             </view>
-            <text class="grid-max-label">20</text>
+            <text class="grid-max-label">50</text>
           </view>
         </view>
       </view>
