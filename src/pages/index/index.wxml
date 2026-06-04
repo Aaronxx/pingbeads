@@ -21,7 +21,7 @@
 
       <!-- 右侧：豆豆数和色彩下拉 -->
       <view class="button-right" wx:if="{{imagePath && processMode === 'cartoon'}}">
-        <picker mode="selector" range="{{gridOptions}}" range-key="name" value="{{gridOptionIndex}}" bindchange="onGridSizeChange">
+        <picker wx:if="{{!useCustomGridSize}}" mode="selector" range="{{gridOptions}}" range-key="name" value="{{gridOptionIndex}}" bindchange="onGridSizeChange">
           <view class="dropdown-btn">
             <text class="dropdown-label">豆豆数</text>
             <text class="dropdown-value">{{gridOptions[gridOptionIndex].name}}</text>
@@ -60,7 +60,8 @@
         wx:if="{{imagePath}}"
         id="mosaic-canvas"
         imagePath="{{imagePath}}"
-        gridSize="{{gridSize}}"
+        gridSize="{{useCustomGridSize ? customGridSize : gridSize}}"
+        forceGridSize="{{useCustomGridSize ? customGridSize : null}}"
         mergeThreshold="{{mergeThreshold}}"
         processMode="{{processMode}}"
         useSpecialColors="{{useSpecialColors}}"
@@ -198,6 +199,36 @@
             </view>
           </view>
           <text class="vibrant-label-right">鲜艳</text>
+        </view>
+      </view>
+
+      <!-- 网格大小设置（均匀切割模式有效） -->
+      <view class="setting-group" wx:if="{{processMode === 'cartoon' || !hasGridLinesDetected}}">
+        <view class="group-title">📐 网格大小</view>
+        <view class="custom-grid-control">
+          <checkbox-group bindchange="onCustomGridToggle">
+            <label class="grid-checkbox-label">
+              <checkbox value="custom" checked="{{useCustomGridSize}}" />
+              <text>自定义网格大小</text>
+            </label>
+          </checkbox-group>
+          <view class="grid-control-row {{useCustomGridSize ? '' : 'disabled'}}">
+            <text class="grid-min-label">5</text>
+            <view class="grid-slider-outer">
+              <view class="grid-slider-wrapper">
+                <slider
+                  min="5"
+                  max="20"
+                  value="{{customGridSize}}"
+                  disabled="{{!useCustomGridSize}}"
+                  bindchange="onCustomGridSizeChange"
+                  block-color="#ff9ecd"
+                  selected-color="#ffb6d9"
+                />
+              </view>
+            </view>
+            <text class="grid-max-label">20</text>
+          </view>
         </view>
       </view>
 

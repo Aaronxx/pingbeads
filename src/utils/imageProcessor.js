@@ -1669,6 +1669,7 @@ function processMosaicV2(pixelData, width, height, options = {}) {
   const processor = new MosaicProcessor();
   const result = processor.process(pixelData, width, height, {
     fallbackGridSize: options.gridSize || 10,
+    forceGridSize: options.forceGridSize || null,
     colorDistThreshold: options.mergeThreshold || 30,
     clusterGap: 5,
     minCellArea: options.minCellArea || 4
@@ -1681,6 +1682,7 @@ function processMosaicV2(pixelData, width, height, options = {}) {
       // 用检测到的 gridSize 重新处理
       const reprocessed = processor.process(pixelData, width, height, {
         fallbackGridSize: detected.primarySize,
+        forceGridSize: options.forceGridSize || null,
         colorDistThreshold: options.mergeThreshold || 30,
         clusterGap: 5,
         minCellArea: options.minCellArea || 4

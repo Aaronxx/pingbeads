@@ -19,7 +19,8 @@ Component({
     previewQuality: { type: Number, value: 2 },
     regenerateTrigger: { type: Number, value: 0 },
     vibrantScale: { type: Number, value: 0 },  // 鲜艳度增强系数 (0-1)
-    mirrorImage: { type: Boolean, value: false }  // 是否镜像翻转
+    mirrorImage: { type: Boolean, value: false },  // 是否镜像翻转
+    forceGridSize: { type: Number, value: null }  // 强制使用的网格大小（跳过检测）
   },
 
   data: {
@@ -69,7 +70,7 @@ Component({
         }, 200);
       }
     },
-    'gridSize, mergeThreshold, previewQuality, processMode': function() {
+    'gridSize, mergeThreshold, previewQuality, processMode, forceGridSize': function() {
       // 这些参数变化时需要完全重新生成
       if (this.data.processMode === 'mosaic') {
         this.cachedGridData = null;
@@ -165,6 +166,15 @@ Component({
   },
 
   methods: {
+    // 重置预览状态（缩放、平移）
+    resetPreviewState() {
+      this.setData({
+        scale: 1,
+        offsetX: 0,
+        offsetY: 0
+      });
+    },
+
     // 使用实例属性存储像素数据，避免通过 setData 传输
     getCachedPixelData() {
       return this.cachedPixelData;
@@ -189,6 +199,7 @@ Component({
         try {
           const result = processMosaicV2(pixelData, cachedWidth, cachedHeight, {
             gridSize: qualityGridSize,
+            forceGridSize: this.data.forceGridSize || null,
             blurRadius: 2,
             morphRadius: 1,
             minCellArea: 30,
@@ -535,7 +546,8 @@ Component({
       }, 100);
 
       this.triggerEvent('mosaicGenerated', {
-        gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize }
+        gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize },
+        hasGridLines: result.hasGridLines || false
       });
     },
 
@@ -601,7 +613,8 @@ Component({
       }, 100);
 
       this.triggerEvent('mosaicGenerated', {
-        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize }
+        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
+        hasGridLines: false
       });
     },
 
@@ -752,6 +765,7 @@ Component({
         try {
           const result = processMosaicV2(pixelData, width, height, {
             gridSize: qualityGridSize,
+            forceGridSize: this.data.forceGridSize || null,
             blurRadius: 2,
             morphRadius: 1,
             minCellArea: 30,

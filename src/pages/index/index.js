@@ -84,6 +84,10 @@ Page({
     vibrantScale: 0,  // 鲜艳度增强系数 (-10 到 10)
     vibrantBlockColor: '#9ca3af',  // 滑块颜色
 
+    // 自定义网格大小
+    useCustomGridSize: false,  // 是否启用自定义网格大小
+    customGridSize: 5,  // 自定义网格大小（5-20）
+
     // 替换功能
     showReplacePanel: false,  // 是否显示替换面板
     replaceRegionCode: '',  // 大区编号（如 A1）
@@ -93,7 +97,10 @@ Page({
 
     // 撤销功能
     undoStack: [],  // 撤销栈，最多20步
-    canUndo: false  // 是否可以撤销
+    canUndo: false,  // 是否可以撤销
+
+    // 网格线检测状态
+    hasGridLinesDetected: false  // 马赛克模式下是否检测到网格线
   },
 
   onLoad() {
@@ -183,6 +190,8 @@ Page({
     const { path } = e.detail;
     // 保存原始图片路径，用于参数变化时重新生成
     this._originalImagePath = path;
+    // 重置所有设置项为默认值
+    this._resetSettings();
     this.setData({
       imagePath: path,
       currentStep: 1,
@@ -208,7 +217,8 @@ Page({
     // 只保存 gridInfo，不保存 gridData（避免大数据传输）
     this.setData({
       mosaicData: gridInfo,
-      currentStep: 2
+      currentStep: 2,
+      hasGridLinesDetected: e.detail.hasGridLines || false
     });
   },
 
@@ -338,6 +348,23 @@ Page({
     });
   },
 
+  // 自定义网格大小勾选
+  onCustomGridToggle(e) {
+    if (this._checkExporting()) return;
+    const checked = e.detail.value.length > 0;
+    this.setData({
+      useCustomGridSize: checked
+    });
+  },
+
+  // 自定义网格大小滑块变化
+  onCustomGridSizeChange(e) {
+    if (this._checkExporting()) return;
+    this.setData({
+      customGridSize: e.detail.value
+    });
+  },
+
   // 计算滑块颜色：正数从绿变红，负数从绿变深灰，0为绿色
   calculateVibrantBlockColor(vibrantScale) {
     if (vibrantScale > 0) {
@@ -366,11 +393,51 @@ Page({
     if (this._checkExporting()) return;
 
     const newMode = this.data.processMode === 'cartoon' ? 'mosaic' : 'cartoon';
+    // 重置所有设置项为默认值
+    this._resetSettings();
     this.setData({
       processMode: newMode,
       mosaicData: null,
       currentStep: 1
     });
+  },
+
+  // 重置所有设置项为默认值
+  _resetSettings() {
+    // 计算默认鲜艳度滑块颜色
+    const defaultBlockColor = this.calculateVibrantBlockColor(0);
+
+    this.setData({
+      // 豆豆数、色彩
+      gridOptionIndex: 2,
+      thresholdOptionIndex: 6,
+      // 自定义网格
+      useCustomGridSize: false,
+      customGridSize: 5,
+      // 特殊设置
+      useSpecialColors: false,
+      removeEdge: true,
+      mirrorImage: false,
+      // 鲜艳度
+      vibrantScale: 0,
+      vibrantBlockColor: defaultBlockColor,
+      // 替换面板
+      showReplacePanel: false,
+      replaceFromCode: '',
+      replaceToCode: '',
+      replaceScope: 'all',
+      // 撤销
+      undoStack: [],
+      canUndo: false,
+      // 网格线检测状态
+      hasGridLinesDetected: false
+    });
+
+    // 重置预览缩放和平移
+    const canvas = this.selectComponent('#mosaic-canvas');
+    if (canvas) {
+      canvas.resetPreviewState();
+    }
   },
 
   // 切换替换面板显示

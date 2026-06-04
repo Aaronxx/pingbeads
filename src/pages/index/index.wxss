@@ -504,6 +504,92 @@
   color: #10b981;
 }
 
+/* ===== 自定义网格大小 ===== */
+.custom-grid-control {
+  padding: 16rpx 0;
+}
+
+.grid-checkbox-label {
+  display: flex;
+  align-items: center;
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 16rpx;
+  font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+}
+
+/* 自定义可爱 checkbox */
+.grid-checkbox-label checkbox .wx-checkbox-input {
+  border-radius: 8rpx !important;
+  border: 3rpx solid var(--primary-light) !important;
+  width: 36rpx !important;
+  height: 36rpx !important;
+}
+
+.grid-checkbox-label checkbox .wx-checkbox-input.wx-checkbox-input-checked {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
+}
+
+.grid-checkbox-label checkbox .wx-checkbox-input.wx-checkbox-input-checked::before {
+  color: #fff !important;
+  font-size: 22rpx !important;
+}
+
+.grid-control-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 12rpx 120rpx 12rpx 48rpx;
+  background: linear-gradient(135deg, #fff 0%, #fff0f5 100%);
+  border-radius: 16rpx;
+  box-sizing: border-box;
+}
+
+.grid-control-row.disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.grid-min-label,
+.grid-max-label {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 18rpx;
+  color: var(--text-muted);
+}
+
+.grid-min-label {
+  left: 12rpx;
+}
+
+.grid-max-label {
+  right: 80rpx;
+}
+
+.grid-slider-outer {
+  width: 100%;
+  height: 60rpx;
+}
+
+.grid-slider-wrapper {
+  width: 90%;
+  height: 100%;
+  margin: 0 auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.grid-slider-wrapper slider {
+  width: 100%;
+  margin: 0;
+  position: relative;
+  z-index: 2;
+}
+
 /* 替换表单 */
 .replace-form {
   background: linear-gradient(135deg, #fff 0%, #fff0f5 100%);
