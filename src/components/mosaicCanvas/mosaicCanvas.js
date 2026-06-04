@@ -84,10 +84,11 @@ Component({
       }
 
       if (this.cachedPixelData && this.cachedWidth > 0) {
-        this.setData({ isProcessing: true });
-        setTimeout(() => {
-          this.regenerateFromCache();
-        }, 200);
+        this.setData({ isProcessing: true }, () => {
+          setTimeout(() => {
+            this.regenerateFromCache();
+          }, 100);
+        });
       } else if (this.data.imagePath) {
         this.processImage(this.data.imagePath);
       }
