@@ -22,6 +22,37 @@ function colorDistance(c1, c2) {
   );
 }
 
+/** 快速中位数 */
+function quickMedian(arr) {
+  const len = arr.length;
+  if (len === 0) return 0;
+  const sorted = arr.slice().sort((a, b) => a - b);
+  const mid = len >> 1;
+  return len % 2 === 1 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+}
+
+/** 中位数取色：对 R/G/B 分别取中位数，保留原色、抗异常值 */
+function medianColor(pixelData, width, height, srcX, srcY, endX, endY) {
+  const rs = [], gs = [], bs = [];
+
+  for (let y = srcY; y < endY && y < height; y++) {
+    for (let x = srcX; x < endX && x < width; x++) {
+      const idx = (y * width + x) * 4;
+      rs.push(pixelData[idx]);
+      gs.push(pixelData[idx + 1]);
+      bs.push(pixelData[idx + 2]);
+    }
+  }
+
+  if (rs.length === 0) return { r: 0, g: 0, b: 0 };
+
+  return {
+    r: quickMedian(rs),
+    g: quickMedian(gs),
+    b: quickMedian(bs)
+  };
+}
+
 /**
  * 简化版处理 - 逐像素映射
  * 适合直接使用，不需要预处理
@@ -75,24 +106,8 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
     for (let col = 0; col < cols; col++) {
       const { srcX, srcY, endX, endY } = gridRegions[row][col];
 
-      let r = 0, g = 0, b = 0, count = 0;
-
-      // 遍历网格内所有像素
-      for (let y = srcY; y < endY && y < height; y++) {
-        for (let x = srcX; x < endX && x < width; x++) {
-          const idx = (y * width + x) * 4;
-          r += processedPixelData[idx];
-          g += processedPixelData[idx + 1];
-          b += processedPixelData[idx + 2];
-          count++;
-        }
-      }
-
-      const dominantColor = count > 0 ? {
-        r: Math.round(r / count),
-        g: Math.round(g / count),
-        b: Math.round(b / count)
-      } : { r: 0, g: 0, b: 0 };
+      // 中位数取色：保留原色、抗异常值
+      const dominantColor = medianColor(processedPixelData, width, height, srcX, srcY, endX, endY);
 
       // 鲜艳度增强/降低：饱和度 + 亮度 + 对比度 组合调整
       // vibrantScale 范围：-10 到 10
