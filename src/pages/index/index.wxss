@@ -381,7 +381,7 @@
 
 /* 设置组 */
 .setting-group {
-  margin-bottom: 32rpx;
+  margin-bottom: 20rpx;
 }
 
 .group-title {
@@ -392,6 +392,13 @@
   display: flex;
   align-items: center;
   gap: 8rpx;
+  flex-wrap: wrap;
+}
+
+.actual-size-inline {
+  font-size: 22rpx;
+  color: #9ca3af;
+  font-weight: 400;
 }
 
 /* 开关按钮行 */
@@ -518,6 +525,59 @@
   letter-spacing: 2rpx;
   margin-bottom: 16rpx;
   font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+}
+
+/* ========================
+   网格预设控件
+   ======================== */
+.grid-preset-control {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.preset-hint {
+  font-size: 22rpx;
+  color: #9ca3af;
+}
+
+.preset-picker-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16rpx 20rpx;
+  background: linear-gradient(135deg, #fff 0%, #fff0f5 100%);
+  border: 2rpx solid var(--border-light);
+  border-radius: 16rpx;
+  transition: all 0.2s ease;
+}
+
+.preset-picker-btn:active {
+  transform: scale(0.98);
+  background: linear-gradient(135deg, #fff0f5 0%, #ffe4ec 100%);
+}
+
+.preset-label {
+  font-size: 26rpx;
+  color: var(--text-primary);
+}
+
+.preset-value {
+  font-size: 26rpx;
+  color: var(--primary-dark);
+  font-weight: 600;
+}
+
+.preset-actual-size {
+  font-size: 20rpx;
+  color: #9ca3af;
+  margin: 0 8rpx;
+}
+
+.preset-arrow {
+  font-size: 18rpx;
+  color: #9ca3af;
+  margin-left: 8rpx;
 }
 
 .grid-current-value {

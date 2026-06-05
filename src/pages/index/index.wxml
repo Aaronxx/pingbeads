@@ -72,9 +72,11 @@
         previewQuality="{{previewQuality}}"
         regenerateTrigger="{{regenerateTrigger}}"
         vibrantScale="{{vibrantScale}}"
+        gridPreset="{{[gridPresetIndex, availableGridPresets[gridPresetIndex].cols, availableGridPresets[gridPresetIndex].rows]}}"
         bind:cellClick="onCodeClick"
         bind:mosaicGenerated="onMosaicGenerated"
         bind:statsUpdate="onStatsUpdate"
+        bind:gridInfoUpdate="onGridInfoUpdate"
       />
       <!-- 空状态 -->
       <view wx:else class="placeholder">
@@ -199,6 +201,24 @@
             </view>
           </view>
           <text class="vibrant-label-right">鲜艳</text>
+        </view>
+      </view>
+
+      <!-- 网格预设：固定尺寸截取 -->
+      <view class="setting-group">
+        <view class="group-title">
+          <text>📏 网格预设</text>
+          <text wx:if="{{mosaicData}}" class="actual-size-inline">实际尺寸：{{mosaicData.cols}}×{{mosaicData.rows}}</text>
+        </view>
+        <view class="grid-preset-control">
+          <text class="preset-hint">选择固定尺寸，从中心截取色块</text>
+          <picker mode="selector" range="{{availableGridPresets}}" range-key="name" value="{{gridPresetIndex}}" bindchange="onGridPresetChange">
+            <view class="preset-picker-btn">
+              <text class="preset-label">网格尺寸</text>
+              <text class="preset-value">{{availableGridPresets[gridPresetIndex].name}}</text>
+              <text class="preset-arrow">▼</text>
+            </view>
+          </picker>
         </view>
       </view>
 

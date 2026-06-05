@@ -100,12 +100,30 @@ Page({
     canUndo: false,  // 是否可以撤销
 
     // 网格线检测状态
-    hasGridLinesDetected: false  // 马赛克模式下是否检测到网格线
+    hasGridLinesDetected: false,  // 马赛克模式下是否检测到网格线
+
+    // 网格预设尺寸
+    gridPresetIndex: 0,  // 默认 原图比例
+    gridPresets: [
+      { name: '原图比例', cols: 0, rows: 0 },
+      { name: '200×200', cols: 200, rows: 200 },
+      { name: '156×156', cols: 156, rows: 156 },
+      { name: '104×104', cols: 104, rows: 104 },
+      { name: '72×72', cols: 72, rows: 72 },
+      { name: '52×52', cols: 52, rows: 52 },
+      { name: '36×36', cols: 36, rows: 36 }
+    ],
+    availableGridPresets: [],  // 根据实际尺寸过滤后的可选项
+    gridPresetDisabled: [],  // 不可选的网格预设索引
+    // 最终用于渲染的网格尺寸（可能被预设覆盖）
+    effectiveCols: 0,
+    effectiveRows: 0
   },
 
   onLoad() {
     this.setData({
-      vibrantBlockColor: this.calculateVibrantBlockColor(0)
+      vibrantBlockColor: this.calculateVibrantBlockColor(0),
+      availableGridPresets: this.data.gridPresets.slice()
     });
   },
 
@@ -214,13 +232,24 @@ Page({
   // 马赛克处理完成回调
   onMosaicGenerated(e) {
     const { gridInfo } = e.detail;
-    // 只保存 gridInfo，不保存 gridData（避免大数据传输）
+    const actualCols = gridInfo.cols;
+    const actualRows = gridInfo.rows;
+
+    // 过滤可用的网格预设
+    const available = this.data.gridPresets.filter(p => p.cols === 0 || p.rows === 0 || (actualCols >= p.cols && actualRows >= p.rows));
+    // 确保当前选中的 preset 在可用列表中，否则重置为原图比例
+    let newPresetIndex = this.data.gridPresetIndex;
+    if (newPresetIndex >= available.length) newPresetIndex = 0;
+
     this.setData({
       mosaicData: gridInfo,
       currentStep: 2,
       hasGridLinesDetected: e.detail.hasGridLines || false,
-      // 同步实际色块大小到自定义网格默认值
-      customGridSize: Math.min(50, Math.max(3, gridInfo.gridSize))
+      customGridSize: Math.min(50, Math.max(3, gridInfo.gridSize)),
+      effectiveCols: actualCols,
+      effectiveRows: actualRows,
+      availableGridPresets: available,
+      gridPresetIndex: newPresetIndex
     });
   },
 
@@ -229,6 +258,16 @@ Page({
     const { stats } = e.detail;
     // 直接设置统计结果，不再传输大量格子数据
     this.setData({ flatCells: stats });
+  },
+
+  // 网格预设变化时更新 mosaicData 的行列数
+  onGridInfoUpdate(e) {
+    const { cols, rows } = e.detail;
+    if (this.data.mosaicData) {
+      this.setData({
+        mosaicData: { ...this.data.mosaicData, cols, rows }
+      });
+    }
   },
 
   // 点击颜色色号回调
@@ -273,8 +312,21 @@ Page({
       gridOptionIndex: index,
       mosaicData: null,
       currentStep: 1,
+      gridPresetIndex: 0,  // 重置为原图比例
       customGridSize: Math.min(50, Math.max(3, newGridSize))
     });
+  },
+
+  // 调整网格预设
+  onGridPresetChange(e) {
+    if (this._checkExporting()) return;
+    const index = parseInt(e.detail.value) || 0;
+    const preset = this.data.availableGridPresets[index];
+    if (!preset) return;
+
+    // 只更新 gridPresetIndex，不设置 mosaicData: null
+    // mosaicCanvas 的 gridPreset observer 会自动处理裁剪并更新统计
+    this.setData({ gridPresetIndex: index });
   },
 
   // 调整合并阈值
@@ -356,7 +408,8 @@ Page({
     if (this._checkExporting()) return;
     const checked = e.detail.value.length > 0;
     this.setData({
-      useCustomGridSize: checked
+      useCustomGridSize: checked,
+      gridPresetIndex: 0  // 重置为原图比例
     });
   },
 
@@ -364,7 +417,8 @@ Page({
   onCustomGridSizeChange(e) {
     if (this._checkExporting()) return;
     this.setData({
-      customGridSize: e.detail.value
+      customGridSize: e.detail.value,
+      gridPresetIndex: 0  // 重置为原图比例
     });
   },
 
@@ -433,7 +487,10 @@ Page({
       undoStack: [],
       canUndo: false,
       // 网格线检测状态
-      hasGridLinesDetected: false
+      hasGridLinesDetected: false,
+      // 网格预设
+      gridPresetIndex: 0,
+      availableGridPresets: this.data.gridPresets.slice()
     });
 
     // 重置预览缩放和平移
@@ -814,8 +871,8 @@ Page({
           for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
               const cell = gridData[row] && gridData[row][col];
-              // 跳过无效格子或边缘底色格子（根据 removeEdge 设置）
-              if (!cell || !cell.markCode || (shouldRemoveEdge && cell.isEdge)) continue;
+              // 跳过无效格子或边缘底色格子（空白格子也要渲染）
+              if (!cell || (shouldRemoveEdge && cell.isEdge)) continue;
 
               let x = offsetX + col * cellWidth;
               const y = offsetY + row * cellHeight;
@@ -825,17 +882,21 @@ Page({
                 x = offsetX + mosaicWidth - (col + 1) * cellWidth;
               }
 
-              // 绘制色块
-              ctx.fillStyle = cell.markHex || '#cccccc';
+              // 空白格子使用浅灰色
+              if (cell.isEmpty) {
+                ctx.fillStyle = '#F0F0F0';
+              } else {
+                ctx.fillStyle = cell.markHex || '#cccccc';
+              }
               ctx.fillRect(x, y, cellWidth, cellHeight);
 
               // 绘制色块边框
-              ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+              ctx.strokeStyle = cell.isEmpty ? 'rgba(0, 0, 0, 0.05)' : 'rgba(0, 0, 0, 0.1)';
               ctx.lineWidth = 1;
               ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
 
-              // 绘制色号
-              if (cellWidth >= 4 && cellHeight >= 4) {
+              // 绘制色号（空白格子不绘制）
+              if (!cell.isEmpty && cellWidth >= 4 && cellHeight >= 4) {
                 const isLight = isLightColor(cell.markHex);
                 ctx.fillStyle = isLight ? '#333' : '#fff';
                 const fontSize = Math.max(4, Math.min(cellWidth, cellHeight) * 0.35);

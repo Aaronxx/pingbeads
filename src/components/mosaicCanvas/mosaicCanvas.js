@@ -20,7 +20,9 @@ Component({
     regenerateTrigger: { type: Number, value: 0 },
     vibrantScale: { type: Number, value: 0 },  // 鲜艳度增强系数 (0-1)
     mirrorImage: { type: Boolean, value: false },  // 是否镜像翻转
-    forceGridSize: { type: Number, value: null }  // 强制使用的网格大小（跳过检测）
+    forceGridSize: { type: Number, value: null },  // 强制使用的网格大小（跳过检测）
+    // 网格预设：[预设索引, 目标列数, 目标行数]
+    gridPreset: { type: Array, value: [0, 0, 0 ] }
   },
 
   data: {
@@ -135,6 +137,64 @@ Component({
         } else {
           setTimeout(tryApply, 100);
         }
+      };
+      tryApply();
+    },
+    'vibrantScale': function() {
+      // 鲜艳度变化时，不清空缓存，直接重新应用鲜艳度
+      const tryApply = () => {
+        if (this.cachedGridData && this.cachedGridInfo) {
+          this.setData({ isProcessing: true });
+          const { rows, cols, gridSize } = this.cachedGridInfo;
+          this.resetToOriginalColors(this.cachedGridData, rows, cols);
+          this.reapplyVibrantScale(this.cachedGridData, rows, cols);
+          const stats = this.calculateStats(this.cachedGridData, rows, cols);
+          this.triggerEvent('statsUpdate', { stats: stats });
+          this.setData({ isProcessing: false });
+          this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+        } else {
+          setTimeout(tryApply, 100);
+        }
+      };
+      tryApply();
+    },
+    'gridPreset': function(newVal, oldVal) {
+      // 网格预设变化时，使用原始缓存数据重新裁剪
+      if (oldVal && oldVal[0] === newVal[0]) return; // 索引没变，不需要处理
+
+      const tryApply = () => {
+        if (!this.cachedOriginalGridData) {
+          setTimeout(tryApply, 100);
+          return;
+        }
+
+        const targetCols = newVal[1];
+        const targetRows = newVal[2];
+        const origCols = this.cachedOriginalGridData[0] ? this.cachedOriginalGridData[0].length : 0;
+        const origRows = this.cachedOriginalGridData.length;
+        const gridSize = this.cachedGridInfo ? this.cachedGridInfo.gridSize : 10;
+
+        // 原图比例：恢复原始数据
+        if (targetCols === 0 || targetRows === 0) {
+          this.cachedGridData = this.cachedOriginalGridData;
+          this.cachedGridInfo = { cols: origCols, rows: origRows, gridSize };
+        } else {
+          // 应用裁剪
+          const presetResult = this._applyGridPreset(this.cachedOriginalGridData, origCols, origRows);
+          this.cachedGridData = presetResult.gridData;
+          this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
+        }
+
+        const stats = this.calculateStats(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
+        this.triggerEvent('statsUpdate', { stats });
+        // 通知页面更新 mosaicData 的行列数
+        this.triggerEvent('gridInfoUpdate', {
+          cols: this.cachedGridInfo.cols,
+          rows: this.cachedGridInfo.rows
+        });
+        // 重置缩放和拖拽状态
+        this.resetPreviewState();
+        this.renderToCanvas(this.cachedGridData, this.cachedGridInfo.cols, this.cachedGridInfo.rows, gridSize);
       };
       tryApply();
     },
@@ -555,27 +615,34 @@ Component({
       this.replaceSpecialColors(gridData, result.rows, result.cols);
       this.reapplyVibrantScale(gridData, result.rows, result.cols);
 
+      // 应用网格预设（截取/填充）
+      const presetResult = this._applyGridPreset(gridData, result.cols, result.rows);
+      const finalGridData = presetResult.gridData;
+      const finalCols = presetResult.cols;
+      const finalRows = presetResult.rows;
+
       this.cachedSegments = result.segments;
-      this.cachedGridData = gridData;
-      this.cachedGridInfo = { cols: result.cols, rows: result.rows, gridSize: result.gridSize };
+      this.cachedOriginalGridData = gridData;  // 保存原始未裁剪数据
+      this.cachedGridData = finalGridData;
+      this.cachedGridInfo = { cols: finalCols, rows: finalRows, gridSize: result.gridSize };
       this.cachedSegmentsWidth = srcWidth;
       this.cachedSegmentsHeight = srcHeight;
       this.cachedSegmentsGridSize = qualityGridSize;
 
-      const stats = this.calculateStats(gridData, result.rows, result.cols);
+      const stats = this.calculateStats(finalGridData, finalRows, finalCols);
       this.setData({
-        gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize },
+        gridInfo: { cols: finalCols, rows: finalRows, gridSize: result.gridSize },
         isProcessing: false
       });
       wx.hideLoading();
       this.triggerEvent('statsUpdate', { stats });
 
       setTimeout(() => {
-        this.renderToCanvas(gridData, result.cols, result.rows, result.gridSize);
+        this.renderToCanvas(finalGridData, finalCols, finalRows, result.gridSize);
       }, 100);
 
       this.triggerEvent('mosaicGenerated', {
-        gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize },
+        gridInfo: { cols: finalCols, rows: finalRows, gridSize: result.gridSize },
         hasGridLines: result.hasGridLines || false
       });
     },
@@ -624,22 +691,29 @@ Component({
       }
 
       this.cachedGridDataSnapshot = this.deepCloneGridData(result.gridData, result.rows, result.cols);
+      this.cachedOriginalGridData = this.deepCloneGridData(result.gridData, result.rows, result.cols);  // 保存原始未裁剪数据
       this.replaceSpecialColors(result.gridData, result.rows, result.cols);
       this.reapplyVibrantScale(result.gridData, result.rows, result.cols);
 
-      const stats = this.calculateStats(result.gridData, result.rows, result.cols);
+      // 应用网格预设（截取/填充）
+      const presetResult = this._applyGridPreset(result.gridData, result.cols, result.rows);
+      const finalGridData = presetResult.gridData;
+      const finalCols = presetResult.cols;
+      const finalRows = presetResult.rows;
+
+      const stats = this.calculateStats(finalGridData, finalRows, finalCols);
       this.setData({
-        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
+        gridInfo: { cols: finalCols, rows: finalRows, gridSize: qualityGridSize },
         isProcessing: false
       });
       wx.hideLoading();
       this.triggerEvent('statsUpdate', { stats });
 
-      this.cachedGridData = result.gridData;
-      this.cachedGridInfo = { cols: result.cols, rows: result.rows, gridSize: qualityGridSize };
+      this.cachedGridData = finalGridData;
+      this.cachedGridInfo = { cols: finalCols, rows: finalRows, gridSize: qualityGridSize };
 
       setTimeout(() => {
-        this.renderToCanvas(result.gridData, result.cols, result.rows, qualityGridSize);
+        this.renderToCanvas(finalGridData, finalCols, finalRows, qualityGridSize);
       }, 100);
 
       this.triggerEvent('mosaicGenerated', {
@@ -944,8 +1018,8 @@ Component({
           for (let row = startRow; row <= endRow; row++) {
             for (let col = startCol; col <= endCol; col++) {
               const cell = gridData[row] && gridData[row][col];
-              // 根据 removeEdge 设置决定是否跳过边缘单元格
-              if (!cell || !cell.markCode || (shouldRemoveEdge && cell.isEdge)) continue;
+              // 跳过无效单元格（空白格子也要渲染）
+              if (!cell || (shouldRemoveEdge && cell.isEdge)) continue;
 
               const cellWidth = cellSize;
               const cellHeight = cellSize;
@@ -958,18 +1032,22 @@ Component({
                 x = actualCanvasWidth - x - cellWidth;
               }
 
-              // 绘制色块（根据 removeEdge 设置决定是否绘制边缘）
-              ctx.fillStyle = cell.markHex;
+              // 空白格子使用浅灰色
+              if (cell.isEmpty) {
+                ctx.fillStyle = '#F0F0F0';
+              } else {
+                ctx.fillStyle = cell.markHex;
+              }
               ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(cellWidth), Math.ceil(cellHeight));
 
               // 绘制格子边框
-              ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+              ctx.strokeStyle = cell.isEmpty ? 'rgba(0, 0, 0, 0.05)' : 'rgba(0, 0, 0, 0.1)';
               ctx.lineWidth = 1;
               ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
 
-              // 绘制色号（根据 removeEdge 设置决定是否绘制边缘色号）
+              // 绘制色号（空白格子不绘制）
               const size = Math.min(cellWidth, cellHeight);
-              if (that.data.showCode && that.data.hasUserZoomed && size >= 8 && (!shouldRemoveEdge || !cell.isEdge)) {
+              if (!cell.isEmpty && that.data.showCode && that.data.hasUserZoomed && size >= 8 && (!shouldRemoveEdge || !cell.isEdge)) {
             const isLight = that.isLightColor(cell.markHex);
                 ctx.fillStyle = isLight ? '#333333' : '#ffffff';
                 ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
@@ -1881,6 +1959,58 @@ Component({
           this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
         }
       });
+    },
+
+    // ========== 网格预设：截取/填充 ==========
+    _applyGridPreset(gridData, cols, rows) {
+      const preset = this.data.gridPreset;
+      const presetIndex = preset[0];
+      const targetCols = preset[1];
+      const targetRows = preset[2];
+
+      // 原图比例：不处理
+      if (presetIndex === 0 || targetCols === 0 || targetRows === 0) {
+        return { gridData, cols, rows };
+      }
+
+      // 从中心截取/填充
+      const startCol = Math.max(0, Math.floor((cols - targetCols) / 2));
+      const startRow = Math.max(0, Math.floor((rows - targetRows) / 2));
+      const endCol = Math.min(cols, startCol + targetCols);
+      const endRow = Math.min(rows, startRow + targetRows);
+
+      const newCols = targetCols;
+      const newRows = targetRows;
+      const newGridData = [];
+
+      for (let r = 0; r < newRows; r++) {
+        newGridData[r] = [];
+        for (let c = 0; c < newCols; c++) {
+          const srcR = startRow + r;
+          const srcC = startCol + c;
+          if (srcR >= 0 && srcR < rows && srcC >= 0 && srcC < cols && gridData[srcR] && gridData[srcR][srcC]) {
+            // 复制原始色块数据
+            newGridData[r][c] = { ...gridData[srcR][srcC] };
+          } else {
+            // 空白填充
+            newGridData[r][c] = {
+              x: c * (gridData[0] && gridData[0][0] ? gridData[0][0].width || 10 : 10),
+              y: r * (gridData[0] && gridData[0][0] ? gridData[0][0].height || 10 : 10),
+              width: gridData[0] && gridData[0][0] ? gridData[0][0].width || 10 : 10,
+              height: gridData[0] && gridData[0][0] ? gridData[0][0].height || 10 : 10,
+              rawRgb: { r: 240, g: 240, b: 240 },
+              originalRgb: { r: 240, g: 240, b: 240 },
+              originalMarkCode: '',
+              markCode: '',
+              markHex: '#F0F0F0',
+              markRgb: { r: 240, g: 240, b: 240 },
+              isEmpty: true
+            };
+          }
+        }
+      }
+
+      return { gridData: newGridData, cols: newCols, rows: newRows };
     }
   }
 });
