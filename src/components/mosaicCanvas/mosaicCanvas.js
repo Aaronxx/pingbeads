@@ -53,10 +53,7 @@ Component({
   // 智能模式下的色段数据
   cachedSegments: null,
 
-  // 原始 gridData 快照（用于鲜艳度恢复），深拷贝，永远不修改原数据
-  cachedGridDataSnapshot: null,
-
-  // Canvas 渲染相关
+  // 原始 gridData（用于网格预设切换和颜色恢复）
   canvasCtx: null,
   canvasNode: null,
 
@@ -90,6 +87,8 @@ Component({
         this.cachedGridInfo = null;
         this.cachedSegments = null;
       }
+      // 清理失效的缓存，避免内存溢出
+      this.cachedOriginalGridData = null;
 
       if (this.cachedPixelData && this.cachedWidth > 0) {
         wx.showLoading({ title: '正在处理图片...', mask: true });
@@ -414,7 +413,7 @@ Component({
 
     // 从快照恢复原始颜色数据（仅恢复数据，不做特殊色处理）
     resetToOriginalColors(gridData, rows, cols) {
-      const snapshot = this.cachedGridDataSnapshot;
+      const snapshot = this.cachedOriginalGridData;
       if (!snapshot) return;
 
       for (let row = 0; row < rows; row++) {
@@ -611,7 +610,7 @@ Component({
         console.log('[_finishMosaicResult] ⚠️ 所有格子都被标记为边缘，内容为空！');
       }
 
-      this.cachedGridDataSnapshot = this.deepCloneGridData(gridData, result.rows, result.cols);
+      this.cachedOriginalGridData = this.deepCloneGridData(gridData, result.rows, result.cols);  // 保存原始未裁剪数据
       this.replaceSpecialColors(gridData, result.rows, result.cols);
       this.reapplyVibrantScale(gridData, result.rows, result.cols);
 
@@ -690,7 +689,6 @@ Component({
         // ignore
       }
 
-      this.cachedGridDataSnapshot = this.deepCloneGridData(result.gridData, result.rows, result.cols);
       this.cachedOriginalGridData = this.deepCloneGridData(result.gridData, result.rows, result.cols);  // 保存原始未裁剪数据
       this.replaceSpecialColors(result.gridData, result.rows, result.cols);
       this.reapplyVibrantScale(result.gridData, result.rows, result.cols);
@@ -734,10 +732,12 @@ Component({
     },
 
     processImage(imagePath) {
-      
-      
-      
-      
+      // 清理旧缓存，避免内存溢出
+      this.cachedPixelData = null;
+      this.cachedGridData = null;
+      this.cachedGridInfo = null;
+      this.cachedOriginalGridData = null;
+      this.cachedSegments = null;
 
       this.setData({ isProcessing: true });
 

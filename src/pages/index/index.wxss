@@ -568,12 +568,6 @@
   font-weight: 600;
 }
 
-.preset-actual-size {
-  font-size: 20rpx;
-  color: #9ca3af;
-  margin: 0 8rpx;
-}
-
 .preset-arrow {
   font-size: 18rpx;
   color: #9ca3af;
