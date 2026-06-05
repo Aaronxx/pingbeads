@@ -10,14 +10,9 @@
  *   4. 中位数取色 → 抗 JPG 伪影
  */
 
-const { fastFindClosestMarkColor, isSpecialColor, getAlternativeColor } = require('./colorMapper');
+const { fastFindClosestMarkColor } = require('./colorMapper');
 
 // ========== 工具函数 ==========
-
-function colorDistSq(c1, c2) {
-  const dr = c1.r - c2.r, dg = c1.g - c2.g, db = c1.b - c2.b;
-  return dr * dr + dg * dg + db * db;
-}
 
 /** 快速中位数 */
 function fastMedian(arr) {
@@ -102,6 +97,7 @@ function findMedian(arr) {
  * 扫描单条线，找颜色变化点，然后聚类成分界线
  * @param {Uint8ClampedArray} data - 像素数据
  * @param {number} width - 图像宽度
+ * @param {number} height - 图像高度
  * @param {string} direction - 'horizontal' 或 'vertical'
  * @param {number} pos - 扫描线位置（水平线的y或垂直线的x）
  * @param {number} colorDistThreshold - 颜色距离阈值，默认 30
@@ -196,7 +192,6 @@ function inferCellSize(allLines, minSize = 5, maxSize = 60) {
   const lineThickness = findMode(allLines.flatMap(g => g.map(l => l.width)));
 
   // 置信度：间距的集中度
-  const medianGap = findMedian(gaps);
   let inRange = 0;
   for (const g of gaps) {
     if (Math.abs(g - cellSize) <= 2) inRange++;
@@ -274,19 +269,15 @@ class MosaicProcessor {
     // ===== 步骤1: 多线扫描找分界线 =====
     const scanCount = Math.min(31, Math.max(15, Math.floor(Math.min(width, height) / 30)));
 
-    const hScanPositions = [];
-    const vScanPositions = [];
     const hLines = [];
     const vLines = [];
 
     for (let i = 0; i < scanCount; i++) {
       const y = Math.floor(height * i / (scanCount - 1));
-      hScanPositions.push(y);
       const lines = scanLineForGridLines(pixelData, width, height, 'horizontal', y, colorDistThreshold, clusterGap);
       if (lines.length > 2) hLines.push(lines);
 
       const x = Math.floor(width * i / (scanCount - 1));
-      vScanPositions.push(x);
       const vline = scanLineForGridLines(pixelData, width, height, 'vertical', x, colorDistThreshold, clusterGap);
       if (vline.length > 2) vLines.push(vline);
     }
@@ -309,7 +300,6 @@ class MosaicProcessor {
         sampleCount++;
       }
     }
-    const extremeRatio = sampleCount > 0 ? Math.max(darkPixelCount, lightPixelCount) / sampleCount : 0;
 
     let cellSize, lineThickness, hasGridLines, confidence;
 
@@ -367,9 +357,6 @@ class MosaicProcessor {
     }
 
     if (!hasGridLines) {
-      // 无分界线模式：使用检测到的cellSize（如果有），否则用fallbackGridSize
-      lineThickness = 0;
-      confidence = 0;
       return this._processNoGridLines(pixelData, width, height, cellSize, minCellArea);
     }
 
@@ -388,7 +375,7 @@ class MosaicProcessor {
 
     if (hLineRatio < minLineRatio || vLineRatio < minLineRatio) {
       // 网格线数量不足，但cellSize已检测到，用检测到的cellSize做均匀切割
-      return this._processNoGridLines(pixelData, width, height, cellSize, minCellArea);
+      return this._processNoGridLines(pixelData, width, height, cellSize);
     }
 
     // 推断分界线颜色（用于识别哪些像素属于分界线）
@@ -404,7 +391,7 @@ class MosaicProcessor {
 
     if (cols === 0 || rows === 0) {
       // 网格构建失败，回退
-      return this._processNoGridLines(pixelData, width, height, cellSize, minCellArea);
+      return this._processNoGridLines(pixelData, width, height, cellSize);
     }
 
     // ===== 步骤5: 提取每个色块的颜色 =====
@@ -595,7 +582,6 @@ class MosaicProcessor {
     const colorDistThreshold = 30;
     // 扫描多行找垂直边界
     const scanRowCount = Math.min(9, Math.max(3, Math.floor(height / 30)));
-    const scanColCount = Math.min(9, Math.max(3, Math.floor(width / 30)));
 
     // 对每个变化点直接计算 offset 并投票
     const offsetVotes = new Array(gridSize).fill(0);
@@ -633,7 +619,7 @@ class MosaicProcessor {
   /**
    * 无分界线模式：固定网格 + 平均取色（恢复 7ec2bc4 逻辑）
    */
-  _processNoGridLines(pixelData, width, height, gridSize, minCellArea) {
+  _processNoGridLines(pixelData, width, height, gridSize) {
     const cols = Math.ceil(width / gridSize);
     const rows = Math.ceil(height / gridSize);
     const segments = [];
