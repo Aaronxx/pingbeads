@@ -7,7 +7,7 @@
  * 3. 边缘检测与裁剪
  */
 
-const { fastFindClosestMarkColor, isSpecialColor } = require('../utils/colorMapper');
+const { fastFindClosestMarkColor } = require('../utils/colorMapper');
 const { MosaicProcessor } = require('./mosaicProcessor');
 
 /**
@@ -253,13 +253,6 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
   while (centers.length < targetCount && centers.length < uniqueColors.length) {
     centers.push({ ...uniqueColors[centers.length].rgb });
   }
-
-  
-
-  // 3. 简化距离计算：使用曼哈顿距离（比欧氏距离快）
-  const fastDistance = (c1, c2) => {
-    return Math.abs(c1.r - c2.r) + Math.abs(c1.g - c2.g) + Math.abs(c1.b - c2.b);
-  };
 
   // 4. 减少迭代次数
   const maxIterations = 5;
@@ -1287,7 +1280,7 @@ function processWithSmartRegions(pixelData, width, height, gridSize) {
   }
 
   // 自动检测色块大小和有效范围
-  const { primarySize, hasGridLines, validRange } = autoDetectBlockSize(pixelData, width, height);
+  const { primarySize, hasGridLines } = autoDetectBlockSize(pixelData, width, height);
   const actualGridSize = primarySize || gridSize; // 使用检测值或回退到预设值
 
 
@@ -1680,14 +1673,13 @@ function processMosaicV2(pixelData, width, height, options = {}) {
     const detected = autoDetectBlockSize(pixelData, width, height);
     if (detected.primarySize) {
       // 用检测到的 gridSize 重新处理
-      const reprocessed = processor.process(pixelData, width, height, {
+      return processor.process(pixelData, width, height, {
         fallbackGridSize: detected.primarySize,
         forceGridSize: options.forceGridSize || null,
         colorDistThreshold: options.mergeThreshold || 30,
         clusterGap: 5,
         minCellArea: options.minCellArea || 4
       });
-      return reprocessed;
     }
   }
 
