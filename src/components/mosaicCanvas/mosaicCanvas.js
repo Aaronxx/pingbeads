@@ -197,28 +197,6 @@ Component({
       };
       tryApply();
     },
-    'vibrantScale': function() {
-      // 鲜艳度变化时，不清空缓存，直接重新应用鲜艳度
-      const tryApply = () => {
-        if (this.cachedGridData && this.cachedGridInfo) {
-          this.setData({ isProcessing: true });
-          const gridData = this.cachedGridData;
-          const { rows, cols, gridSize } = this.cachedGridInfo;
-          this.reapplyVibrantScale(gridData, rows, cols);
-          // 重新计算统计
-          const stats = this.calculateStats(gridData, rows, cols);
-          this.setData({
-            gridInfo: { cols, rows, gridSize },
-            isProcessing: false
-          });
-          this.triggerEvent('statsUpdate', { stats: stats });
-          this.renderToCanvas(gridData, cols, rows, gridSize);
-        } else {
-          setTimeout(tryApply, 100);
-        }
-      };
-      tryApply();
-    },
     'scale': function() {
       // 程序重置时不要自动设置 hasUserZoomed
       if (this._isResetting) return;
@@ -574,7 +552,27 @@ Component({
         gridData: this.cachedGridData
       };
     },
-    
+
+    // 辅助方法：应用颜色处理和网格预设，返回裁剪后的数据
+    // 用于 _finishMosaicResult 和 _finishSimpleResult 中减少重复代码
+    _applyColorAndPreset(gridData, rows, cols, gridSize) {
+      // 保存原始未裁剪数据（用于网格预设切换和颜色恢复）
+      this.cachedOriginalGridData = this.deepCloneGridData(gridData, rows, cols);
+
+      // 应用特殊色和鲜艳度处理
+      this.replaceSpecialColors(gridData, rows, cols);
+      this.reapplyVibrantScale(gridData, rows, cols);
+
+      // 应用网格预设（截取/填充）
+      const presetResult = this._applyGridPreset(gridData, cols, rows);
+
+      // 更新缓存
+      this.cachedGridData = presetResult.gridData;
+      this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
+
+      return presetResult;
+    },
+
     _finishMosaicResult(result, qualityGridSize, srcWidth, srcHeight) {
       const edgeDetection = detectEdgeColorFromSegments(result.segments, result.cols, result.rows, 30);
       if (edgeDetection && edgeDetection.hasEdge) {
@@ -610,20 +608,14 @@ Component({
         console.log('[_finishMosaicResult] ⚠️ 所有格子都被标记为边缘，内容为空！');
       }
 
-      this.cachedOriginalGridData = this.deepCloneGridData(gridData, result.rows, result.cols);  // 保存原始未裁剪数据
-      this.replaceSpecialColors(gridData, result.rows, result.cols);
-      this.reapplyVibrantScale(gridData, result.rows, result.cols);
-
-      // 应用网格预设（截取/填充）
-      const presetResult = this._applyGridPreset(gridData, result.cols, result.rows);
+      // 应用颜色处理和网格预设（使用辅助方法）
+      const presetResult = this._applyColorAndPreset(gridData, result.rows, result.cols, result.gridSize);
       const finalGridData = presetResult.gridData;
       const finalCols = presetResult.cols;
       const finalRows = presetResult.rows;
 
+      // 保存马赛克模式特有的缓存
       this.cachedSegments = result.segments;
-      this.cachedOriginalGridData = gridData;  // 保存原始未裁剪数据
-      this.cachedGridData = finalGridData;
-      this.cachedGridInfo = { cols: finalCols, rows: finalRows, gridSize: result.gridSize };
       this.cachedSegmentsWidth = srcWidth;
       this.cachedSegmentsHeight = srcHeight;
       this.cachedSegmentsGridSize = qualityGridSize;
@@ -689,12 +681,8 @@ Component({
         // ignore
       }
 
-      this.cachedOriginalGridData = this.deepCloneGridData(result.gridData, result.rows, result.cols);  // 保存原始未裁剪数据
-      this.replaceSpecialColors(result.gridData, result.rows, result.cols);
-      this.reapplyVibrantScale(result.gridData, result.rows, result.cols);
-
-      // 应用网格预设（截取/填充）
-      const presetResult = this._applyGridPreset(result.gridData, result.cols, result.rows);
+      // 应用颜色处理和网格预设（使用辅助方法）
+      const presetResult = this._applyColorAndPreset(result.gridData, result.rows, result.cols, qualityGridSize);
       const finalGridData = presetResult.gridData;
       const finalCols = presetResult.cols;
       const finalRows = presetResult.rows;
@@ -707,15 +695,12 @@ Component({
       wx.hideLoading();
       this.triggerEvent('statsUpdate', { stats });
 
-      this.cachedGridData = finalGridData;
-      this.cachedGridInfo = { cols: finalCols, rows: finalRows, gridSize: qualityGridSize };
-
       setTimeout(() => {
         this.renderToCanvas(finalGridData, finalCols, finalRows, qualityGridSize);
       }, 100);
 
       this.triggerEvent('mosaicGenerated', {
-        gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
+        gridInfo: { cols: finalCols, rows: finalRows, gridSize: qualityGridSize },
         hasGridLines: false
       });
     },
@@ -1976,8 +1961,6 @@ Component({
       // 从中心截取/填充
       const startCol = Math.max(0, Math.floor((cols - targetCols) / 2));
       const startRow = Math.max(0, Math.floor((rows - targetRows) / 2));
-      const endCol = Math.min(cols, startCol + targetCols);
-      const endRow = Math.min(rows, startRow + targetRows);
 
       const newCols = targetCols;
       const newRows = targetRows;
