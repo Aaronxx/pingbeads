@@ -980,11 +980,15 @@ Component({
             }
           }
 
-          // 绘制参考线（只绘制可见区域内的）
-          that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
+          // 绘制参考线（用户缩放后且实际色块>=8px时才显示）
+          if (that.data.hasUserZoomed && cellSize >= 8) {
+            that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
+          }
 
-          // 绘制大区水印（只绘制可见区域内的）
-          that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
+          // 绘制大区水印（用户缩放后且实际色块>=8px时才显示）
+          if (that.data.hasUserZoomed && cellSize >= 8) {
+            that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
+          }
 
           // 渲染完成，释放节流标志
           that.isRendering = false;
@@ -1274,11 +1278,12 @@ Component({
             const startRow = Math.max(0, Math.floor((visibleTop - offsetY) / cellSize));
             const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - offsetY) / cellSize));
 
-            // 绘制参考线
-            that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
+            // 绘制参考线和大区编号（用户缩放后且实际色块>=8px时才显示）
+            if (that.data.hasUserZoomed && gridSize * scale >= 8) {
+              that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
 
-            // 绘制大区编号
-            that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
+              that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
+            }
           }
 
           // 渲染完成
