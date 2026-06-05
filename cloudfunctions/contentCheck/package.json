@@ -1,5 +1,5 @@
 {
-  "name": "contentCheck",
+  "name": "content-check",
   "version": "1.0.0",
   "description": "内容安全校验云函数",
   "main": "index.js",

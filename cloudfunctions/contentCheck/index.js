@@ -4,7 +4,7 @@ cloud.init({
   env: cloud.DYNAMIC_CURRENT_ENV
 });
 
-exports.main = async (event, context) => {
+exports.main = async (event, _context) => {
   const { contentType, value } = event;
 
   try {

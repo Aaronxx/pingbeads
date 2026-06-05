@@ -76,6 +76,12 @@ Component({
       // 防止重复处理
       if (this.data.isProcessing) return;
 
+      // 防止处理完成后 gridInfo 更新再次触发 observer
+      // 如果参数与上次处理的相同，不需要重新处理
+      const key = `${this.data.gridSize}_${this.data.mergeThreshold}_${this.data.previewQuality}_${this.data.processMode}`;
+      if (this._lastProcessedKey === key) return;
+      this._lastProcessedKey = key;
+
       // 这些参数变化时需要完全重新生成
       if (this.data.processMode === 'mosaic') {
         this.cachedGridData = null;
@@ -84,6 +90,7 @@ Component({
       }
 
       if (this.cachedPixelData && this.cachedWidth > 0) {
+        wx.showLoading({ title: '正在处理图片...', mask: true });
         this.setData({ isProcessing: true }, () => {
           setTimeout(() => {
             this.regenerateFromCache();
@@ -154,6 +161,8 @@ Component({
       tryApply();
     },
     'scale': function() {
+      // 程序重置时不要自动设置 hasUserZoomed
+      if (this._isResetting) return;
       // 用户进行了缩放，标记状态
       if (!this.data.hasUserZoomed) {
         this.setData({ hasUserZoomed: true });
@@ -178,11 +187,14 @@ Component({
   methods: {
     // 重置预览状态（缩放、平移）
     resetPreviewState() {
+      this._isResetting = true;
       this.setData({
         scale: 1,
         offsetX: 0,
         offsetY: 0,
         hasUserZoomed: false
+      }, () => {
+        this._isResetting = false;
       });
     },
 
@@ -555,6 +567,7 @@ Component({
         gridInfo: { cols: result.cols, rows: result.rows, gridSize: result.gridSize },
         isProcessing: false
       });
+      wx.hideLoading();
       this.triggerEvent('statsUpdate', { stats });
 
       setTimeout(() => {
@@ -619,6 +632,7 @@ Component({
         gridInfo: { cols: result.cols, rows: result.rows, gridSize: qualityGridSize },
         isProcessing: false
       });
+      wx.hideLoading();
       this.triggerEvent('statsUpdate', { stats });
 
       this.cachedGridData = result.gridData;

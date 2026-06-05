@@ -19,9 +19,10 @@
   </view>
 
   <!-- 处理中提示 -->
-  <view wx:if="{{isProcessing}}" class="processing-tip">
-    <text>正在处理图片...</text>
-  </view>
+  <cover-view wx:if="{{isProcessing}}" class="processing-tip">
+    <cover-view class="spinner"></cover-view>
+    <cover-text>正在处理图片...</cover-text>
+  </cover-view>
 
   <!-- 空状态提示 -->
   <view wx:elif="{{!imagePath}}" class="empty-tip">

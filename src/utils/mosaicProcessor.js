@@ -266,7 +266,7 @@ class MosaicProcessor {
       return { segments: [], segmentCount: 0, cols: 1, rows: 1, gridSize: 1, hasGridLines: false, width: width || 0, height: height || 0 };
     }
 
-    // 强制网格大小：跳过扫描线检测，直接均匀切割
+  // 强制网格大小：跳过扫描线检测，直接均匀切割
     if (forceGridSize && forceGridSize > 0) {
       return this._processNoGridLines(pixelData, width, height, forceGridSize, minCellArea);
     }
@@ -295,7 +295,6 @@ class MosaicProcessor {
     // ===== 步骤2: 推断色块大小 =====
     const hInference = inferCellSize(hLines, 5, 80);
     const vInference = inferCellSize(vLines, 5, 80);
-
 
     // ===== 步骤2b: 黑白像素占比检测（参考 7ec2bc4 的 extremeRatio 检测） =====
     let darkPixelCount = 0, lightPixelCount = 0, sampleCount = 0;
@@ -368,10 +367,9 @@ class MosaicProcessor {
     }
 
     if (!hasGridLines) {
-      cellSize = fallbackGridSize;
+      // 无分界线模式：使用检测到的cellSize（如果有），否则用fallbackGridSize
       lineThickness = 0;
       confidence = 0;
-      // 无分界线模式：使用固定网格 + 中位数取色
       return this._processNoGridLines(pixelData, width, height, cellSize, minCellArea);
     }
 
