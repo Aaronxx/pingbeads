@@ -18,7 +18,7 @@ Page({
     // 网格大小
     gridSize: 10,
     // 色彩阈值
-    mergeThreshold: 15,
+    mergeThreshold: 50,
     // 处理模式: 'cartoon' | 'mosaic' - cartoon=卡通(普通模式), mosaic=马赛克(智能模式)
     processMode: 'cartoon',
     // 预览质量: 1=低(快速), 2=中, 3=高(精细)
@@ -467,7 +467,9 @@ Page({
     this.setData({
       // 豆豆数、色彩
       gridOptionIndex: 2,
+      gridSize: 10,  // gridOptions[2].value = 10
       thresholdOptionIndex: 6,
+      mergeThreshold: 50,  // thresholdOptions[6].value = 50
       // 自定义网格（默认为当前豆豆数，限制在滑块范围内）
       useCustomGridSize: false,
       customGridSize: Math.min(50, Math.max(3, this.data.gridSize)),
