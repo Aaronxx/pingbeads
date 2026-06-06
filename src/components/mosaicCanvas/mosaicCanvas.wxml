@@ -2,18 +2,19 @@
 <view
   class="mosaic-wrapper"
   style="width: {{canvasWidth}}px; height: {{canvasHeight}}px;"
+  catchtouchmove="preventBubbling"
 >
   <!-- 隐藏的 canvas 用于获取像素数据 -->
   <canvas type="2d" id="pixel-canvas" style="width: 1px; height: 1px; position: absolute; opacity: 0;" />
 
   <!-- 使用 Canvas 渲染马赛克（解决 DOM 数量限制） -->
-  <view class="canvas-container" style="width: {{canvasWidth}}px; height: {{canvasHeight}}px; transform: translate({{offsetX}}px, {{offsetY}}px) scale({{scale}});">
+  <view class="canvas-container" style="width: {{canvasWidth}}px; height: {{canvasHeight}}px; transform: translate({{offsetX}}px, {{offsetY}}px) scale({{scale}});" catchtouchmove="preventBubbling">
     <canvas
       type="2d"
       id="mosaic-render-canvas"
       style="width: 100%; height: 100%;"
       bindtouchstart="handleTouchStart"
-      bindtouchmove="handleTouchMove"
+      catchtouchmove="handleTouchMove"
       bindtouchend="handleTouchEnd"
     />
   </view>

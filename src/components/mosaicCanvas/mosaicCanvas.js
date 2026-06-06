@@ -1857,37 +1857,60 @@ Component({
 
     handleTouchStart(e) {
       if (e.touches.length === 2) {
-        // 双指触摸，记录初始距离和缩放
+        // 双指触摸，记录初始距离、缩放和中心点
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         this.initialTouchDistance = Math.hypot(dx, dy);
         this.initialScale = this.data.scale;
+        // 记录双指中心点（用于缩放时的偏移调整）
+        this.initialCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        this.initialCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        this.initialOffsetX = this.data.offsetX;
+        this.initialOffsetY = this.data.offsetY;
         // 双指时结束拖动状态
         this.setData({ isDragging: false });
       } else if (e.touches.length === 1) {
-        // 开始拖动状态，阻止渲染
-        this.setData({ isDragging: true });
-        // 记录触摸位置，不重置偏移量，避免画面跳动
-        this.setData({ lastTouch: e.touches[0], isNewTouch: false });
+        // 开始拖动状态
+        this.setData({ isDragging: true, lastTouch: e.touches[0] });
       }
     },
 
     handleTouchMove(e) {
-      // 拖动时不受 isRendering 节流影响，确保实时更新偏移
+      // 拖动时不受 isRendering 节流影响
       if (!this.data.isDragging && this.isRendering) {
         return;
       }
 
       if (e.touches.length === 2) {
-        // 双指缩放
+        // 双指缩放（以手指中心点为基准）
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         const currentDistance = Math.hypot(dx, dy);
 
+        // 当前双指中心点
+        const currentCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const currentCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+
         if (this.initialTouchDistance > 0) {
-          const scaleFactor = currentDistance / this.initialTouchDistance;
-          const newScale = Math.max(0.5, Math.min(20, this.initialScale * scaleFactor));
-          this.setData({ scale: newScale });
+          // 使用平方根曲线，让缩放更温和
+          const scaleFactor = Math.sqrt(currentDistance / this.initialTouchDistance);
+          const newScale = Math.max(1.0, Math.min(20, this.initialScale * scaleFactor));
+
+          // 根据中心点变化调整偏移，保持缩放中心稳定
+          const scaleDelta = newScale / this.initialScale;
+          const canvasWidth = this.data.canvasWidth;
+          const canvasHeight = this.data.canvasHeight;
+
+          // 计算新的偏移量，使中心点相对于画布的位置保持不变
+          let newOffsetX = this.initialOffsetX * scaleDelta + (currentCenterX - this.initialCenterX);
+          let newOffsetY = this.initialOffsetY * scaleDelta + (currentCenterY - this.initialCenterY);
+
+          // 计算合理的偏移边界
+          const maxOffset = Math.max(2000, canvasWidth * newScale);
+          newOffsetX = Math.max(-maxOffset, Math.min(maxOffset, newOffsetX));
+          newOffsetY = Math.max(-maxOffset, Math.min(maxOffset, newOffsetY));
+
+          this.setData({ scale: newScale, offsetX: newOffsetX, offsetY: newOffsetY });
         }
       } else if (e.touches.length === 1 && this.data.lastTouch) {
         const current = e.touches[0];
@@ -1895,23 +1918,18 @@ Component({
         const deltaX = current.clientX - last.clientX;
         const deltaY = current.clientY - last.clientY;
 
-        // 放大后启用平移（任意scale都可以拖动）
-        if (this.data.scale > 1.0) {
-          // 限制偏移量范围，防止内存溢出
-          const maxOffset = 2000;
+        // 任何缩放级别都可以拖动（scale >= 1.0）
+        if (this.data.scale >= 1.0) {
+          const canvasWidth = this.data.canvasWidth;
+          const canvasHeight = this.data.canvasHeight;
+          const maxOffset = Math.max(2000, canvasWidth * this.data.scale);
+
           let newOffsetX = this.data.offsetX + deltaX;
           let newOffsetY = this.data.offsetY + deltaY;
           newOffsetX = Math.max(-maxOffset, Math.min(maxOffset, newOffsetX));
           newOffsetY = Math.max(-maxOffset, Math.min(maxOffset, newOffsetY));
 
           this.setData({ offsetX: newOffsetX, offsetY: newOffsetY, lastTouch: current });
-        } else {
-          // 小缩放时上下滑动调整缩放
-          let newScale = this.data.scale;
-          if (Math.abs(deltaY) > Math.abs(deltaX)) {
-            newScale = Math.max(0.5, Math.min(20, newScale + deltaY * 0.003));
-          }
-          this.setData({ scale: newScale, lastTouch: current });
         }
       }
     },
@@ -1919,16 +1937,22 @@ Component({
     handleTouchEnd(e) {
       if (e.touches.length === 0) {
         // 结束拖动状态，触发渲染
-        this.setData({ lastTouch: null, isNewTouch: true, isDragging: false });
+        this.setData({ lastTouch: null, isDragging: false });
         this.initialTouchDistance = 0;
+        this.initialCenterX = 0;
+        this.initialCenterY = 0;
 
-        // 拖动结束后渲染可见区域
-        // 使用 cachedGridData 渲染
+        // 拖动结束后渲染
         if (this.cachedGridData && this.cachedGridInfo) {
           const { cols, rows, gridSize } = this.cachedGridInfo;
           this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
         }
       }
+    },
+
+    // 阻止触摸事件冒泡（防止页面滚动）
+    preventBubbling(e) {
+      // 仅阻止事件冒泡，不做其他处理
     },
 
     // 延迟渲染，使用 requestAnimationFrame
