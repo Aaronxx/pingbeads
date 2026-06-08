@@ -27,6 +27,11 @@ exports.main = async (event, _context) => {
     }
   } catch (err) {
     console.error('调用内容安全接口失败:', err);
-    return { code: -1, msg: '内容安全检测接口调用失败', detail: err.errMsg || err.message };
+    const errMsg = err.errMsg || err.message || '';
+    // 微信内容安全API检测到违规内容时会抛出异常，错误信息包含 "risky content"
+    if (errMsg.includes('risky content')) {
+      return { code: 87014, msg: '内容违规' };
+    }
+    return { code: -1, msg: '内容安全检测接口调用失败', detail: errMsg };
   }
 };

@@ -41,7 +41,6 @@ Component({
 
     checkImageContent(filePath) {
       if (!wx.cloud || !wx.cloud.callFunction) {
-        console.warn('[contentCheck] 云开发不可用，跳过内容检测');
         this.finishCheck();
         return;
       }

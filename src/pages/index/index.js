@@ -231,6 +231,11 @@ Page({
 
   // 马赛克处理完成回调
   onMosaicGenerated(e) {
+    // 检查图片是否已被清除（内容审核失败）
+    if (!this.data.imagePath) {
+      return;
+    }
+
     const { gridInfo } = e.detail;
     const actualCols = gridInfo.cols;
     const actualRows = gridInfo.rows;
