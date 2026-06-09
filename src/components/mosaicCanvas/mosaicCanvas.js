@@ -636,6 +636,9 @@ Component({
         gridInfo: { cols: finalCols, rows: finalRows, gridSize: result.gridSize },
         hasGridLines: result.hasGridLines || false
       });
+
+      // 处理完成后，低端设备释放像素缓存以节省内存
+      this._maybeReleasePixelData();
     },
 
     _finishSimpleResult(result, qualityGridSize) {
@@ -703,6 +706,26 @@ Component({
         gridInfo: { cols: finalCols, rows: finalRows, gridSize: qualityGridSize },
         hasGridLines: false
       });
+
+      // 处理完成后，低端设备释放像素缓存以节省内存
+      this._maybeReleasePixelData();
+    },
+
+    // 低端设备释放 cachedPixelData，节省约 8MB 内存
+    // 释放后参数变化时会从磁盘重新读取图片（processImage 已处理该回退路径）
+    _maybeReleasePixelData() {
+      if (!this.cachedPixelData) return;
+
+      const sysInfo = wx.getSystemInfoSync();
+      const benchmarkLevel = sysInfo.benchmarkLevel || 10;
+
+      // 仅在低端设备释放（benchmarkLevel < 50）
+      // 中高端设备保留像素缓存，参数变化时可快速重新处理
+      if (benchmarkLevel < 50) {
+        const sizeMB = (this.cachedPixelData.length / 1024 / 1024).toFixed(1);
+        console.log(`[mosaicCanvas] 低端设备释放像素缓存 (${sizeMB}MB)`);
+        this.cachedPixelData = null;
+      }
     },
 
     getQualityGridSize(quality) {
