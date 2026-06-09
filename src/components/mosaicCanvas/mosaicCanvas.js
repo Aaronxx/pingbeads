@@ -81,6 +81,18 @@ Component({
       if (this._lastProcessedKey === key) return;
       this._lastProcessedKey = key;
 
+      // 防抖：参数快速连续变化时（如滑块拖动），只在停止变化 150ms 后处理
+      if (this._paramDebounceTimer) {
+        clearTimeout(this._paramDebounceTimer);
+      }
+      this._paramDebounceTimer = setTimeout(() => {
+        this._paramDebounceTimer = null;
+        this._doReprocess();
+      }, 150);
+    },
+
+    // 执行实际的重新处理（由防抖 timer 调用）
+    _doReprocess() {
       // 这些参数变化时需要完全重新生成
       if (this.data.processMode === 'mosaic') {
         this.cachedGridData = null;
@@ -103,67 +115,50 @@ Component({
     },
     'useSpecialColors': function() {
       // 特殊色开关变化时，从快照恢复并重新应用鲜艳度处理
-      const tryApply = () => {
-        if (this.cachedGridData && this.cachedGridInfo) {
-          const { rows, cols, gridSize } = this.cachedGridInfo;
-          this.resetToOriginalColors(this.cachedGridData, rows, cols);
-          this.reapplyVibrantScale(this.cachedGridData, rows, cols);
-          const stats = this.calculateStats(this.cachedGridData, rows, cols);
-          this.triggerEvent('statsUpdate', { stats: stats });
-          this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
-        } else {
-          setTimeout(tryApply, 100);
-        }
-      };
-      tryApply();
+      this._waitForData((rows, cols, gridSize) => {
+        this.resetToOriginalColors(this.cachedGridData, rows, cols);
+        this.reapplyVibrantScale(this.cachedGridData, rows, cols);
+        const stats = this.calculateStats(this.cachedGridData, rows, cols);
+        this.triggerEvent('statsUpdate', { stats: stats });
+        this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+      });
     },
     'removeEdge': function() {
       // 去边缘开关变化时，不需要重新生成 gridData，只重新渲染
-      const tryApply = () => {
-        if (this.cachedGridData && this.cachedGridInfo) {
-          this.renderToCanvas(this.cachedGridData, this.cachedGridInfo.cols, this.cachedGridInfo.rows, this.cachedGridInfo.gridSize);
-        } else {
-          setTimeout(tryApply, 100);
-        }
-      };
-      tryApply();
+      this._waitForData((rows, cols, gridSize) => {
+        this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+      });
     },
     'mirrorImage': function() {
       // 镜像开关变化时，只需要重新渲染
-      const tryApply = () => {
-        if (this.cachedGridData && this.cachedGridInfo) {
-          this.renderToCanvas(this.cachedGridData, this.cachedGridInfo.cols, this.cachedGridInfo.rows, this.cachedGridInfo.gridSize);
-        } else {
-          setTimeout(tryApply, 100);
-        }
-      };
-      tryApply();
+      this._waitForData((rows, cols, gridSize) => {
+        this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+      });
     },
     'vibrantScale': function() {
       // 鲜艳度变化时，不清空缓存，直接重新应用鲜艳度
-      const tryApply = () => {
-        if (this.cachedGridData && this.cachedGridInfo) {
-          this.setData({ isProcessing: true });
-          const { rows, cols, gridSize } = this.cachedGridInfo;
-          this.resetToOriginalColors(this.cachedGridData, rows, cols);
-          this.reapplyVibrantScale(this.cachedGridData, rows, cols);
-          const stats = this.calculateStats(this.cachedGridData, rows, cols);
-          this.triggerEvent('statsUpdate', { stats: stats });
-          this.setData({ isProcessing: false });
-          this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
-        } else {
-          setTimeout(tryApply, 100);
-        }
-      };
-      tryApply();
+      this._waitForData((rows, cols, gridSize) => {
+        this.setData({ isProcessing: true });
+        this.resetToOriginalColors(this.cachedGridData, rows, cols);
+        this.reapplyVibrantScale(this.cachedGridData, rows, cols);
+        const stats = this.calculateStats(this.cachedGridData, rows, cols);
+        this.triggerEvent('statsUpdate', { stats: stats });
+        this.setData({ isProcessing: false });
+        this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+      });
     },
     'gridPreset': function(newVal, oldVal) {
       // 网格预设变化时，使用原始缓存数据重新裁剪
       if (oldVal && oldVal[0] === newVal[0]) return; // 索引没变，不需要处理
 
-      const tryApply = () => {
+      // 等待 cachedOriginalGridData 就绪（最多 1 秒）
+      const waitForOriginal = (retryCount) => {
+        if (retryCount > 10) {
+          console.warn('[mosaicCanvas] gridPreset: 等待 cachedOriginalGridData 超时');
+          return;
+        }
         if (!this.cachedOriginalGridData) {
-          setTimeout(tryApply, 100);
+          setTimeout(() => waitForOriginal(retryCount + 1), 100);
           return;
         }
 
@@ -195,7 +190,7 @@ Component({
         this.resetPreviewState();
         this.renderToCanvas(this.cachedGridData, this.cachedGridInfo.cols, this.cachedGridInfo.rows, gridSize);
       };
-      tryApply();
+      waitForOriginal(0);
     },
     'scale': function() {
       // 程序重置时不要自动设置 hasUserZoomed
@@ -222,6 +217,24 @@ Component({
   },
 
   methods: {
+    // 等待 cachedGridData 就绪后执行回调（替代无限 setTimeout 轮询）
+    // 最多重试 10 次（共 1 秒），超时后放弃
+    _waitForData(callback, retryCount) {
+      retryCount = retryCount || 0;
+      if (this.cachedGridData && this.cachedGridInfo) {
+        const { rows, cols, gridSize } = this.cachedGridInfo;
+        callback.call(this, rows, cols, gridSize);
+        return;
+      }
+      if (retryCount >= 10) {
+        console.warn('[mosaicCanvas] _waitForData: 等待数据就绪超时');
+        return;
+      }
+      setTimeout(() => {
+        this._waitForData(callback, retryCount + 1);
+      }, 100);
+    },
+
     // 重置预览状态（缩放、平移）
     resetPreviewState() {
       this._isResetting = true;
