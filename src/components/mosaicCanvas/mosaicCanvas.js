@@ -1870,8 +1870,9 @@ Component({
         // 双指时结束拖动状态
         this.setData({ isDragging: false });
       } else if (e.touches.length === 1) {
-        // 开始拖动状态
-        this.setData({ isDragging: true, lastTouch: e.touches[0] });
+        // 开始拖动状态 — lastTouch 存入实例属性，不经过 setData
+        this.setData({ isDragging: true });
+        this._lastTouch = e.touches[0];
       }
     },
 
@@ -1880,6 +1881,9 @@ Component({
       if (!this.data.isDragging && this.isRendering) {
         return;
       }
+
+      // 计算新的偏移/缩放值（纯计算，不做 setData）
+      let hasUpdate = false;
 
       if (e.touches.length === 2) {
         // 双指缩放（以手指中心点为基准）
@@ -1910,13 +1914,20 @@ Component({
           newOffsetX = Math.max(-maxOffset, Math.min(maxOffset, newOffsetX));
           newOffsetY = Math.max(-maxOffset, Math.min(maxOffset, newOffsetY));
 
-          this.setData({ scale: newScale, offsetX: newOffsetX, offsetY: newOffsetY });
+          // 缓存到实例属性，延迟 setData
+          this._pendingScale = newScale;
+          this._pendingOffsetX = newOffsetX;
+          this._pendingOffsetY = newOffsetY;
+          hasUpdate = true;
         }
-      } else if (e.touches.length === 1 && this.data.lastTouch) {
+      } else if (e.touches.length === 1 && this._lastTouch) {
         const current = e.touches[0];
-        const last = this.data.lastTouch;
+        const last = this._lastTouch;
         const deltaX = current.clientX - last.clientX;
         const deltaY = current.clientY - last.clientY;
+
+        // 更新 lastTouch（实例属性，不触发 setData）
+        this._lastTouch = current;
 
         // 任何缩放级别都可以拖动（scale >= 1.0）
         if (this.data.scale >= 1.0) {
@@ -1929,15 +1940,56 @@ Component({
           newOffsetX = Math.max(-maxOffset, Math.min(maxOffset, newOffsetX));
           newOffsetY = Math.max(-maxOffset, Math.min(maxOffset, newOffsetY));
 
-          this.setData({ offsetX: newOffsetX, offsetY: newOffsetY, lastTouch: current });
+          this._pendingOffsetX = newOffsetX;
+          this._pendingOffsetY = newOffsetY;
+          this._pendingScale = this.data.scale;
+          hasUpdate = true;
         }
+      }
+
+      // 节流 setData：每帧最多一次（~16ms），减少序列化/IPC 开销
+      if (hasUpdate && !this._touchSetDataTimer) {
+        this._touchSetDataTimer = setTimeout(() => {
+          this._touchSetDataTimer = null;
+          if (this._pendingOffsetX !== undefined) {
+            const update = {
+              offsetX: this._pendingOffsetX,
+              offsetY: this._pendingOffsetY
+            };
+            if (this._pendingScale !== undefined) {
+              update.scale = this._pendingScale;
+            }
+            this.setData(update);
+          }
+        }, 16);
       }
     },
 
     handleTouchEnd(e) {
       if (e.touches.length === 0) {
-        // 结束拖动状态，触发渲染
-        this.setData({ lastTouch: null, isDragging: false });
+        // 清除节流定时器
+        if (this._touchSetDataTimer) {
+          clearTimeout(this._touchSetDataTimer);
+          this._touchSetDataTimer = null;
+        }
+
+        // 最终一次性同步所有状态到 data（触发 observer 和 canvas 渲染）
+        const finalUpdate = { isDragging: false };
+        if (this._pendingOffsetX !== undefined) {
+          finalUpdate.offsetX = this._pendingOffsetX;
+          finalUpdate.offsetY = this._pendingOffsetY;
+        }
+        if (this._pendingScale !== undefined) {
+          finalUpdate.scale = this._pendingScale;
+        }
+        this.setData(finalUpdate);
+
+        // 清除 pending 状态
+        this._pendingOffsetX = undefined;
+        this._pendingOffsetY = undefined;
+        this._pendingScale = undefined;
+        this._lastTouch = null;
+
         this.initialTouchDistance = 0;
         this.initialCenterX = 0;
         this.initialCenterY = 0;
