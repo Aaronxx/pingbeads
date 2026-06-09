@@ -705,12 +705,21 @@ Page({
     const statsHeight = statsItemHeight * statsRowCount + 20;
 
     // 增大分辨率：导出时使用更大的格子
-    // 动态计算放大倍数，限制最大导出尺寸在 4096 像素内（微信 Canvas 2D 上限）
-    const maxExportDimension = 4096;
+    // 根据设备性能动态设置导出最大尺寸，高端设备可获得更高清的导出图
+    const sysInfo = wx.getSystemInfoSync();
+    const benchmarkLevel = sysInfo.benchmarkLevel || 10;
+    let maxExportDimension;
+    if (benchmarkLevel >= 200) {
+      maxExportDimension = 8192;   // 高端设备：支持更高清导出
+    } else if (benchmarkLevel >= 100) {
+      maxExportDimension = 4096;   // 中端设备
+    } else {
+      maxExportDimension = 4096;   // 低端设备：保持 4096 保证稳定性
+    }
     const baseWidth = cols * gridSize + 40; // 加上左侧标尺
     const baseHeight = rows * gridSize + 30 + statsHeight; // 加上顶部标尺和统计行
 
-    // 计算合适的放大倍数，确保最长边不超过 4096，且最小为 1 倍
+    // 计算合适的放大倍数，确保最长边不超过上限，且最小为 1 倍
     const scaleX = maxExportDimension / baseWidth;
     const scaleY = maxExportDimension / baseHeight;
     const exportScale = Math.max(1, Math.min(scaleX, scaleY));
