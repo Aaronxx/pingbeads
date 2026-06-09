@@ -1,0 +1,404 @@
+{
+  "version": "1.0",
+  "skills": [
+    {
+      "name": "bead_mosaic_generator",
+      "description": "将图片转换为 MARD 品牌拼豆色彩马赛克图纸，支持 291 种标准色号精确映射。用于生成拼豆图纸、查询颜色统计、导出采购清单。",
+      "trigger_examples": [
+        "帮我把这张图转成拼豆图纸",
+        "生成拼豆马赛克",
+        "我想做拼豆，帮我转一下",
+        "需要哪些颜色的拼豆",
+        "给我采购清单",
+        "导出 CSV 材料表",
+        "格子太大了，调小一点",
+        "颜色太多了，帮我合并一下"
+      ],
+      "atomic_interfaces": [
+        {
+          "name": "generateBeadMosaic",
+          "description": "生成拼豆马赛克图纸。将图片转换为 MARD 色号的马赛克网格，返回图纸数据和颜色统计。",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "imageUrl": {
+                "type": "string",
+                "description": "图片的临时路径（wx.chooseImage 或 wx.cloud.uploadFile 返回的 tempFilePath）"
+              },
+              "processMode": {
+                "type": "string",
+                "enum": ["cartoon", "mosaic"],
+                "default": "cartoon",
+                "description": "处理模式。cartoon=卡通模式（适合插画、卡通图），mosaic=马赛克模式（适合照片）。默认 cartoon"
+              },
+              "gridSize": {
+                "type": "integer",
+                "minimum": 5,
+                "maximum": 50,
+                "default": 10,
+                "description": "网格大小（像素）。数值越小格子越多越精细。5=超级多，8=多，10=中等，15=少一点，20=再少一点，30=比较少，50=超级少。默认 10"
+              },
+              "mergeThreshold": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 291,
+                "default": 50,
+                "description": "颜色合并阈值。0=不合并（保留所有细节），50=中等合并，291=最大合并（颜色种类最少）。数值越大颜色种类越少。默认 50"
+              },
+              "removeEdge": {
+                "type": "boolean",
+                "default": true,
+                "description": "是否去除图片边缘底色。如果图片有纯色背景边框，设为 true 可去除。默认 true"
+              },
+              "useSpecialColors": {
+                "type": "boolean",
+                "default": false,
+                "description": "是否使用特殊色系列（P/Q/R/T/ZG 色号）。这些颜色较难购买，默认不使用。默认 false"
+              },
+              "mirrorImage": {
+                "type": "boolean",
+                "default": false,
+                "description": "是否镜像翻转图纸。默认 false"
+              },
+              "vibrantScale": {
+                "type": "integer",
+                "minimum": -10,
+                "maximum": 10,
+                "default": 0,
+                "description": "鲜艳度增强。-10=最柔和，0=原色，10=最鲜艳。默认 0"
+              }
+            },
+            "required": ["imageUrl"]
+          },
+          "returns": {
+            "type": "object",
+            "properties": {
+              "success": {
+                "type": "boolean",
+                "description": "是否成功"
+              },
+              "data": {
+                "type": "object",
+                "description": "图纸数据（成功时返回）",
+                "properties": {
+                  "mosaicId": {
+                    "type": "string",
+                    "description": "图纸唯一标识，用于后续查询统计和导出"
+                  },
+                  "cols": {
+                    "type": "integer",
+                    "description": "图纸列数"
+                  },
+                  "rows": {
+                    "type": "integer",
+                    "description": "图纸行数"
+                  },
+                  "totalCells": {
+                    "type": "integer",
+                    "description": "总格子数（cols × rows）"
+                  },
+                  "colorCount": {
+                    "type": "integer",
+                    "description": "使用的颜色种类数"
+                  },
+                  "processMode": {
+                    "type": "string",
+                    "description": "实际使用的处理模式"
+                  },
+                  "gridSize": {
+                    "type": "integer",
+                    "description": "实际使用的网格大小"
+                  },
+                  "mergeThreshold": {
+                    "type": "integer",
+                    "description": "实际使用的合并阈值"
+                  },
+                  "colorStats": {
+                    "type": "array",
+                    "description": "颜色统计（按数量降序）",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "MARD 色号（如 A01、B12）"
+                        },
+                        "hex": {
+                          "type": "string",
+                          "description": "颜色的十六进制值（如 #FAF4C8）"
+                        },
+                        "count": {
+                          "type": "integer",
+                          "description": "该色号使用的格子数量"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "message": {
+                "type": "string",
+                "description": "错误信息（失败时返回）"
+              }
+            }
+          }
+        },
+        {
+          "name": "getColorStats",
+          "description": "获取已生成图纸的颜色统计信息。返回各色号的使用数量和排序。",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "mosaicId": {
+                "type": "string",
+                "description": "图纸唯一标识（由 generateBeadMosaic 返回）"
+              },
+              "sortBy": {
+                "type": "string",
+                "enum": ["count", "code"],
+                "default": "count",
+                "description": "排序方式。count=按数量降序，code=按色号字母顺序。默认 count"
+              }
+            },
+            "required": ["mosaicId"]
+          },
+          "returns": {
+            "type": "object",
+            "properties": {
+              "success": {
+                "type": "boolean"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "mosaicId": {
+                    "type": "string"
+                  },
+                  "totalCells": {
+                    "type": "integer",
+                    "description": "总格子数"
+                  },
+                  "colorCount": {
+                    "type": "integer",
+                    "description": "颜色种类数"
+                  },
+                  "colorStats": {
+                    "type": "array",
+                    "description": "颜色统计列表",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "MARD 色号"
+                        },
+                        "hex": {
+                          "type": "string",
+                          "description": "十六进制颜色"
+                        },
+                        "count": {
+                          "type": "integer",
+                          "description": "使用数量"
+                        },
+                        "percentage": {
+                          "type": "number",
+                          "description": "占比（0-100）"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "name": "getPurchaseList",
+          "description": "导出拼豆采购清单。返回 CSV 格式文本，可直接复制或使用。",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "mosaicId": {
+                "type": "string",
+                "description": "图纸唯一标识（由 generateBeadMosaic 返回）"
+              },
+              "format": {
+                "type": "string",
+                "enum": ["csv", "text"],
+                "default": "csv",
+                "description": "输出格式。csv=CSV 格式（可导入 Excel），text=纯文本格式。默认 csv"
+              }
+            },
+            "required": ["mosaicId"]
+          },
+          "returns": {
+            "type": "object",
+            "properties": {
+              "success": {
+                "type": "boolean"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "description": "采购清单内容（CSV 或纯文本）"
+                  },
+                  "format": {
+                    "type": "string",
+                    "description": "实际输出格式"
+                  },
+                  "totalColors": {
+                    "type": "integer",
+                    "description": "颜色种类数"
+                  },
+                  "totalQuantity": {
+                    "type": "integer",
+                    "description": "总数量（格子数）"
+                  }
+                }
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "name": "exportMosaicPNG",
+          "description": "导出图纸为 PNG 图片。返回图片临时路径，可用于保存或分享。",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "mosaicId": {
+                "type": "string",
+                "description": "图纸唯一标识（由 generateBeadMosaic 返回）"
+              },
+              "includeStats": {
+                "type": "boolean",
+                "default": true,
+                "description": "是否在图片底部包含颜色统计。默认 true"
+              },
+              "showCode": {
+                "type": "boolean",
+                "default": true,
+                "description": "是否在每个格子上显示色号。默认 true"
+              }
+            },
+            "required": ["mosaicId"]
+          },
+          "returns": {
+            "type": "object",
+            "properties": {
+              "success": {
+                "type": "boolean"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "tempFilePath": {
+                    "type": "string",
+                    "description": "导出的 PNG 图片临时路径"
+                  },
+                  "width": {
+                    "type": "integer",
+                    "description": "图片宽度（像素）"
+                  },
+                  "height": {
+                    "type": "integer",
+                    "description": "图片高度（像素）"
+                  }
+                }
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ],
+      "atomic_components": [
+        {
+          "name": "MosaicPreviewCard",
+          "description": "拼豆图纸预览卡片。展示马赛克图纸缩略图和基本信息。",
+          "props": {
+            "mosaicId": {
+              "type": "string",
+              "required": true
+            },
+            "cols": {
+              "type": "integer"
+            },
+            "rows": {
+              "type": "integer"
+            },
+            "colorCount": {
+              "type": "integer"
+            },
+            "thumbnailUrl": {
+              "type": "string",
+              "description": "图纸缩略图 URL"
+            }
+          },
+          "layout": "horizontal",
+          "style": "card"
+        },
+        {
+          "name": "ColorStatsList",
+          "description": "颜色统计列表。展示各色号及其使用数量。",
+          "props": {
+            "colorStats": {
+              "type": "array",
+              "required": true,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "hex": {
+                    "type": "string"
+                  },
+                  "count": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            "sortBy": {
+              "type": "string",
+              "enum": ["count", "code"]
+            }
+          },
+          "layout": "vertical",
+          "style": "list"
+        },
+        {
+          "name": "PurchaseListCard",
+          "description": "采购清单卡片。展示 CSV 内容并提供复制按钮。",
+          "props": {
+            "content": {
+              "type": "string",
+              "required": true,
+              "description": "CSV 或纯文本内容"
+            },
+            "format": {
+              "type": "string"
+            },
+            "totalColors": {
+              "type": "integer"
+            },
+            "totalQuantity": {
+              "type": "integer"
+            }
+          },
+          "layout": "vertical",
+          "style": "card"
+        }
+      ]
+    }
+  ]
+}
