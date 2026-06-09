@@ -675,7 +675,9 @@ function detectEdgeColorFromGrid(gridData, rows, cols, gridSize, threshold = 50)
           const cell = gridData[scanRow] && gridData[scanRow][scanCol];
           if (cell && cell.originalRgb) {
             const color = cell.originalRgb;
-            const key = `${color.r},${color.g},${color.b}`;
+            // 颜色量化到8的倍数，合并JPG压缩导致的相近颜色（如254,255,255和255,255,255）
+            const quantize = (v) => Math.min(255, Math.round(v / 8) * 8);
+            const key = `${quantize(color.r)},${quantize(color.g)},${quantize(color.b)}`;
             colorCounts[key] = (colorCounts[key] || 0) + 1;
             total++;
           }
@@ -762,7 +764,9 @@ function detectEdgeColorFromSegments(segments, cols, rows, threshold = 50) {
 
       if (isEdge && seg.avgColor) {
         const color = seg.avgColor;
-        const key = `${Math.round(color.r / 8) * 8},${Math.round(color.g / 8) * 8},${Math.round(color.b / 8) * 8}`;
+        // 颜色量化到8的倍数，合并JPG压缩导致的相近颜色
+        const quantize = (v) => Math.min(255, Math.round(v / 8) * 8);
+        const key = `${quantize(color.r)},${quantize(color.g)},${quantize(color.b)}`;
         colorCounts[key] = (colorCounts[key] || 0) + 1;
         total++;
       }
