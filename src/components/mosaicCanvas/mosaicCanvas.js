@@ -875,187 +875,189 @@ Component({
 
     // 渲染马赛克到 Canvas
     renderToCanvas(gridData, cols, rows, gridSize) {
-      const that = this;
       this.isRendering = true;
 
-      // 使用组件实例的 createSelectorQuery
+      // 优先复用已缓存的 canvas 节点，避免每次都 createSelectorQuery（异步 IPC）
+      if (this.canvasNode && this.canvasCtx) {
+        this._doRenderToCanvas(gridData, cols, rows, gridSize);
+        return;
+      }
+
+      // 首次或 canvas 失效时查询节点
+      this._queryCanvasNode(() => {
+        this._doRenderToCanvas(gridData, cols, rows, gridSize);
+      });
+    },
+
+    // 查询 canvas 节点并缓存
+    _queryCanvasNode(callback) {
+      const that = this;
       const query = this.createSelectorQuery();
       query.select('#mosaic-render-canvas')
         .fields({ node: true, size: true })
         .exec((res) => {
-          if (!res[0]) {
-            
-            // 重试
+          if (!res[0] || !res[0].node) {
+            // canvas 尚未就绪，延迟重试
             setTimeout(() => {
-              that.renderToCanvas(gridData, cols, rows, gridSize);
+              that._queryCanvasNode(callback);
             }, 200);
             return;
           }
-          if (!res[0].node) {
-            
-            // 重试
-            setTimeout(() => {
-              that.renderToCanvas(gridData, cols, rows, gridSize);
-            }, 200);
-            return;
-          }
-          
-          const canvas = res[0].node;
-          const ctx = canvas.getContext('2d');
-          
-          // 使用组件 data 中的尺寸，因为这是根据图片实际计算出来的
-          // 忽略查询返回的尺寸，因为它可能受 CSS 影响
-          let canvasWidth = that.data.canvasWidth || 300;
-          let canvasHeight = that.data.canvasHeight || 300;
 
-          // 使用 Canvas 极限尺寸 4096，保持最高分辨率
-          const MAX_CANVAS_SIZE = 4096;
-          canvasWidth = Math.min(canvasWidth, MAX_CANVAS_SIZE);
-          canvasHeight = Math.min(canvasHeight, MAX_CANVAS_SIZE);
-
-          // 如果 data 中的尺寸太小，使用查询到的尺寸（但不超极限）
-          if (res[0].width > canvasWidth || res[0].height > canvasHeight) {
-            canvasWidth = Math.min(res[0].width, MAX_CANVAS_SIZE);
-            canvasHeight = Math.min(res[0].height, MAX_CANVAS_SIZE);
-          }
-          
-          
-          
-          
-          // 设置 canvas 尺寸 - 应用用户缩放比例以保持高分辨率
-          const userScale = that.data.scale || 1;
-          // 限制 Canvas 最大尺寸为 16384（微信小程序限制）
-          const MAX_CANVAS_DIMENSION = 16384;
-          let scaledWidth = canvasWidth * userScale;
-          let scaledHeight = canvasHeight * userScale;
-          // 如果缩放后超出限制，则缩小比例
-          if (scaledWidth > MAX_CANVAS_DIMENSION || scaledHeight > MAX_CANVAS_DIMENSION) {
-            const scaleRatio = MAX_CANVAS_DIMENSION / Math.max(scaledWidth, scaledHeight);
-            scaledWidth *= scaleRatio;
-            scaledHeight *= scaleRatio;
-          }
-          canvas.width = Math.floor(scaledWidth);
-          canvas.height = Math.floor(scaledHeight);
-
-          
-          
-          // 存储引用
-          that.canvasNode = canvas;
-          that.canvasCtx = ctx;
-          
-          // 清空画布 - 使用浅灰色背景（使用实际Canvas尺寸）
-          ctx.fillStyle = '#f0f0f0';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          
-          // 计算缩放以适应 Canvas
-          const totalGridWidth = cols * gridSize;
-          const totalGridHeight = rows * gridSize;
-          
-          
-          
-          // 计算缩放比例，让整个马赛克适应 Canvas
-          const scaleX = totalGridWidth > 0 ? canvasWidth / totalGridWidth : 1;
-          const scaleY = totalGridHeight > 0 ? canvasHeight / totalGridHeight : 1;
-          const baseScale = Math.min(scaleX, scaleY, 1);
-
-          // 叠加用户的缩放比例（已经在上面定义了userScale）
-          const scale = baseScale * userScale;
-          
-          
-          
-          // 居中偏移 - 使用实际的 Canvas 尺寸
-          const actualCanvasWidth = canvas.width;
-          const actualCanvasHeight = canvas.height;
-          const baseOffsetX = (actualCanvasWidth - totalGridWidth * scale) / 2;
-          const baseOffsetY = (actualCanvasHeight - totalGridHeight * scale) / 2;
-          // 加上用户的拖动偏移
-          const offsetX = baseOffsetX + (this.data.offsetX || 0);
-          const offsetY = baseOffsetY + (this.data.offsetY || 0);
-
-          
-          
-          
-          
-          // 计算可见区域（只渲染可见的格子）
-          const cellSize = gridSize * scale;
-          const buffer = cellSize;
-          const visibleLeft = -buffer;
-          const visibleRight = actualCanvasWidth + buffer;
-          const visibleTop = -buffer;
-          const visibleBottom = actualCanvasHeight + buffer;
-
-          // 计算可见的行列范围（镜像时需用镜像后的坐标反推原始列号）
-          let startCol, endCol;
-          if (that.data.mirrorImage) {
-            // 镜像后 cell 左边缘 = actualCanvasWidth - offsetX - (col+1)*cellSize
-            // 可见条件：左边缘 < visibleRight 且 右边缘 > visibleLeft
-            startCol = Math.max(0, Math.ceil((actualCanvasWidth - offsetX - visibleRight - cellSize) / cellSize));
-            endCol = Math.min(cols - 1, Math.floor((actualCanvasWidth - offsetX - visibleLeft) / cellSize));
-          } else {
-            startCol = Math.max(0, Math.floor((visibleLeft - offsetX) / cellSize));
-            endCol = Math.min(cols - 1, Math.ceil((visibleRight - offsetX) / cellSize));
-          }
-          const startRow = Math.max(0, Math.floor((visibleTop - offsetY) / cellSize));
-          const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - offsetY) / cellSize));
-
-          // 绘制可见区域的格子
-          const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
-          for (let row = startRow; row <= endRow; row++) {
-            for (let col = startCol; col <= endCol; col++) {
-              const cell = gridData[row] && gridData[row][col];
-              // 跳过无效单元格（空白格子也要渲染）
-              if (!cell || (shouldRemoveEdge && cell.isEdge)) continue;
-
-              const cellWidth = cellSize;
-              const cellHeight = cellSize;
-
-              let x = offsetX + col * cellSize;
-              const y = offsetY + row * cellSize;
-
-              // 应用镜像变换
-              if (that.data.mirrorImage) {
-                x = actualCanvasWidth - x - cellWidth;
-              }
-
-              // 空白格子使用浅灰色
-              if (cell.isEmpty) {
-                ctx.fillStyle = '#F0F0F0';
-              } else {
-                ctx.fillStyle = cell.markHex;
-              }
-              ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(cellWidth), Math.ceil(cellHeight));
-
-              // 绘制格子边框
-              ctx.strokeStyle = cell.isEmpty ? 'rgba(0, 0, 0, 0.05)' : 'rgba(0, 0, 0, 0.1)';
-              ctx.lineWidth = 1;
-              ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
-
-              // 绘制色号（空白格子不绘制）
-              const size = Math.min(cellWidth, cellHeight);
-              if (!cell.isEmpty && that.data.showCode && that.data.hasUserZoomed && size >= 8 && (!shouldRemoveEdge || !cell.isEdge)) {
-            const isLight = that.isLightColor(cell.markHex);
-                ctx.fillStyle = isLight ? '#333333' : '#ffffff';
-                ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-            ctx.fillText(that.formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
-              }
-            }
-          }
-
-          // 绘制参考线（用户缩放后且实际色块>=8px时才显示）
-          if (that.data.hasUserZoomed && cellSize >= 8) {
-            that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
-          }
-
-          // 绘制大区水印（用户缩放后且实际色块>=8px时才显示）
-          if (that.data.hasUserZoomed && cellSize >= 8) {
-            that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
-          }
-
-          // 渲染完成，释放节流标志
-          that.isRendering = false;
+          that.canvasNode = res[0].node;
+          that.canvasCtx = res[0].node.getContext('2d');
+          that._queriedCanvasSize = { width: res[0].width, height: res[0].height };
+          callback();
         });
+    },
+
+    // 执行实际的 canvas 渲染逻辑
+    _doRenderToCanvas(gridData, cols, rows, gridSize) {
+      const that = this;
+      const canvas = this.canvasNode;
+      const ctx = this.canvasCtx;
+      if (!canvas || !ctx) {
+        // 极端情况：节点缓存失效，回退到重新查询
+        this.canvasNode = null;
+        this.canvasCtx = null;
+        this.renderToCanvas(gridData, cols, rows, gridSize);
+        return;
+      }
+
+      // 使用组件 data 中的尺寸，因为这是根据图片实际计算出来的
+      // 忽略查询返回的尺寸，因为它可能受 CSS 影响
+      let canvasWidth = that.data.canvasWidth || 300;
+      let canvasHeight = that.data.canvasHeight || 300;
+
+      // 使用 Canvas 极限尺寸 4096，保持最高分辨率
+      const MAX_CANVAS_SIZE = 4096;
+      canvasWidth = Math.min(canvasWidth, MAX_CANVAS_SIZE);
+      canvasHeight = Math.min(canvasHeight, MAX_CANVAS_SIZE);
+
+      // 如果 data 中的尺寸太小，使用查询到的尺寸（但不超极限）
+      const queriedSize = that._queriedCanvasSize;
+      if (queriedSize && (queriedSize.width > canvasWidth || queriedSize.height > canvasHeight)) {
+        canvasWidth = Math.min(queriedSize.width, MAX_CANVAS_SIZE);
+        canvasHeight = Math.min(queriedSize.height, MAX_CANVAS_SIZE);
+      }
+
+      // 设置 canvas 尺寸 - 应用用户缩放比例以保持高分辨率
+      const userScale = that.data.scale || 1;
+      // 限制 Canvas 最大尺寸为 16384（微信小程序限制）
+      const MAX_CANVAS_DIMENSION = 16384;
+      let scaledWidth = canvasWidth * userScale;
+      let scaledHeight = canvasHeight * userScale;
+      // 如果缩放后超出限制，则缩小比例
+      if (scaledWidth > MAX_CANVAS_DIMENSION || scaledHeight > MAX_CANVAS_DIMENSION) {
+        const scaleRatio = MAX_CANVAS_DIMENSION / Math.max(scaledWidth, scaledHeight);
+        scaledWidth *= scaleRatio;
+        scaledHeight *= scaleRatio;
+      }
+      canvas.width = Math.floor(scaledWidth);
+      canvas.height = Math.floor(scaledHeight);
+
+      // 清空画布 - 使用浅灰色背景
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // 计算缩放以适应 Canvas
+      const totalGridWidth = cols * gridSize;
+      const totalGridHeight = rows * gridSize;
+
+      // 计算缩放比例，让整个马赛克适应 Canvas
+      const scaleX = totalGridWidth > 0 ? canvasWidth / totalGridWidth : 1;
+      const scaleY = totalGridHeight > 0 ? canvasHeight / totalGridHeight : 1;
+      const baseScale = Math.min(scaleX, scaleY, 1);
+
+      // 叠加用户的缩放比例
+      const scale = baseScale * userScale;
+
+      // 居中偏移 - 使用实际的 Canvas 尺寸
+      const actualCanvasWidth = canvas.width;
+      const actualCanvasHeight = canvas.height;
+      const baseOffsetX = (actualCanvasWidth - totalGridWidth * scale) / 2;
+      const baseOffsetY = (actualCanvasHeight - totalGridHeight * scale) / 2;
+      // 加上用户的拖动偏移
+      const offsetX = baseOffsetX + (this.data.offsetX || 0);
+      const offsetY = baseOffsetY + (this.data.offsetY || 0);
+
+      // 计算可见区域（只渲染可见的格子）
+      const cellSize = gridSize * scale;
+      const buffer = cellSize;
+      const visibleLeft = -buffer;
+      const visibleRight = actualCanvasWidth + buffer;
+      const visibleTop = -buffer;
+      const visibleBottom = actualCanvasHeight + buffer;
+
+      // 计算可见的行列范围（镜像时需用镜像后的坐标反推原始列号）
+      let startCol, endCol;
+      if (that.data.mirrorImage) {
+        startCol = Math.max(0, Math.ceil((actualCanvasWidth - offsetX - visibleRight - cellSize) / cellSize));
+        endCol = Math.min(cols - 1, Math.floor((actualCanvasWidth - offsetX - visibleLeft) / cellSize));
+      } else {
+        startCol = Math.max(0, Math.floor((visibleLeft - offsetX) / cellSize));
+        endCol = Math.min(cols - 1, Math.ceil((visibleRight - offsetX) / cellSize));
+      }
+      const startRow = Math.max(0, Math.floor((visibleTop - offsetY) / cellSize));
+      const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - offsetY) / cellSize));
+
+      // 绘制可见区域的格子
+      const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
+      for (let row = startRow; row <= endRow; row++) {
+        for (let col = startCol; col <= endCol; col++) {
+          const cell = gridData[row] && gridData[row][col];
+          // 跳过无效单元格（空白格子也要渲染）
+          if (!cell || (shouldRemoveEdge && cell.isEdge)) continue;
+
+          const cellWidth = cellSize;
+          const cellHeight = cellSize;
+
+          let x = offsetX + col * cellSize;
+          const y = offsetY + row * cellSize;
+
+          // 应用镜像变换
+          if (that.data.mirrorImage) {
+            x = actualCanvasWidth - x - cellWidth;
+          }
+
+          // 空白格子使用浅灰色
+          if (cell.isEmpty) {
+            ctx.fillStyle = '#F0F0F0';
+          } else {
+            ctx.fillStyle = cell.markHex;
+          }
+          ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(cellWidth), Math.ceil(cellHeight));
+
+          // 绘制格子边框
+          ctx.strokeStyle = cell.isEmpty ? 'rgba(0, 0, 0, 0.05)' : 'rgba(0, 0, 0, 0.1)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
+
+          // 绘制色号（空白格子不绘制）
+          const size = Math.min(cellWidth, cellHeight);
+          if (!cell.isEmpty && that.data.showCode && that.data.hasUserZoomed && size >= 8 && (!shouldRemoveEdge || !cell.isEdge)) {
+            const isLight = that.isLightColor(cell.markHex);
+            ctx.fillStyle = isLight ? '#333333' : '#ffffff';
+            ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(that.formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
+          }
+        }
+      }
+
+      // 绘制参考线（用户缩放后且实际色块>=8px时才显示）
+      if (that.data.hasUserZoomed && cellSize >= 8) {
+        that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
+      }
+
+      // 绘制大区水印（用户缩放后且实际色块>=8px时才显示）
+      if (that.data.hasUserZoomed && cellSize >= 8) {
+        that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
+      }
+
+      // 渲染完成，释放节流标志
+      that.isRendering = false;
     },
 
     // 绘制参考线（只绘制可见区域内的）
@@ -1189,169 +1191,171 @@ Component({
 
     // 渲染智能模式的色段到 Canvas
     renderSegmentsToCanvas(segments, imageWidth, imageHeight) {
-      const that = this;
       this.isRendering = true;
 
-      // 使用组件实例的 createSelectorQuery
-      const query = this.createSelectorQuery();
-      query.select('#mosaic-render-canvas')
-        .fields({ node: true, size: true })
-        .exec((res) => {
-          if (!res[0] || !res[0].node) {
-            // 重试
-            setTimeout(() => {
-              that.renderSegmentsToCanvas(segments, imageWidth, imageHeight);
-            }, 200);
-            return;
+      // 优先复用已缓存的 canvas 节点
+      if (this.canvasNode && this.canvasCtx) {
+        this._doRenderSegmentsToCanvas(segments, imageWidth, imageHeight);
+        return;
+      }
+
+      // 首次或 canvas 失效时查询节点
+      this._queryCanvasNode(() => {
+        this._doRenderSegmentsToCanvas(segments, imageWidth, imageHeight);
+      });
+    },
+
+    // 执行色段的实际渲染
+    _doRenderSegmentsToCanvas(segments, imageWidth, imageHeight) {
+      const that = this;
+      const canvas = this.canvasNode;
+      const ctx = this.canvasCtx;
+      if (!canvas || !ctx) {
+        this.canvasNode = null;
+        this.canvasCtx = null;
+        this.renderSegmentsToCanvas(segments, imageWidth, imageHeight);
+        return;
+      }
+
+      // 使用组件 data 中的尺寸
+      let canvasWidth = that.data.canvasWidth || 300;
+      let canvasHeight = that.data.canvasHeight || 300;
+
+      // 使用 Canvas 极限尺寸 4096
+      const MAX_CANVAS_SIZE = 4096;
+      canvasWidth = Math.min(canvasWidth, MAX_CANVAS_SIZE);
+      canvasHeight = Math.min(canvasHeight, MAX_CANVAS_SIZE);
+
+      // 设置 canvas 尺寸
+      const userScale = that.data.scale || 1;
+      const MAX_CANVAS_DIMENSION = 16384;
+      let scaledWidth = canvasWidth * userScale;
+      let scaledHeight = canvasHeight * userScale;
+      if (scaledWidth > MAX_CANVAS_DIMENSION || scaledHeight > MAX_CANVAS_DIMENSION) {
+        const scaleRatio = MAX_CANVAS_DIMENSION / Math.max(scaledWidth, scaledHeight);
+        scaledWidth *= scaleRatio;
+        scaledHeight *= scaleRatio;
+      }
+      canvas.width = Math.floor(scaledWidth);
+      canvas.height = Math.floor(scaledHeight);
+
+      // 清空画布
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // 计算缩放比例，让整个图案适应 Canvas
+      const scaleX = imageWidth > 0 ? canvasWidth / imageWidth : 1;
+      const scaleY = imageHeight > 0 ? canvasHeight / imageHeight : 1;
+      const baseScale = Math.min(scaleX, scaleY, 1);
+      const scale = baseScale * userScale;
+
+      // 居中偏移
+      const actualCanvasWidth = canvas.width;
+      const actualCanvasHeight = canvas.height;
+      const totalSegmentWidth = imageWidth * scale;
+      const totalSegmentHeight = imageHeight * scale;
+      const baseOffsetX = (actualCanvasWidth - totalSegmentWidth) / 2;
+      const baseOffsetY = (actualCanvasHeight - totalSegmentHeight) / 2;
+      const offsetX = baseOffsetX + (this.data.offsetX || 0);
+      const offsetY = baseOffsetY + (this.data.offsetY || 0);
+
+      // 计算可见区域
+      const buffer = 50;
+      const visibleLeft = -buffer;
+      const visibleRight = actualCanvasWidth + buffer;
+      const visibleTop = -buffer;
+      const visibleBottom = actualCanvasHeight + buffer;
+
+      // 智能模式：计算网格信息（用于参考线和大区编号）
+      let gridSize = 10;
+      let maxCol = 0, maxRow = 0;
+      if (segments.length > 0) {
+        // 使用所有 segments 计算网格大小和行列数
+        let gridSizeW = 0, gridSizeH = 0;
+        let sizeCount = 0;
+        for (const seg of segments) {
+          if (seg.col !== undefined) {
+            maxCol = Math.max(maxCol, seg.col);
+            maxRow = Math.max(maxRow, seg.row);
           }
-
-          const canvas = res[0].node;
-          const ctx = canvas.getContext('2d');
-
-          // 使用组件 data 中的尺寸
-          let canvasWidth = that.data.canvasWidth || 300;
-          let canvasHeight = that.data.canvasHeight || 300;
-
-          // 使用 Canvas 极限尺寸 4096
-          const MAX_CANVAS_SIZE = 4096;
-          canvasWidth = Math.min(canvasWidth, MAX_CANVAS_SIZE);
-          canvasHeight = Math.min(canvasHeight, MAX_CANVAS_SIZE);
-
-          // 设置 canvas 尺寸
-          const userScale = that.data.scale || 1;
-          const MAX_CANVAS_DIMENSION = 16384;
-          let scaledWidth = canvasWidth * userScale;
-          let scaledHeight = canvasHeight * userScale;
-          if (scaledWidth > MAX_CANVAS_DIMENSION || scaledHeight > MAX_CANVAS_DIMENSION) {
-            const scaleRatio = MAX_CANVAS_DIMENSION / Math.max(scaledWidth, scaledHeight);
-            scaledWidth *= scaleRatio;
-            scaledHeight *= scaleRatio;
+          // 统计所有 segment 的尺寸来计算 gridSize
+          if (seg.width > 0 && seg.height > 0) {
+            gridSizeW += seg.width;
+            gridSizeH += seg.height;
+            sizeCount++;
           }
-          canvas.width = Math.floor(scaledWidth);
-          canvas.height = Math.floor(scaledHeight);
+        }
+        if (sizeCount > 0) {
+          gridSize = Math.round((gridSizeW / sizeCount + gridSizeH / sizeCount) / 2) || 10;
+        }
+      }
+      const cols = maxCol + 1;
+      const rows = maxRow + 1;
 
-          // 存储引用
-          that.canvasNode = canvas;
-          that.canvasCtx = ctx;
+      // 渲染色段（使用原始坐标，保持位置准确）
+      for (const segment of segments) {
+        // 直接使用 segment 的原始坐标和尺寸
+        const x = offsetX + segment.x * scale;
+        const y = offsetY + segment.y * scale;
+        const width = segment.width * scale;
+        const height = segment.height * scale;
 
-          // 清空画布
-          ctx.fillStyle = '#f0f0f0';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // 跳过不可见的区域
+        if (x + width < visibleLeft || x > visibleRight ||
+            y + height < visibleTop || y > visibleBottom) {
+          continue;
+        }
 
-          // 计算缩放比例，让整个图案适应 Canvas
-          const scaleX = imageWidth > 0 ? canvasWidth / imageWidth : 1;
-          const scaleY = imageHeight > 0 ? canvasHeight / imageHeight : 1;
-          const baseScale = Math.min(scaleX, scaleY, 1);
-          const scale = baseScale * userScale;
+        // 绘制色段（紧密排列，不留间隙）
+        // 根据 removeEdge 设置决定是否跳过边缘色段
+        const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
+        if (shouldRemoveEdge && segment.isEdge) continue;
 
-          // 居中偏移
-          const actualCanvasWidth = canvas.width;
-          const actualCanvasHeight = canvas.height;
-          const totalSegmentWidth = imageWidth * scale;
-          const totalSegmentHeight = imageHeight * scale;
-          const baseOffsetX = (actualCanvasWidth - totalSegmentWidth) / 2;
-          const baseOffsetY = (actualCanvasHeight - totalSegmentHeight) / 2;
-          const offsetX = baseOffsetX + (this.data.offsetX || 0);
-          const offsetY = baseOffsetY + (this.data.offsetY || 0);
+        ctx.fillStyle = segment.markHex || '#cccccc';
+        ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(width), Math.ceil(height));
 
-          // 计算可见区域
-          const buffer = 50;
-          const visibleLeft = -buffer;
-          const visibleRight = actualCanvasWidth + buffer;
-          const visibleTop = -buffer;
-          const visibleBottom = actualCanvasHeight + buffer;
+        // 绘制色段边框
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(width) - 1, Math.ceil(height) - 1);
 
-          // 智能模式：计算网格信息（用于参考线和大区编号）
-          let gridSize = 10;
-          let maxCol = 0, maxRow = 0;
-          if (segments.length > 0) {
-            // 使用所有 segments 计算网格大小和行列数
-            let gridSizeW = 0, gridSizeH = 0;
-            let sizeCount = 0;
-            for (const seg of segments) {
-              if (seg.col !== undefined) {
-                maxCol = Math.max(maxCol, seg.col);
-                maxRow = Math.max(maxRow, seg.row);
-              }
-              // 统计所有 segment 的尺寸来计算 gridSize
-              if (seg.width > 0 && seg.height > 0) {
-                gridSizeW += seg.width;
-                gridSizeH += seg.height;
-                sizeCount++;
-              }
-            }
-            if (sizeCount > 0) {
-              gridSize = Math.round((gridSizeW / sizeCount + gridSizeH / sizeCount) / 2) || 10;
-            }
-          }
-          const cols = maxCol + 1;
-          const rows = maxRow + 1;
+        // 绘制色号（根据 removeEdge 设置决定是否绘制边缘色号）- 使用实际的 cell 尺寸
+        const cellSize = Math.min(width, height);
+        if (that.data.showCode && that.data.hasUserZoomed && cellSize >= 8 && (!shouldRemoveEdge || !segment.isEdge)) {
+          const isLight = that.isLightColor(segment.markHex);
+          ctx.fillStyle = isLight ? '#333333' : '#ffffff';
+          ctx.font = `${Math.max(6, cellSize * 0.25)}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(that.formatMarkCode(segment.markCode), x + width / 2, y + height / 2);
+        }
+      }
 
-          // 渲染色段（使用原始坐标，保持位置准确）
-          for (const segment of segments) {
-            // 直接使用 segment 的原始坐标和尺寸
-            const x = offsetX + segment.x * scale;
-            const y = offsetY + segment.y * scale;
-            const width = segment.width * scale;
-            const height = segment.height * scale;
+      // 绘制参考线和大区编号
+      if (segments.length > 0) {
+        const cellSize = gridSize * scale;
+        // 计算可见的行列范围（镜像时需反推原始列号）
+        let startCol, endCol;
+        if (that.data.mirrorImage) {
+          startCol = Math.max(0, Math.ceil((actualCanvasWidth - offsetX - visibleRight - cellSize) / cellSize));
+          endCol = Math.min(cols - 1, Math.floor((actualCanvasWidth - offsetX - visibleLeft) / cellSize));
+        } else {
+          startCol = Math.max(0, Math.floor((visibleLeft - offsetX) / cellSize));
+          endCol = Math.min(cols - 1, Math.ceil((visibleRight - offsetX) / cellSize));
+        }
+        const startRow = Math.max(0, Math.floor((visibleTop - offsetY) / cellSize));
+        const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - offsetY) / cellSize));
 
-            // 跳过不可见的区域
-            if (x + width < visibleLeft || x > visibleRight ||
-                y + height < visibleTop || y > visibleBottom) {
-              continue;
-            }
+        // 绘制参考线和大区编号（用户缩放后且实际色块>=8px时才显示）
+        if (that.data.hasUserZoomed && gridSize * scale >= 8) {
+          that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
 
-            // 绘制色段（紧密排列，不留间隙）
-            // 根据 removeEdge 设置决定是否跳过边缘色段
-            const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
-            if (shouldRemoveEdge && segment.isEdge) continue;
+          that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
+        }
+      }
 
-            ctx.fillStyle = segment.markHex || '#cccccc';
-            ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(width), Math.ceil(height));
-
-            // 绘制色段边框
-            ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(width) - 1, Math.ceil(height) - 1);
-
-            // 绘制色号（根据 removeEdge 设置决定是否绘制边缘色号）- 使用实际的 cell 尺寸
-            const cellSize = Math.min(width, height);
-            if (that.data.showCode && that.data.hasUserZoomed && cellSize >= 8 && (!shouldRemoveEdge || !segment.isEdge)) {
-            const isLight = that.isLightColor(segment.markHex);
-              ctx.fillStyle = isLight ? '#333333' : '#ffffff';
-              ctx.font = `${Math.max(6, cellSize * 0.25)}px sans-serif`;
-              ctx.textAlign = 'center';
-              ctx.textBaseline = 'middle';
-            ctx.fillText(that.formatMarkCode(segment.markCode), x + width / 2, y + height / 2);
-            }
-          }
-
-          // 绘制参考线和大区编号
-          if (segments.length > 0) {
-            const cellSize = gridSize * scale;
-            // 计算可见的行列范围（镜像时需反推原始列号）
-            let startCol, endCol;
-            if (that.data.mirrorImage) {
-              startCol = Math.max(0, Math.ceil((actualCanvasWidth - offsetX - visibleRight - cellSize) / cellSize));
-              endCol = Math.min(cols - 1, Math.floor((actualCanvasWidth - offsetX - visibleLeft) / cellSize));
-            } else {
-              startCol = Math.max(0, Math.floor((visibleLeft - offsetX) / cellSize));
-              endCol = Math.min(cols - 1, Math.ceil((visibleRight - offsetX) / cellSize));
-            }
-            const startRow = Math.max(0, Math.floor((visibleTop - offsetY) / cellSize));
-            const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - offsetY) / cellSize));
-
-            // 绘制参考线和大区编号（用户缩放后且实际色块>=8px时才显示）
-            if (that.data.hasUserZoomed && gridSize * scale >= 8) {
-              that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
-
-              that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
-            }
-          }
-
-          // 渲染完成
-          that.isRendering = false;
-        });
+      // 渲染完成
+      that.isRendering = false;
     },
 
     // 获取可见区域范围
