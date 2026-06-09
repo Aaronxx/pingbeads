@@ -1,7 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "mcp__wechat-parser__parse_wechat_article"
+      "mcp__wechat-parser__parse_wechat_article",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git config *)",
+      "WebSearch",
+      "mcp__codegraph__codegraph_context",
+      "Bash(git stash *)",
+      "Bash(node -c \"D:\\\\workspace\\\\pingbeads\\\\src\\\\components\\\\mosaicCanvas\\\\mosaicCanvas.js\")",
+      "Bash(node -c \"D:\\\\workspace\\\\pingbeads\\\\src\\\\pages\\\\index\\\\index.js\")"
     ]
   }
 }
