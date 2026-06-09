@@ -924,8 +924,20 @@ Component({
           
           // 设置 canvas 尺寸 - 应用用户缩放比例以保持高分辨率
           const userScale = that.data.scale || 1;
-          // 限制 Canvas 最大尺寸为 16384（微信小程序限制）
-          const MAX_CANVAS_DIMENSION = 16384;
+
+          // 根据设备性能动态设置 Canvas 最大尺寸（预览图）
+          // benchmarkLevel: iPhone 14 Pro ~400, iPhone 11 ~200, 中端 Android ~100-150
+          const sysInfo = wx.getSystemInfoSync();
+          const benchmarkLevel = sysInfo.benchmarkLevel || 10;
+          let MAX_CANVAS_DIMENSION;
+          if (benchmarkLevel >= 200) {
+            MAX_CANVAS_DIMENSION = 16384;  // 高端设备
+          } else if (benchmarkLevel >= 100) {
+            MAX_CANVAS_DIMENSION = 8192;   // 中端设备
+          } else {
+            MAX_CANVAS_DIMENSION = 4096;   // 低端设备
+          }
+
           let scaledWidth = canvasWidth * userScale;
           let scaledHeight = canvasHeight * userScale;
           // 如果缩放后超出限制，则缩小比例
@@ -1219,7 +1231,17 @@ Component({
 
           // 设置 canvas 尺寸
           const userScale = that.data.scale || 1;
-          const MAX_CANVAS_DIMENSION = 16384;
+          // 根据设备性能动态设置 Canvas 最大尺寸（预览图）
+          const sysInfoSeg = wx.getSystemInfoSync();
+          const benchmarkLevelSeg = sysInfoSeg.benchmarkLevel || 10;
+          let MAX_CANVAS_DIMENSION;
+          if (benchmarkLevelSeg >= 200) {
+            MAX_CANVAS_DIMENSION = 16384;  // 高端设备
+          } else if (benchmarkLevelSeg >= 100) {
+            MAX_CANVAS_DIMENSION = 8192;   // 中端设备
+          } else {
+            MAX_CANVAS_DIMENSION = 4096;   // 低端设备
+          }
           let scaledWidth = canvasWidth * userScale;
           let scaledHeight = canvasHeight * userScale;
           if (scaledWidth > MAX_CANVAS_DIMENSION || scaledHeight > MAX_CANVAS_DIMENSION) {
