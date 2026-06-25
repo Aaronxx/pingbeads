@@ -318,29 +318,240 @@
               }
             }
           }
+        },
+        {
+          "name": "suggestProcessingParams",
+          "description": "根据图片特征自动推荐合适的处理参数。分析图片尺寸和像素数量，返回推荐的 gridSize、mergeThreshold、processMode 等参数，帮助用户获得最佳效果。",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "imageUrl": {
+                "type": "string",
+                "description": "图片的临时路径"
+              }
+            },
+            "required": ["imageUrl"]
+          },
+          "returns": {
+            "type": "object",
+            "properties": {
+              "success": {
+                "type": "boolean"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "imageInfo": {
+                    "type": "object",
+                    "description": "图片信息",
+                    "properties": {
+                      "width": {
+                        "type": "integer",
+                        "description": "图片宽度"
+                      },
+                      "height": {
+                        "type": "integer",
+                        "description": "图片高度"
+                      },
+                      "orientation": {
+                        "type": "string",
+                        "description": "图片方向"
+                      }
+                    }
+                  },
+                  "suggestedParams": {
+                    "type": "object",
+                    "description": "推荐的参数",
+                    "properties": {
+                      "gridSize": {
+                        "type": "integer",
+                        "description": "推荐的网格大小"
+                      },
+                      "mergeThreshold": {
+                        "type": "integer",
+                        "description": "推荐的合并阈值"
+                      },
+                      "processMode": {
+                        "type": "string",
+                        "description": "推荐的处理模式"
+                      },
+                      "removeEdge": {
+                        "type": "boolean",
+                        "description": "是否去除边缘"
+                      },
+                      "useSpecialColors": {
+                        "type": "boolean",
+                        "description": "是否使用特殊色"
+                      },
+                      "mirrorImage": {
+                        "type": "boolean",
+                        "description": "是否镜像"
+                      },
+                      "vibrantScale": {
+                        "type": "integer",
+                        "description": "鲜艳度"
+                      }
+                    }
+                  },
+                  "explanation": {
+                    "type": "string",
+                    "description": "参数建议的解释说明"
+                  }
+                }
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "name": "getMosaicDetail",
+          "description": "获取图纸的详细信息。包括基本属性、颜色统计，以及可选的网格数据。",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "mosaicId": {
+                "type": "string",
+                "description": "图纸唯一标识"
+              },
+              "includeGridData": {
+                "type": "boolean",
+                "default": false,
+                "description": "是否包含网格数据（数据量较大，默认 false）"
+              }
+            },
+            "required": ["mosaicId"]
+          },
+          "returns": {
+            "type": "object",
+            "properties": {
+              "success": {
+                "type": "boolean"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "mosaicId": {
+                    "type": "string"
+                  },
+                  "cols": {
+                    "type": "integer"
+                  },
+                  "rows": {
+                    "type": "integer"
+                  },
+                  "totalCells": {
+                    "type": "integer"
+                  },
+                  "colorCount": {
+                    "type": "integer"
+                  },
+                  "gridSize": {
+                    "type": "integer"
+                  },
+                  "mergeThreshold": {
+                    "type": "integer"
+                  },
+                  "processMode": {
+                    "type": "string"
+                  },
+                  "removeEdge": {
+                    "type": "boolean"
+                  },
+                  "imageUrl": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "type": "integer",
+                    "description": "创建时间戳"
+                  },
+                  "age": {
+                    "type": "integer",
+                    "description": "图纸年龄（毫秒）"
+                  },
+                  "colorStats": {
+                    "type": "array"
+                  },
+                  "gridData": {
+                    "type": "array",
+                    "description": "网格数据（仅当 includeGridData=true 时返回）"
+                  }
+                }
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "name": "deleteMosaic",
+          "description": "删除图纸数据，释放内存。",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "mosaicId": {
+                "type": "string",
+                "description": "图纸唯一标识"
+              }
+            },
+            "required": ["mosaicId"]
+          },
+          "returns": {
+            "type": "object",
+            "properties": {
+              "success": {
+                "type": "boolean"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "mosaicId": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
         }
       ],
       "atomic_components": [
         {
           "name": "MosaicPreviewCard",
-          "description": "拼豆图纸预览卡片。展示马赛克图纸缩略图和基本信息。",
+          "description": "拼豆图纸预览卡片。展示马赛克图纸缩略图和基本信息（行列数、颜色种类数等）。用于在对话中展示生成的图纸。",
           "props": {
             "mosaicId": {
               "type": "string",
-              "required": true
+              "required": true,
+              "description": "图纸唯一标识"
             },
             "cols": {
-              "type": "integer"
+              "type": "integer",
+              "description": "图纸列数"
             },
             "rows": {
-              "type": "integer"
+              "type": "integer",
+              "description": "图纸行数"
             },
             "colorCount": {
-              "type": "integer"
+              "type": "integer",
+              "description": "使用的颜色种类数"
             },
             "thumbnailUrl": {
               "type": "string",
               "description": "图纸缩略图 URL"
+            },
+            "processMode": {
+              "type": "string",
+              "enum": ["cartoon", "mosaic"],
+              "description": "处理模式"
             }
           },
           "layout": "horizontal",
@@ -348,7 +559,7 @@
         },
         {
           "name": "ColorStatsList",
-          "description": "颜色统计列表。展示各色号及其使用数量。",
+          "description": "颜色统计列表。展示各色号及其使用数量，支持按数量或色号排序。用于让用户了解需要哪些颜色。",
           "props": {
             "colorStats": {
               "type": "array",
@@ -357,20 +568,34 @@
                 "type": "object",
                 "properties": {
                   "code": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "MARD 色号"
                   },
                   "hex": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "十六进制颜色值"
                   },
                   "count": {
-                    "type": "integer"
+                    "type": "integer",
+                    "description": "使用数量"
+                  },
+                  "percentage": {
+                    "type": "number",
+                    "description": "占比百分比"
                   }
                 }
-              }
+              },
+              "description": "颜色统计数组"
             },
             "sortBy": {
               "type": "string",
-              "enum": ["count", "code"]
+              "enum": ["count", "code"],
+              "default": "count",
+              "description": "排序方式"
+            },
+            "totalCells": {
+              "type": "integer",
+              "description": "总格子数"
             }
           },
           "layout": "vertical",
@@ -378,7 +603,7 @@
         },
         {
           "name": "PurchaseListCard",
-          "description": "采购清单卡片。展示 CSV 内容并提供复制按钮。",
+          "description": "采购清单卡片。展示 CSV 或纯文本格式的采购清单，提供复制功能。用于让用户获取购买拼豆的材料清单。",
           "props": {
             "content": {
               "type": "string",
@@ -386,13 +611,18 @@
               "description": "CSV 或纯文本内容"
             },
             "format": {
-              "type": "string"
+              "type": "string",
+              "enum": ["csv", "text"],
+              "default": "csv",
+              "description": "输出格式"
             },
             "totalColors": {
-              "type": "integer"
+              "type": "integer",
+              "description": "颜色种类数"
             },
             "totalQuantity": {
-              "type": "integer"
+              "type": "integer",
+              "description": "总数量（格子数）"
             }
           },
           "layout": "vertical",
