@@ -81,18 +81,6 @@ Component({
       if (this._lastProcessedKey === key) return;
       this._lastProcessedKey = key;
 
-      // 防抖：参数快速连续变化时（如滑块拖动），只在停止变化 150ms 后处理
-      if (this._paramDebounceTimer) {
-        clearTimeout(this._paramDebounceTimer);
-      }
-      this._paramDebounceTimer = setTimeout(() => {
-        this._paramDebounceTimer = null;
-        this._doReprocess();
-      }, 150);
-    },
-
-    // 执行实际的重新处理（由防抖 timer 调用）
-    _doReprocess() {
       // 这些参数变化时需要完全重新生成
       if (this.data.processMode === 'mosaic') {
         this.cachedGridData = null;
