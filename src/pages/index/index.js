@@ -3,6 +3,9 @@ const { isLightColor, formatMarkCode, parseMarkCode } = require('../../utils/col
 
 Page({
   data: {
+    // 自定义 loading
+    showLoading: false,
+    loadingText: '加载中...',
     // 当前步骤: 1-选择图片, 2-处理完成
     currentStep: 1,
     // 选择的图片路径
@@ -135,6 +138,16 @@ Page({
     return false;
   },
 
+  // 显示自定义 loading
+  showCustomLoading(text) {
+    this.setData({ showLoading: true, loadingText: text || '加载中...' });
+  },
+
+  // 隐藏自定义 loading
+  hideCustomLoading() {
+    this.setData({ showLoading: false, loadingText: '' });
+  },
+
   // 预览区点击事件（未选择图片时触发选择图片）
   onPreviewAreaClick() {
     if (!this.data.imagePath) {
@@ -265,6 +278,16 @@ Page({
     this.setData({ flatCells: stats });
   },
 
+  // mosaicCanvas 的 loading 变化事件
+  onLoadingChange(e) {
+    const { show, text } = e.detail;
+    if (show) {
+      this.showCustomLoading(text);
+    } else {
+      this.hideCustomLoading();
+    }
+  },
+
   // 网格预设变化时更新 mosaicData 的行列数
   onGridInfoUpdate(e) {
     const { cols, rows } = e.detail;
@@ -357,8 +380,9 @@ Page({
     if (this._checkExporting()) return;
 
     // 直接取反当前值
+    const newVal = !this.data.useSpecialColors;
     this.setData({
-      useSpecialColors: !this.data.useSpecialColors
+      useSpecialColors: newVal
     });
   },
 
@@ -709,31 +733,21 @@ Page({
     const statsRowCount = Math.ceil(statsItemCount / itemsPerRow);
     const statsHeight = statsItemHeight * statsRowCount + 20;
 
-    // 增大分辨率：导出时使用更大的格子
-    // 根据设备性能动态设置导出最大尺寸，高端设备可获得更高清的导出图
-    const sysInfo = wx.getSystemInfoSync();
-    const benchmarkLevel = sysInfo.benchmarkLevel || 10;
-    let maxExportDimension;
-    if (benchmarkLevel >= 200) {
-      maxExportDimension = 8192;   // 高端设备：支持更高清导出
-    } else if (benchmarkLevel >= 100) {
-      maxExportDimension = 4096;   // 中端设备
-    } else {
-      maxExportDimension = 4096;   // 低端设备：保持 4096 保证稳定性
-    }
+    // 动态计算放大倍数，限制最大导出尺寸在 4096 像素内（微信 Canvas 缓冲区限制）
+    const maxExportDimension = 4096;
     const baseWidth = cols * gridSize + 40; // 加上左侧标尺
     const baseHeight = rows * gridSize + 30 + statsHeight; // 加上顶部标尺和统计行
 
-    // 计算合适的放大倍数，确保最长边不超过上限，且最小为 1 倍
+    // 计算合适的放大倍数，确保最长边不超过 4096，且最小为 1 倍
     const scaleX = maxExportDimension / baseWidth;
     const scaleY = maxExportDimension / baseHeight;
     const exportScale = Math.max(1, Math.min(scaleX, scaleY));
 
-    const exportGridSize = gridSize * exportScale;
+    let exportGridSize = gridSize * exportScale;
 
     // 计算尺寸
-    const mosaicWidth = cols * exportGridSize;
-    const mosaicHeight = rows * exportGridSize;
+    let mosaicWidth = cols * exportGridSize;
+    let mosaicHeight = rows * exportGridSize;
 
     // 标尺区域尺寸
     const titleHeight = 180; // 顶部标题高度
@@ -741,9 +755,9 @@ Page({
     const rulerHeight = 40;  // 上/下方标尺高度
 
     // 包含标尺的画布尺寸（标题 + 左右标尺 + 上下标尺）
-    const canvasWidth = mosaicWidth + rulerWidth * 2;
-    const canvasHeight = titleHeight + rulerHeight * 2 + mosaicHeight + statsHeight;
-    
+    let canvasWidth = mosaicWidth + rulerWidth * 2;
+    let canvasHeight = titleHeight + rulerHeight * 2 + mosaicHeight + statsHeight;
+
     // 使用节点查询获取 canvas
     const query = wx.createSelectorQuery();
     query.select('#export-canvas')
@@ -753,10 +767,10 @@ Page({
           that.exportPNGLegacy(canvasWidth, canvasHeight);
           return;
         }
-        
+
         const canvas = res[0].node;
         const ctx = canvas.getContext('2d');
-        
+
         // 设置 canvas 尺寸
         canvas.width = canvasWidth;
         canvas.height = canvasHeight;
@@ -789,15 +803,15 @@ Page({
         ctx.font = `${colFontSize}px sans-serif`;
 
         for (let col = 1; col <= cols; col++) {
-          const x = rulerWidth + (col - 0.5) * gridSize * exportScale;
-          // 刻度线
-          ctx.beginPath();
-          ctx.moveTo(rulerWidth + (col - 1) * gridSize * exportScale, topRulerY + rulerHeight - 8);
-          ctx.lineTo(rulerWidth + (col - 1) * gridSize * exportScale, topRulerY + rulerHeight);
-          ctx.stroke();
-          // 列号（从1开始）
-          ctx.fillStyle = '#333333';
-          ctx.fillText(col.toString(), x, topRulerY + rulerHeight / 2);
+        const x = rulerWidth + (col - 0.5) * gridSize * exportScale;
+        // 刻度线
+        ctx.beginPath();
+        ctx.moveTo(rulerWidth + (col - 1) * gridSize * exportScale, topRulerY + rulerHeight - 8);
+        ctx.lineTo(rulerWidth + (col - 1) * gridSize * exportScale, topRulerY + rulerHeight);
+        ctx.stroke();
+        // 列号（从1开始）
+        ctx.fillStyle = '#333333';
+        ctx.fillText(col.toString(), x, topRulerY + rulerHeight / 2);
         }
 
         // 2. 绘制左侧行标尺 - 每个色块显示行号
@@ -815,16 +829,16 @@ Page({
         ctx.font = `${rowFontSize}px sans-serif`;
 
         for (let row = 1; row <= rows; row++) {
-          const y = topRulerY + rulerHeight + (row - 0.5) * gridSize * exportScale;
-          // 刻度线
-          ctx.beginPath();
-          ctx.moveTo(rulerWidth - 8, topRulerY + rulerHeight + (row - 1) * gridSize * exportScale);
-          ctx.lineTo(rulerWidth, topRulerY + rulerHeight + (row - 1) * gridSize * exportScale);
-          ctx.stroke();
-          // 行号（从1开始）
-          ctx.fillStyle = '#333333';
-          ctx.textAlign = 'right';
-          ctx.fillText(row.toString(), rulerWidth - 8, y);
+        const y = topRulerY + rulerHeight + (row - 0.5) * gridSize * exportScale;
+        // 刻度线
+        ctx.beginPath();
+        ctx.moveTo(rulerWidth - 8, topRulerY + rulerHeight + (row - 1) * gridSize * exportScale);
+        ctx.lineTo(rulerWidth, topRulerY + rulerHeight + (row - 1) * gridSize * exportScale);
+        ctx.stroke();
+        // 行号（从1开始）
+        ctx.fillStyle = '#333333';
+        ctx.textAlign = 'right';
+        ctx.fillText(row.toString(), rulerWidth - 8, y);
         }
 
         // 2.1 绘制右侧行标尺
@@ -835,15 +849,15 @@ Page({
         ctx.textAlign = 'left';
 
         for (let row = 1; row <= rows; row++) {
-          const y = topRulerY + rulerHeight + (row - 0.5) * gridSize * exportScale;
-          // 刻度线
-          ctx.beginPath();
-          ctx.moveTo(rightRulerX, topRulerY + rulerHeight + (row - 1) * gridSize * exportScale);
-          ctx.lineTo(rightRulerX + 8, topRulerY + rulerHeight + (row - 1) * gridSize * exportScale);
-          ctx.stroke();
-          // 行号
-          ctx.fillStyle = '#333333';
-          ctx.fillText(row.toString(), rightRulerX + 8, y);
+        const y = topRulerY + rulerHeight + (row - 0.5) * gridSize * exportScale;
+        // 刻度线
+        ctx.beginPath();
+        ctx.moveTo(rightRulerX, topRulerY + rulerHeight + (row - 1) * gridSize * exportScale);
+        ctx.lineTo(rightRulerX + 8, topRulerY + rulerHeight + (row - 1) * gridSize * exportScale);
+        ctx.stroke();
+        // 行号
+        ctx.fillStyle = '#333333';
+        ctx.fillText(row.toString(), rightRulerX + 8, y);
         }
 
         // 2.2 绘制下方列标尺
@@ -860,15 +874,15 @@ Page({
         ctx.textAlign = 'center';
 
         for (let col = 1; col <= cols; col++) {
-          const x = rulerWidth + (col - 0.5) * gridSize * exportScale;
-          // 刻度线
-          ctx.beginPath();
-          ctx.moveTo(rulerWidth + (col - 1) * gridSize * exportScale, bottomRulerY);
-          ctx.lineTo(rulerWidth + (col - 1) * gridSize * exportScale, bottomRulerY + 8);
-          ctx.stroke();
-          // 列号
-          ctx.fillStyle = '#333333';
-          ctx.fillText(col.toString(), x, bottomRulerY + rulerHeight / 2);
+        const x = rulerWidth + (col - 0.5) * gridSize * exportScale;
+        // 刻度线
+        ctx.beginPath();
+        ctx.moveTo(rulerWidth + (col - 1) * gridSize * exportScale, bottomRulerY);
+        ctx.lineTo(rulerWidth + (col - 1) * gridSize * exportScale, bottomRulerY + 8);
+        ctx.stroke();
+        // 列号
+        ctx.fillStyle = '#333333';
+        ctx.fillText(col.toString(), x, bottomRulerY + rulerHeight / 2);
         }
 
         // 3. 绘制马赛克主体（使用放大后的格子）
@@ -877,144 +891,144 @@ Page({
         const offsetY = titleHeight + rulerHeight;
 
         if (isMosaicMode && gridData) {
-          // 马赛克模式：基于 gridData 二维数组绘制固定大小色块
-          // 根据 removeEdge 设置决定是否跳过边缘单元格
-          const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
-          const shouldMirror = that.data.mirrorImage;  // 是否镜像
-          // 固定格子大小，天然紧密排列无间隙
-          const cellWidth = gridSize * exportScale;
-          const cellHeight = gridSize * exportScale;
-          for (let row = 0; row < rows; row++) {
-            for (let col = 0; col < cols; col++) {
-              const cell = gridData[row] && gridData[row][col];
-              // 跳过无效格子或边缘底色格子（空白格子也要渲染）
-              if (!cell || (shouldRemoveEdge && cell.isEdge)) continue;
+        // 马赛克模式：基于 gridData 二维数组绘制固定大小色块
+        // 根据 removeEdge 设置决定是否跳过边缘单元格
+        const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
+        const shouldMirror = that.data.mirrorImage;  // 是否镜像
+        // 固定格子大小，天然紧密排列无间隙
+        const cellWidth = gridSize * exportScale;
+        const cellHeight = gridSize * exportScale;
+        for (let row = 0; row < rows; row++) {
+          for (let col = 0; col < cols; col++) {
+            const cell = gridData[row] && gridData[row][col];
+            // 跳过无效格子或边缘底色格子（空白格子也要渲染）
+            if (!cell || (shouldRemoveEdge && cell.isEdge)) continue;
 
-              let x = offsetX + col * cellWidth;
-              const y = offsetY + row * cellHeight;
-
-              // 应用镜像变换
-              if (shouldMirror) {
-                x = offsetX + mosaicWidth - (col + 1) * cellWidth;
-              }
-
-              // 空白格子使用浅灰色
-              if (cell.isEmpty) {
-                ctx.fillStyle = '#F0F0F0';
-              } else {
-                ctx.fillStyle = cell.markHex || '#cccccc';
-              }
-              ctx.fillRect(x, y, cellWidth, cellHeight);
-
-              // 绘制色块边框
-              ctx.strokeStyle = cell.isEmpty ? 'rgba(0, 0, 0, 0.05)' : 'rgba(0, 0, 0, 0.1)';
-              ctx.lineWidth = 1;
-              ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
-
-              // 绘制色号（空白格子不绘制）
-              if (!cell.isEmpty && cellWidth >= 4 && cellHeight >= 4) {
-                const isLight = isLightColor(cell.markHex);
-                ctx.fillStyle = isLight ? '#333' : '#fff';
-                const fontSize = Math.max(4, Math.min(cellWidth, cellHeight) * 0.35);
-                ctx.font = `bold ${fontSize.toFixed(0)}px sans-serif`;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
-              }
-            }
-          }
-        } else if (isMosaicMode && segments) {
-          // 智能模式：直接绘制 segments（降级处理）
-          const imageWidth = cols * gridSize;
-          const imageHeight = rows * gridSize;
-          const segScaleX = mosaicWidth / imageWidth;
-          const segScaleY = mosaicHeight / imageHeight;
-
-          for (const segment of segments) {
-            // 根据 removeEdge 设置决定是否跳过边缘色段
-            const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
-            const shouldMirror = that.data.mirrorImage;  // 是否镜像
-            if (shouldRemoveEdge && segment.isEdge) continue;
-
-            let x = offsetX + segment.x * segScaleX;
-            const y = offsetY + segment.y * segScaleY;
-            const width = segment.width * segScaleX;
-            const height = segment.height * segScaleY;
+            let x = offsetX + col * cellWidth;
+            const y = offsetY + row * cellHeight;
 
             // 应用镜像变换
             if (shouldMirror) {
-              x = offsetX + mosaicWidth - segment.width * segScaleX - x + offsetX;
+              x = offsetX + mosaicWidth - (col + 1) * cellWidth;
             }
 
-            // 绘制色段（取整消除间隙）
-            ctx.fillStyle = segment.markHex || '#cccccc';
-            ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(width), Math.ceil(height));
+            // 空白格子使用浅灰色
+            if (cell.isEmpty) {
+              ctx.fillStyle = '#F0F0F0';
+            } else {
+              ctx.fillStyle = cell.markHex || '#cccccc';
+            }
+            ctx.fillRect(x, y, cellWidth, cellHeight);
+
+            // 绘制色块边框
+            ctx.strokeStyle = cell.isEmpty ? 'rgba(0, 0, 0, 0.05)' : 'rgba(0, 0, 0, 0.1)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
+
+            // 绘制色号（空白格子不绘制）
+            if (!cell.isEmpty && cellWidth >= 4 && cellHeight >= 4) {
+              const isLight = isLightColor(cell.markHex);
+              ctx.fillStyle = isLight ? '#333' : '#fff';
+              const fontSize = Math.max(4, Math.min(cellWidth, cellHeight) * 0.35);
+              ctx.font = `bold ${fontSize.toFixed(0)}px sans-serif`;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
+            }
+          }
+        }
+        } else if (isMosaicMode && segments) {
+        // 智能模式：直接绘制 segments（降级处理）
+        const imageWidth = cols * gridSize;
+        const imageHeight = rows * gridSize;
+        const segScaleX = mosaicWidth / imageWidth;
+        const segScaleY = mosaicHeight / imageHeight;
+
+        for (const segment of segments) {
+          // 根据 removeEdge 设置决定是否跳过边缘色段
+          const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
+          const shouldMirror = that.data.mirrorImage;  // 是否镜像
+          if (shouldRemoveEdge && segment.isEdge) continue;
+
+          let x = offsetX + segment.x * segScaleX;
+          const y = offsetY + segment.y * segScaleY;
+          const width = segment.width * segScaleX;
+          const height = segment.height * segScaleY;
+
+          // 应用镜像变换
+          if (shouldMirror) {
+            x = offsetX + mosaicWidth - segment.width * segScaleX - x + offsetX;
+          }
+
+          // 绘制色段（取整消除间隙）
+          ctx.fillStyle = segment.markHex || '#cccccc';
+          ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(width), Math.ceil(height));
+
+          // 绘制色块边框
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(width) - 1, Math.ceil(height) - 1);
+
+          // 绘制色号（降低阈值到 4 像素，确保小图也能显示色号）
+          if (width >= 4 && height >= 4) {
+            const isLight = isLightColor(segment.markHex);
+            ctx.fillStyle = isLight ? '#333' : '#fff';
+            // 马赛克模式：色块通常较小，使用更大的比例和更小的最小值
+            const fontSize = Math.max(4, Math.min(width, height) * 0.35);
+            ctx.font = `bold ${fontSize.toFixed(0)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(formatMarkCode(segment.markCode), x + width / 2, y + height / 2);
+          }
+        }
+        } else {
+        // 普通模式：使用 gridData 绘制
+        // 跳过 isRegionMember 的格子（它们会被根格子覆盖）
+        // 根据 removeEdge 设置决定是否跳过边缘单元格
+        const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
+        const shouldMirror = that.data.mirrorImage;  // 是否镜像
+        const cellWidth = gridSize * exportScale;
+        for (let row = 0; row < rows; row++) {
+          for (let col = 0; col < cols; col++) {
+            const cell = gridData[row] && gridData[row][col];
+            // 跳过无效格子、区域成员格子或边缘底色格子（根据 removeEdge 设置）
+            if (!cell || !cell.markCode || cell.isRegionMember || (shouldRemoveEdge && cell.isEdge)) continue;
+
+            // 使用格子的实际宽高（合并后），并进行缩放
+            const width = (cell.width || gridSize) * exportScale;
+            const height = (cell.height || gridSize) * exportScale;
+
+            let x = offsetX + col * cellWidth;
+            const y = offsetY + row * gridSize * exportScale;
+
+            // 应用镜像变换
+            if (shouldMirror) {
+              x = offsetX + mosaicWidth - (col + 1) * cellWidth;
+            }
+
+            // 绘制色块
+            ctx.fillStyle = cell.markHex;
+            ctx.fillRect(x, y, width, height);
 
             // 绘制色块边框
             ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
             ctx.lineWidth = 1;
             ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(width) - 1, Math.ceil(height) - 1);
 
-            // 绘制色号（降低阈值到 4 像素，确保小图也能显示色号）
+            // 绘制色号（根据实际的格子大小调整字号，降低阈值到 4 像素）
             if (width >= 4 && height >= 4) {
-              const isLight = isLightColor(segment.markHex);
+              // 根据色块颜色自动选择文字颜色
+              const isLight = isLightColor(cell.markHex);
               ctx.fillStyle = isLight ? '#333' : '#fff';
-              // 马赛克模式：色块通常较小，使用更大的比例和更小的最小值
+              // 使用实际的 cellWidth 来计算字号，确保文字适应格子大小
               const fontSize = Math.max(4, Math.min(width, height) * 0.35);
               ctx.font = `bold ${fontSize.toFixed(0)}px sans-serif`;
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
-              ctx.fillText(formatMarkCode(segment.markCode), x + width / 2, y + height / 2);
+              ctx.fillText(formatMarkCode(cell.markCode), x + width / 2, y + height / 2);
             }
           }
-        } else {
-          // 普通模式：使用 gridData 绘制
-          // 跳过 isRegionMember 的格子（它们会被根格子覆盖）
-          // 根据 removeEdge 设置决定是否跳过边缘单元格
-          const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
-          const shouldMirror = that.data.mirrorImage;  // 是否镜像
-          const cellWidth = gridSize * exportScale;
-          for (let row = 0; row < rows; row++) {
-            for (let col = 0; col < cols; col++) {
-              const cell = gridData[row] && gridData[row][col];
-              // 跳过无效格子、区域成员格子或边缘底色格子（根据 removeEdge 设置）
-              if (!cell || !cell.markCode || cell.isRegionMember || (shouldRemoveEdge && cell.isEdge)) continue;
-
-              // 使用格子的实际宽高（合并后），并进行缩放
-              const width = (cell.width || gridSize) * exportScale;
-              const height = (cell.height || gridSize) * exportScale;
-
-              let x = offsetX + col * cellWidth;
-              const y = offsetY + row * gridSize * exportScale;
-
-              // 应用镜像变换
-              if (shouldMirror) {
-                x = offsetX + mosaicWidth - (col + 1) * cellWidth;
-              }
-
-              // 绘制色块
-              ctx.fillStyle = cell.markHex;
-              ctx.fillRect(x, y, width, height);
-
-              // 绘制色块边框
-              ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
-              ctx.lineWidth = 1;
-              ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(width) - 1, Math.ceil(height) - 1);
-
-              // 绘制色号（根据实际的格子大小调整字号，降低阈值到 4 像素）
-              if (width >= 4 && height >= 4) {
-                // 根据色块颜色自动选择文字颜色
-                const isLight = isLightColor(cell.markHex);
-                ctx.fillStyle = isLight ? '#333' : '#fff';
-                // 使用实际的 cellWidth 来计算字号，确保文字适应格子大小
-                const fontSize = Math.max(4, Math.min(width, height) * 0.35);
-                ctx.font = `bold ${fontSize.toFixed(0)}px sans-serif`;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(formatMarkCode(cell.markCode), x + width / 2, y + height / 2);
-              }
-            }
-          }
+        }
         }
 
         // 绘制参考线（每10行/列一条浅蓝色线）
@@ -1027,64 +1041,60 @@ Page({
         // 统计行背景
         ctx.fillRect(0, titleHeight + rulerHeight + mosaicHeight + rulerHeight, canvasWidth, statsHeight);
 
-        // 每行10个，与图片等宽
-        const itemsPerRow = 10;
-
-        // 绘制统计项：玻璃拟态圆角按钮样式
         for (let i = 0; i < statsItemCount; i++) {
-          const item = statsList[i];
-          const row = Math.floor(i / itemsPerRow);
-          const col = i % itemsPerRow;
+        const item = statsList[i];
+        const row = Math.floor(i / itemsPerRow);
+        const col = i % itemsPerRow;
 
-          // 均匀分布，基于马赛克图宽度（不含标尺）
-          const itemWidth = mosaicWidth / itemsPerRow;
-          // 统计项从标尺右侧开始
-          const x = rulerWidth + col * itemWidth + 8;
-          const y = statsY + row * statsItemHeight;
-          const btnWidth = itemWidth - 16;
-          const btnHeight = statsItemHeight - 5;
-          const radius = 15;
-          
-          // 格式化色号（省略第二个字符的0）
-          let displayCode = item.code;
-          if (displayCode.length >= 2 && displayCode[1] === '0') {
-            displayCode = displayCode.charAt(0) + displayCode.substring(2);
-          }
-          
-          const isLight = isLightColor(item.hex);
-          
-          // 绘制圆角按钮背景（玻璃拟态效果）
-          // 1. 先绘制按钮背景
-          ctx.fillStyle = item.hex;
-          this.drawRoundedRect(ctx, x, y, btnWidth, btnHeight, radius);
-          
-          // 2. 绘制顶部高光
-          ctx.save();
-          this.drawRoundedRect(ctx, x, y, btnWidth, btnHeight, radius);
-          ctx.clip();
-          const gradient = ctx.createLinearGradient(x, y, x, y + btnHeight * 0.4);
-          gradient.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
-          gradient.addColorStop(1, 'rgba(255, 255, 255, 0.1)');
-          ctx.fillStyle = gradient;
-          ctx.fillRect(x, y, btnWidth, btnHeight * 0.4);
-          ctx.restore();
-          
-          // 3. 绘制边框（玻璃拟态的亮边框）
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-          ctx.lineWidth = 1;
-          this.drawRoundedRect(ctx, x, y, btnWidth, btnHeight, radius);
-          
-          // 4. 绘制文字
-          ctx.fillStyle = isLight ? '#333' : '#fff';
-          ctx.font = 'bold 12px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
-          ctx.shadowBlur = 1;
-          ctx.shadowOffsetX = 1;
-          ctx.shadowOffsetY = 1;
-          ctx.fillText(`${displayCode} (${item.count})`, x + btnWidth / 2, y + btnHeight / 2);
-          ctx.shadowColor = 'transparent';
+        // 均匀分布，基于马赛克图宽度（不含标尺）
+        const itemWidth = mosaicWidth / itemsPerRow;
+        // 统计项从标尺右侧开始
+        const x = rulerWidth + col * itemWidth + 8;
+        const y = statsY + row * statsItemHeight;
+        const btnWidth = itemWidth - 16;
+        const btnHeight = statsItemHeight - 5;
+        const radius = 15;
+        
+        // 格式化色号（省略第二个字符的0）
+        let displayCode = item.code;
+        if (displayCode.length >= 2 && displayCode[1] === '0') {
+          displayCode = displayCode.charAt(0) + displayCode.substring(2);
+        }
+        
+        const isLight = isLightColor(item.hex);
+        
+        // 绘制圆角按钮背景（玻璃拟态效果）
+        // 1. 先绘制按钮背景
+        ctx.fillStyle = item.hex;
+        this.drawRoundedRect(ctx, x, y, btnWidth, btnHeight, radius);
+        
+        // 2. 绘制顶部高光
+        ctx.save();
+        this.drawRoundedRect(ctx, x, y, btnWidth, btnHeight, radius);
+        ctx.clip();
+        const gradient = ctx.createLinearGradient(x, y, x, y + btnHeight * 0.4);
+        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+        gradient.addColorStop(1, 'rgba(255, 255, 255, 0.1)');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(x, y, btnWidth, btnHeight * 0.4);
+        ctx.restore();
+        
+        // 3. 绘制边框（玻璃拟态的亮边框）
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 1;
+        this.drawRoundedRect(ctx, x, y, btnWidth, btnHeight, radius);
+        
+        // 4. 绘制文字
+        ctx.fillStyle = isLight ? '#333' : '#fff';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+        ctx.shadowBlur = 1;
+        ctx.shadowOffsetX = 1;
+        ctx.shadowOffsetY = 1;
+        ctx.fillText(`${displayCode} (${item.count})`, x + btnWidth / 2, y + btnHeight / 2);
+        ctx.shadowColor = 'transparent';
         }
 
         // 4. 绘制水印 - 多行倾斜覆盖全图
@@ -1097,7 +1107,8 @@ Page({
             success: (res) => {
               that.saveToPhotoAlbum(res.tempFilePath);
             },
-            fail: () => {
+            fail: (err) => {
+              console.error('[exportPNG] canvasToTempFilePath 失败:', err?.errMsg || err);
               wx.showToast({ title: '导出失败，请重试', icon: 'none' });
               that.setData({ isExporting: false });
             }
@@ -1110,9 +1121,12 @@ Page({
             exportOptions.canvasId = that.data.canvasId;
           }
 
+          // 导出 canvas 尺寸日志
+
           try {
             wx.canvasToTempFilePath(exportOptions, that);
           } catch (e) {
+            console.error('[exportPNG] canvasToTempFilePath 异常:', e?.errMsg || e);
             wx.showToast({ title: '导出失败，请重试', icon: 'none' });
             that.setData({ isExporting: false });
           }
@@ -1140,18 +1154,18 @@ Page({
       confirmText: '去设置',
       success(res) {
         if (res.confirm) {
-          // 打开系统设置页面
-          wx.openAppAuthorizeSetting({
-            success() {
-              // 用户设置完后，重新尝试保存
-              that.doSaveImage(tempFilePath);
-            },
-            fail() {
-              that.setData({ isExporting: false });
-            }
-          });
+        // 打开系统设置页面
+        wx.openAppAuthorizeSetting({
+          success() {
+            // 用户设置完后，重新尝试保存
+            that.doSaveImage(tempFilePath);
+          },
+          fail() {
+            that.setData({ isExporting: false });
+          }
+        });
         } else {
-          that.setData({ isExporting: false });
+        that.setData({ isExporting: false });
         }
       },
       fail() {
@@ -1170,13 +1184,14 @@ Page({
         that.setData({ isExporting: false });
       },
       fail(err) {
-        
+        console.error('[exportPNG] saveImageToPhotosAlbum 失败:', err?.errMsg || err);
+
         // 如果是权限问题（auth deny），引导去设置
         if (err.errMsg && (err.errMsg.includes('auth deny') || err.errMsg.includes('fail auth deny'))) {
-          that.showAuthDeniedModal(tempFilePath);
+        that.showAuthDeniedModal(tempFilePath);
         } else {
-          wx.showToast({ title: '保存失败: ' + (err.errMsg || ''), icon: 'none', duration: 2000 });
-          that.setData({ isExporting: false });
+        wx.showToast({ title: '保存失败: ' + (err.errMsg || ''), icon: 'none', duration: 2000 });
+        that.setData({ isExporting: false });
         }
       }
     });
@@ -1293,7 +1308,8 @@ Page({
             success: (res) => {
               that.saveToPhotoAlbum(res.tempFilePath);
             },
-            fail: () => {
+            fail: (err) => {
+              console.error('[exportPNG] exportPNGLegacy canvasToTempFilePath 失败:', err?.errMsg || err);
               wx.showToast({ title: '导出失败，请重试', icon: 'none' });
               that.setData({ isExporting: false });
             }
@@ -1417,8 +1433,9 @@ Page({
             success: (res) => {
               that.saveToPhotoAlbum(res.tempFilePath);
             },
-            fail: () => {
-              
+            fail: (err) => {
+              console.error('[exportPNG] exportWithCanvasId canvasToTempFilePath 失败:', err?.errMsg || err, `重试 ${retryCount}/${maxRetries}`);
+
               if (retryCount < maxRetries) {
                 that.exportWithCanvasId(width, height, retryCount + 1);
               } else {

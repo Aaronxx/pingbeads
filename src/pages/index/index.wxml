@@ -39,6 +39,20 @@
   </view>
 
   <!-- ========================
+     自定义 loading 覆盖层
+     ======================== -->
+  <view class="loading-overlay {{showLoading ? 'show' : ''}}" catchtouchmove="preventBubbling">
+    <view class="loading-box">
+      <view class="loading-spinner-ring">
+        <view class="spinner-dot dot-1"></view>
+        <view class="spinner-dot dot-2"></view>
+        <view class="spinner-dot dot-3"></view>
+      </view>
+      <text class="loading-text">{{loadingText}}</text>
+    </view>
+  </view>
+
+  <!-- ========================
      主预览区域（带小动物贴纸）
      ======================== -->
   <view class="main-wrapper">
@@ -77,6 +91,7 @@
         bind:mosaicGenerated="onMosaicGenerated"
         bind:statsUpdate="onStatsUpdate"
         bind:gridInfoUpdate="onGridInfoUpdate"
+        bind:loadingChange="onLoadingChange"
       />
       <!-- 空状态 -->
       <view wx:else class="placeholder">

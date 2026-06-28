@@ -19,7 +19,12 @@
   "compileType": "miniprogram",
   "simulatorPluginLibVersion": {},
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "skill"
+      }
+    ],
     "include": []
   },
   "appid": "wx736c3cac771e1edd",

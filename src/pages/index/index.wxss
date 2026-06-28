@@ -140,6 +140,85 @@
 /* ========================
    小动物贴纸层
    ======================== */
+/* 自定义 loading 覆盖层 */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.loading-overlay.show {
+  pointer-events: auto;
+}
+
+.loading-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 220rpx;
+  height: 220rpx;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 32rpx;
+  box-shadow: 0 8rpx 40rpx rgba(0, 0, 0, 0.15);
+  transform: scale(0.8);
+  opacity: 0;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
+}
+.loading-overlay.show .loading-box {
+  transform: scale(1);
+  opacity: 1;
+}
+
+.loading-spinner-ring {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  height: 40rpx;
+  margin-bottom: 24rpx;
+}
+
+.spinner-dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  animation: dot-bounce 1.2s ease-in-out infinite;
+}
+.dot-1 {
+  background: #f472b6;
+  animation-delay: 0s;
+}
+.dot-2 {
+  background: #ec4899;
+  animation-delay: 0.2s;
+}
+.dot-3 {
+  background: #db2777;
+  animation-delay: 0.4s;
+}
+
+@keyframes dot-bounce {
+  0%, 80%, 100% {
+    transform: scale(0.5);
+    opacity: 0.3;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.loading-text {
+  font-size: 24rpx;
+  color: #666;
+  letter-spacing: 0.5rpx;
+  white-space: nowrap;
+}
+
 .sticker-layer {
   position: absolute;
   inset: 0;
@@ -838,32 +917,31 @@
 
 /* 导出中状态 */
 .save-btn-full.exporting {
-  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
-  box-shadow: 0 4rpx 20rpx rgba(245, 158, 11, 0.5);
-  animation: savePulse 1.2s ease-in-out infinite;
+  background: linear-gradient(135deg, #f472b6 0%, #ec4899 50%, #db2777 100%);
+  box-shadow: 0 4rpx 24rpx rgba(236, 72, 153, 0.5);
+  animation: savePulse 1.5s ease-in-out infinite;
   pointer-events: none;
 }
 
-/* 导出中内容布局 */
 .btn-exporting {
   display: flex;
   align-items: center;
-  gap: 12rpx;
+  gap: 14rpx;
 }
 
-/* 旋转小圆圈 */
 .export-spinner {
-  width: 28rpx;
-  height: 28rpx;
-  border: 4rpx solid rgba(255, 255, 255, 0.3);
+  width: 30rpx;
+  height: 30rpx;
+  border: 4rpx solid rgba(255, 255, 255, 0.25);
   border-top-color: #fff;
+  border-bottom-color: rgba(255, 255, 255, 0.15);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin 0.7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 @keyframes savePulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(0.96); opacity: 0.85; }
+  0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 4rpx 24rpx rgba(236, 72, 153, 0.5); }
+  50% { transform: scale(0.96); opacity: 0.9; box-shadow: 0 2rpx 16rpx rgba(236, 72, 153, 0.3); }
 }
 
 @keyframes spin {

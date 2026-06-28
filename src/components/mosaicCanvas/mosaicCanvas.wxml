@@ -19,14 +19,9 @@
     />
   </view>
 
-  <!-- 处理中提示 -->
-  <cover-view wx:if="{{isProcessing}}" class="processing-tip">
-    <cover-view class="spinner"></cover-view>
-    <cover-text>正在处理图片...</cover-text>
-  </cover-view>
 
   <!-- 空状态提示 -->
-  <view wx:elif="{{!imagePath}}" class="empty-tip">
+  <view wx:if="{{!imagePath}}" class="empty-tip">
     <text>请先选择图片</text>
   </view>
 </view>

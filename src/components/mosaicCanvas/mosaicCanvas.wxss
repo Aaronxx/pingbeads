@@ -89,36 +89,7 @@
   display: none;
 }
 
-/* 处理中/空状态提示 */
-.processing-tip {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  color: rgba(0, 0, 0, 0.4);
-  font-size: 28rpx;
-  text-align: center;
-  z-index: 999;
-}
-
-.spinner {
-  width: 48rpx;
-  height: 48rpx;
-  margin: 0 auto 16rpx;
-  border: 4rpx solid #e8eaed;
-  border-top-color: #1677ff;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
+/* 空状态提示 */
 .empty-tip {
   position: absolute;
   top: 50%;

@@ -54,6 +54,9 @@ Component({
   cachedSegments: null,
 
   // 原始 gridData（用于网格预设切换和颜色恢复）
+  // 裁剪偏移量：裁剪后 gridData[row][col] 对应 snapshot[row+offsetRow][col+offsetCol]
+  _cropOffsetCol: 0,
+  _cropOffsetRow: 0,
   canvasCtx: null,
   canvasNode: null,
 
@@ -89,9 +92,11 @@ Component({
       }
       // 清理失效的缓存，避免内存溢出
       this.cachedOriginalGridData = null;
+      this._cropOffsetCol = 0;
+      this._cropOffsetRow = 0;
 
       if (this.cachedPixelData && this.cachedWidth > 0) {
-        wx.showLoading({ title: '正在处理图片...', mask: true });
+        this.triggerEvent('loadingChange', { show: true, text: '正在处理图片...' });
         this.setData({ isProcessing: true }, () => {
           setTimeout(() => {
             this.regenerateFromCache();
@@ -102,9 +107,9 @@ Component({
       }
     },
     'useSpecialColors': function() {
-      // 特殊色开关变化时，从快照恢复并重新应用鲜艳度处理
       this._waitForData((rows, cols, gridSize) => {
         this.resetToOriginalColors(this.cachedGridData, rows, cols);
+        this.replaceSpecialColors(this.cachedGridData, rows, cols);
         this.reapplyVibrantScale(this.cachedGridData, rows, cols);
         const stats = this.calculateStats(this.cachedGridData, rows, cols);
         this.triggerEvent('statsUpdate', { stats: stats });
@@ -137,7 +142,7 @@ Component({
     },
     'gridPreset': function(newVal, oldVal) {
       // 网格预设变化时，使用原始缓存数据重新裁剪
-      if (oldVal && oldVal[0] === newVal[0]) return; // 索引没变，不需要处理
+      if (oldVal && oldVal[0] === newVal[0]) return;
 
       // 等待 cachedOriginalGridData 就绪（最多 1 秒）
       const waitForOriginal = (retryCount) => {
@@ -156,25 +161,43 @@ Component({
         const origRows = this.cachedOriginalGridData.length;
         const gridSize = this.cachedGridInfo ? this.cachedGridInfo.gridSize : 10;
 
-        // 原图比例：恢复原始数据
+        // 从快照（原始数据，含特殊色）恢复并裁剪
         if (targetCols === 0 || targetRows === 0) {
-          this.cachedGridData = this.cachedOriginalGridData;
+          this.cachedGridData = this.deepCloneGridData(this.cachedOriginalGridData, origRows, origCols);
           this.cachedGridInfo = { cols: origCols, rows: origRows, gridSize };
         } else {
-          // 应用裁剪
-          const presetResult = this._applyGridPreset(this.cachedOriginalGridData, origCols, origRows);
+          const presetResult = this._applyGridPreset(this.cachedOriginalGridData, origCols, origRows, newVal);
           this.cachedGridData = presetResult.gridData;
           this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
         }
 
+        // 重新应用颜色处理
+        // 注意：裁剪后的数据索引与 snapshot 不对齐，不能直接调用 reapplyVibrantScale
+        // （其内部的 resetToOriginalColors 会用 snapshot[row][col] 恢复，但裁剪后 row/col 对应的是原图中心区域，而非 snapshot 的同一索引）
+        // 裁剪时已从 snapshot 浅拷贝了 markCode/markHex/markRgb，只需重新应用替换逻辑
+        const vibrantScale = this.data.vibrantScale;
+        if (vibrantScale === 0) {
+          // 鲜艳度为 0：快照的 mark 值就是最终值，仅需处理特殊色替换
+          if (!this.data.useSpecialColors) {
+            this.replaceSpecialColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
+          }
+        } else {
+          // 鲜艳度非 0：需要重新增强（从 rawRgb 计算，不依赖 snapshot 索引）
+          this.replaceSpecialColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
+          this.reapplyVibrantScale(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
+        }
+
         const stats = this.calculateStats(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
-        this.triggerEvent('statsUpdate', { stats });
-        // 通知页面更新 mosaicData 的行列数
-        this.triggerEvent('gridInfoUpdate', {
-          cols: this.cachedGridInfo.cols,
-          rows: this.cachedGridInfo.rows
+        const gridInfo = this.cachedGridInfo;
+
+        wx.nextTick(() => {
+          if (!gridInfo) return;
+          this.triggerEvent('statsUpdate', { stats });
+          this.triggerEvent('gridInfoUpdate', {
+            cols: gridInfo.cols,
+            rows: gridInfo.rows
+          });
         });
-        // 重置缩放和拖拽状态
         this.resetPreviewState();
         this.renderToCanvas(this.cachedGridData, this.cachedGridInfo.cols, this.cachedGridInfo.rows, gridSize);
       };
@@ -187,18 +210,25 @@ Component({
       if (!this.data.hasUserZoomed) {
         this.setData({ hasUserZoomed: true });
       }
+      // 渲染中则跳过，当前渲染完成后会用最新值
+      if (this.isRendering) return;
       if (this.cachedGridData && this.cachedGridInfo) {
         const { cols, rows, gridSize } = this.cachedGridInfo;
+        this._showTouchLoading = true;
         this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
       }
     },
     'offsetX,offsetY': function() {
       // 拖动时只移动视图，不渲染
       if (this.data.isDragging) return;
-
+      // 程序重置时不要触发渲染，和 scale observer 一致
+      if (this._isResetting) return;
+      // 渲染中则跳过，当前渲染完成后会用最新值
+      if (this.isRendering) return;
       // 使用 cachedGridData 渲染
       if (this.cachedGridData && this.cachedGridInfo) {
         const { cols, rows, gridSize } = this.cachedGridInfo;
+        this._showTouchLoading = true;
         this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
       }
     }
@@ -391,14 +421,18 @@ Component({
     },
 
     // 从快照恢复原始颜色数据（仅恢复数据，不做特殊色处理）
+    // 使用 _cropOffsetCol/_cropOffsetRow 处理裁剪后的索引偏移
     resetToOriginalColors(gridData, rows, cols) {
       const snapshot = this.cachedOriginalGridData;
       if (!snapshot) return;
 
+      const offsetCol = this._cropOffsetCol || 0;
+      const offsetRow = this._cropOffsetRow || 0;
+
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
           const cell = gridData[row] && gridData[row][col];
-          const snapCell = snapshot[row] && snapshot[row][col];
+          const snapCell = snapshot[row + offsetRow] && snapshot[row + offsetRow][col + offsetCol];
           if (!cell || !snapCell) continue;
 
           cell.rawRgb = snapCell.rawRgb ? { ...snapCell.rawRgb } : null;
@@ -626,12 +660,9 @@ Component({
         gridInfo: { cols: finalCols, rows: finalRows, gridSize: result.gridSize },
         isProcessing: false
       });
-      wx.hideLoading();
       this.triggerEvent('statsUpdate', { stats });
 
-      setTimeout(() => {
-        this.renderToCanvas(finalGridData, finalCols, finalRows, result.gridSize);
-      }, 100);
+      this.renderToCanvas(finalGridData, finalCols, finalRows, result.gridSize);
 
       this.triggerEvent('mosaicGenerated', {
         gridInfo: { cols: finalCols, rows: finalRows, gridSize: result.gridSize },
@@ -693,12 +724,9 @@ Component({
         gridInfo: { cols: finalCols, rows: finalRows, gridSize: qualityGridSize },
         isProcessing: false
       });
-      wx.hideLoading();
       this.triggerEvent('statsUpdate', { stats });
 
-      setTimeout(() => {
-        this.renderToCanvas(finalGridData, finalCols, finalRows, qualityGridSize);
-      }, 100);
+      this.renderToCanvas(finalGridData, finalCols, finalRows, qualityGridSize);
 
       this.triggerEvent('mosaicGenerated', {
         gridInfo: { cols: finalCols, rows: finalRows, gridSize: qualityGridSize },
@@ -724,6 +752,8 @@ Component({
       this.cachedGridInfo = null;
       this.cachedOriginalGridData = null;
       this.cachedSegments = null;
+      this._cropOffsetCol = 0;
+      this._cropOffsetRow = 0;
 
       this.setData({ isProcessing: true });
 
@@ -847,6 +877,7 @@ Component({
       this.cachedPixelData = new Uint8ClampedArray(pixelData);
       this.cachedWidth = width;
       this.cachedHeight = height;
+      this.triggerEvent('loadingChange', { show: true, text: '正在处理图片...' });
       this.setData({ isProcessing: true });
 
       const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
@@ -873,11 +904,18 @@ Component({
         this._finishSimpleResult(result, qualityGridSize);
       }
     },
-
     // 渲染马赛克到 Canvas
+    // gridData 被原地修改，正在进行的异步渲染自然读到最新数据
     renderToCanvas(gridData, cols, rows, gridSize) {
-      const that = this;
+      if (this.isRendering) return;
       this.isRendering = true;
+      const that = this;
+      // 触摸操作触发的渲染：立即显示 loading
+      if (this._showTouchLoading) {
+        this._showTouchLoading = false;
+        this.triggerEvent('loadingChange', { show: true, text: '正在渲染...' });
+        this._loadingShown = true;
+      }
 
       // 使用组件实例的 createSelectorQuery
       const query = this.createSelectorQuery();
@@ -885,16 +923,12 @@ Component({
         .fields({ node: true, size: true })
         .exec((res) => {
           if (!res[0]) {
-            
-            // 重试
             setTimeout(() => {
               that.renderToCanvas(gridData, cols, rows, gridSize);
             }, 200);
             return;
           }
           if (!res[0].node) {
-            
-            // 重试
             setTimeout(() => {
               that.renderToCanvas(gridData, cols, rows, gridSize);
             }, 200);
@@ -927,16 +961,16 @@ Component({
           const userScale = that.data.scale || 1;
 
           // 根据设备性能动态设置 Canvas 最大尺寸（预览图）
-          // benchmarkLevel: iPhone 14 Pro ~400, iPhone 11 ~200, 中端 Android ~100-150
+          // benchmarkLevel 范围：最高 50，高档机≥30，中档机23-29，低档机≤22，未知=-1
           const sysInfo = wx.getSystemInfoSync();
           const benchmarkLevel = sysInfo.benchmarkLevel || 10;
           let MAX_CANVAS_DIMENSION;
-          if (benchmarkLevel >= 200) {
+          if (benchmarkLevel >= 30) {
             MAX_CANVAS_DIMENSION = 16384;  // 高端设备
-          } else if (benchmarkLevel >= 100) {
+          } else if (benchmarkLevel >= 23) {
             MAX_CANVAS_DIMENSION = 8192;   // 中端设备
           } else {
-            MAX_CANVAS_DIMENSION = 4096;   // 低端设备
+            MAX_CANVAS_DIMENSION = 4096;   // 低端设备或未知
           }
 
           let scaledWidth = canvasWidth * userScale;
@@ -950,8 +984,6 @@ Component({
           canvas.width = Math.floor(scaledWidth);
           canvas.height = Math.floor(scaledHeight);
 
-          
-          
           // 存储引用
           that.canvasNode = canvas;
           that.canvasCtx = ctx;
@@ -1065,9 +1097,10 @@ Component({
           if (that.data.hasUserZoomed && cellSize >= 8) {
             that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
           }
-
-          // 渲染完成，释放节流标志
+          // 渲染完成，隐藏 loading
           that.isRendering = false;
+          that.triggerEvent('loadingChange', { show: false, text: '' });
+          that._loadingShown = false;
         });
     },
 
@@ -1233,15 +1266,16 @@ Component({
           // 设置 canvas 尺寸
           const userScale = that.data.scale || 1;
           // 根据设备性能动态设置 Canvas 最大尺寸（预览图）
+          // benchmarkLevel 范围：最高 50，高档机≥30，中档机23-29，低档机≤22，未知=-1
           const sysInfoSeg = wx.getSystemInfoSync();
           const benchmarkLevelSeg = sysInfoSeg.benchmarkLevel || 10;
           let MAX_CANVAS_DIMENSION;
-          if (benchmarkLevelSeg >= 200) {
+          if (benchmarkLevelSeg >= 30) {
             MAX_CANVAS_DIMENSION = 16384;  // 高端设备
-          } else if (benchmarkLevelSeg >= 100) {
+          } else if (benchmarkLevelSeg >= 23) {
             MAX_CANVAS_DIMENSION = 8192;   // 中端设备
           } else {
-            MAX_CANVAS_DIMENSION = 4096;   // 低端设备
+            MAX_CANVAS_DIMENSION = 4096;   // 低端设备或未知
           }
           let scaledWidth = canvasWidth * userScale;
           let scaledHeight = canvasHeight * userScale;
@@ -1899,11 +1933,6 @@ Component({
     },
 
     handleTouchMove(e) {
-      // 拖动时不受 isRendering 节流影响
-      if (!this.data.isDragging && this.isRendering) {
-        return;
-      }
-
       if (e.touches.length === 2) {
         // 双指缩放（以手指中心点为基准）
         const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -1994,20 +2023,26 @@ Component({
     },
 
     // ========== 网格预设：截取/填充 ==========
-    _applyGridPreset(gridData, cols, rows) {
-      const preset = this.data.gridPreset;
+    _applyGridPreset(gridData, cols, rows, presetOverride) {
+      const preset = presetOverride || this.data.gridPreset;
       const presetIndex = preset[0];
       const targetCols = preset[1];
       const targetRows = preset[2];
 
-      // 原图比例：不处理
+      // 原图比例：不处理，重置偏移量
       if (presetIndex === 0 || targetCols === 0 || targetRows === 0) {
+        this._cropOffsetCol = 0;
+        this._cropOffsetRow = 0;
         return { gridData, cols, rows };
       }
 
       // 从中心截取/填充
       const startCol = Math.max(0, Math.floor((cols - targetCols) / 2));
       const startRow = Math.max(0, Math.floor((rows - targetRows) / 2));
+
+      // 保存裁剪偏移量，供 resetToOriginalColors 使用
+      this._cropOffsetCol = startCol;
+      this._cropOffsetRow = startRow;
 
       const newCols = targetCols;
       const newRows = targetRows;
