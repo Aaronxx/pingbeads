@@ -712,7 +712,7 @@ Page({
   },
 
   hideSplitPopup() {
-    this.setData({ showSplitPopup: false });
+    this.setData({ showSplitPopup: false, splitMode: '', splitModeText: '' });
   },
 
   onSelectSplitMode(e) {
