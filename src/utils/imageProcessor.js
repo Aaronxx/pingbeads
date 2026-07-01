@@ -54,6 +54,52 @@ function medianColor(pixelData, width, height, srcX, srcY, endX, endY) {
 }
 
 /**
+ * 中位数引导的加权平均取色
+ * 先找中位数作参考中心，对接近中位数的像素赋予更高权重（高斯权重），
+ * 保持颜色簇的整体性，避免独立通道中位数在混合色区域产生通道错配的中间色
+ * @param {Uint8ClampedArray} pixelData - 像素数据
+ * @param {number} width - 图像宽度
+ * @param {number} height - 图像高度
+ * @param {number} srcX - 起始X
+ * @param {number} srcY - 起始Y
+ * @param {number} endX - 结束X
+ * @param {number} endY - 结束Y
+ * @returns {{r: number, g: number, b: number}}
+ */
+function extractDominantColor(pixelData, width, height, srcX, srcY, endX, endY) {
+  const colors = [];
+  for (let y = srcY; y < endY && y < height; y++) {
+    for (let x = srcX; x < endX && x < width; x++) {
+      const idx = (y * width + x) * 4;
+      colors.push({ r: pixelData[idx], g: pixelData[idx + 1], b: pixelData[idx + 2] });
+    }
+  }
+
+  if (colors.length === 0) return { r: 0, g: 0, b: 0 };
+  if (colors.length <= 4) return medianColor(pixelData, width, height, srcX, srcY, endX, endY);
+
+  // 先找中位数作参考中心
+  const rs = [], gs = [], bs = [];
+  for (const c of colors) { rs.push(c.r); gs.push(c.g); bs.push(c.b); }
+  const median = { r: quickMedian(rs), g: quickMedian(gs), b: quickMedian(bs) };
+
+  // 高斯加权平均：离中位数越近权重越高
+  const sigmaSq = 2 * 25 * 25; // σ=25，与马赛克模式一致
+  let sumW = 0, sumR = 0, sumG = 0, sumB = 0;
+  for (const c of colors) {
+    const dr = c.r - median.r, dg = c.g - median.g, db = c.b - median.b;
+    const w = Math.exp(-(dr * dr + dg * dg + db * db) / sigmaSq);
+    sumW += w;
+    sumR += c.r * w;
+    sumG += c.g * w;
+    sumB += c.b * w;
+  }
+
+  if (sumW === 0) return median;
+  return { r: Math.round(sumR / sumW), g: Math.round(sumG / sumW), b: Math.round(sumB / sumW) };
+}
+
+/**
  * 简化版处理 - 逐像素映射
  * 适合直接使用，不需要预处理
  * 优化：使用分片处理避免阻塞
@@ -106,8 +152,8 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
     for (let col = 0; col < cols; col++) {
       const { srcX, srcY, endX, endY } = gridRegions[row][col];
 
-      // 中位数取色：保留原色、抗异常值
-      const dominantColor = medianColor(processedPixelData, width, height, srcX, srcY, endX, endY);
+      // 中位数引导加权平均取色：保持颜色簇完整性，避免通道错配
+      const dominantColor = extractDominantColor(processedPixelData, width, height, srcX, srcY, endX, endY);
 
       // 鲜艳度增强/降低：饱和度 + 亮度 + 对比度 组合调整
       // vibrantScale 范围：-10 到 10
