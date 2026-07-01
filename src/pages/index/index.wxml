@@ -87,6 +87,7 @@
         regenerateTrigger="{{regenerateTrigger}}"
         vibrantScale="{{vibrantScale}}"
         gridPreset="{{[gridPresetIndex, availableGridPresets[gridPresetIndex].cols, availableGridPresets[gridPresetIndex].rows]}}"
+        splitMode="{{splitMode}}"
         bind:cellClick="onCodeClick"
         bind:mosaicGenerated="onMosaicGenerated"
         bind:statsUpdate="onStatsUpdate"
@@ -113,15 +114,19 @@
   </view>
 
   <!-- ========================
-     底部悬浮保存按钮
+     底部悬浮按钮栏
      ======================== -->
   <view class="bottom-fixed-bar" wx:if="{{mosaicData}}">
-    <view class="save-btn-full {{isExporting ? 'exporting' : ''}}" bindtap="exportPNG">
+    <view class="save-btn-full {{isExporting ? 'exporting' : ''}} {{splitMode ? 'has-split' : ''}}" bindtap="exportPNG">
       <view wx:if="{{isExporting}}" class="btn-exporting">
         <view class="export-spinner"></view>
         <text>导出中...</text>
       </view>
-      <text wx:else>🐾 保存图片</text>
+      <text wx:if="{{!isExporting && splitMode}}">🐾 导出{{splitModeText}}分块</text>
+      <text wx:if="{{!isExporting && !splitMode}}">🐾 保存图片</text>
+    </view>
+    <view class="split-btn {{splitMode ? 'has-mode' : ''}}" bindtap="toggleSplitPopup">
+      <text>{{splitMode ? '重选' : '✂️ 分块导出'}}</text>
     </view>
   </view>
 
@@ -326,6 +331,30 @@
       </view>
 
     </scroll-view>
+  </view>
+
+  <!-- ========================
+     分块导出选择弹窗
+     ======================== -->
+  <view class="split-popup-mask {{showSplitPopup ? 'show' : ''}}" bindtap="hideSplitPopup"></view>
+  <view class="split-popup {{showSplitPopup ? 'show' : ''}}">
+    <view class="split-popup-title">选择分割方式</view>
+    <view class="split-popup-option" bindtap="onSelectSplitMode" data-mode="horizontal">
+      <text class="split-option-icon">↕</text>
+      <text class="split-option-label">上下分割</text>
+      <text class="split-option-desc">从中间水平切开，导出上下两张图</text>
+    </view>
+    <view class="split-popup-option" bindtap="onSelectSplitMode" data-mode="vertical">
+      <text class="split-option-icon">↔</text>
+      <text class="split-option-label">左右分割</text>
+      <text class="split-option-desc">从中间垂直切开，导出左右两张图</text>
+    </view>
+    <view class="split-popup-option" bindtap="onSelectSplitMode" data-mode="grid2x2">
+      <text class="split-option-icon">🔲</text>
+      <text class="split-option-label">2×2 分割</text>
+      <text class="split-option-desc">均分为4等份，导出四张图</text>
+    </view>
+    <view class="split-popup-cancel" bindtap="hideSplitPopup">取消</view>
   </view>
 
   <!-- 隐藏的导出用 canvas -->

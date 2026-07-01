@@ -31,6 +31,11 @@ Page({
     exportHeight: 300,
     // 是否正在导出
     isExporting: false,
+    // 分块导出模式：'' | 'horizontal' | 'vertical' | 'grid2x2'
+    splitMode: '',
+    splitModeText: '',
+    // 分块选择弹窗
+    showSplitPopup: false,
     // 触发器，用于强制重新生成
     regenerateTrigger: 0,
     // 真机调试时的 canvasId
@@ -521,7 +526,11 @@ Page({
       hasGridLinesDetected: false,
       // 网格预设
       gridPresetIndex: 0,
-      availableGridPresets: this.data.gridPresets.slice()
+      availableGridPresets: this.data.gridPresets.slice(),
+      // 分块导出
+      splitMode: '',
+      splitModeText: '',
+      showSplitPopup: false
     });
 
     // 重置预览缩放和平移
@@ -675,6 +684,24 @@ Page({
     }
   },
 
+  // ========================
+  //  分块导出弹窗
+  // ========================
+  toggleSplitPopup() {
+    if (this.data.isExporting) return;
+    this.setData({ showSplitPopup: !this.data.showSplitPopup });
+  },
+
+  hideSplitPopup() {
+    this.setData({ showSplitPopup: false });
+  },
+
+  onSelectSplitMode(e) {
+    const mode = e.currentTarget.dataset.mode;
+    const textMap = { horizontal: '上下', vertical: '左右', grid2x2: '2×2' };
+    this.setData({ splitMode: mode, splitModeText: textMap[mode] || '', showSplitPopup: false });
+  },
+
   // 导出 PNG - 完整导出马赛克图+色号+统计
   exportPNG() {
     if (!this.data.mosaicData) {
@@ -716,6 +743,12 @@ Page({
     if (!gridData && !segments) {
       wx.showToast({ title: '请先生成拼豆图纸', icon: 'none' });
       this.setData({ isExporting: false });
+      return;
+    }
+
+    // 如果设置了分块导出模式，走分块导出流程
+    if (this.data.splitMode) {
+      this.exportSplitPNG(gridData, cols, rows, gridSize, exportData);
       return;
     }
 
@@ -1134,10 +1167,284 @@ Page({
       });
   },
 
+  // ========================
+  //  分块导出
+  // ========================
+  exportSplitPNG(fullGridData, totalCols, totalRows, gridSize, exportData) {
+    const that = this;
+    const splitMode = this.data.splitMode;
+    const { isLightColor, formatMarkCode } = require('../../utils/colorHelpers');
+
+    // 获取 canvas 节点（只获取一次，避免重复查询导致的节点失效）
+    const query = wx.createSelectorQuery();
+    query.select('#export-canvas')
+      .fields({ node: true, size: true })
+      .exec((canvasRes) => {
+        if (!canvasRes[0] || !canvasRes[0].node) {
+          that.setData({ isExporting: false });
+          wx.showToast({ title: '导出组件异常', icon: 'none' });
+          return;
+        }
+        const canvas = canvasRes[0].node;
+        const ctx = canvas.getContext('2d');
+
+        const midRow = Math.floor(totalRows / 2);
+        const midCol = Math.floor(totalCols / 2);
+        const parts = [];
+        const partNames = {
+          horizontal: ['上半', '下半'],
+          vertical: ['左侧', '右侧'],
+          grid2x2: ['左上', '右上', '左下', '右下']
+        };
+
+        const extractPart = (startRow, endRow, startCol, endCol) => {
+          const partGrid = [];
+          for (let r = startRow; r < endRow; r++) {
+            const row = [];
+            for (let c = startCol; c < endCol; c++) {
+              const cell = fullGridData[r] && fullGridData[r][c];
+              row.push(cell ? { ...cell } : null);
+            }
+            partGrid.push(row);
+          }
+          return { gridData: partGrid, rows: endRow - startRow, cols: endCol - startCol };
+        };
+
+        if (splitMode === 'horizontal') {
+          parts.push(extractPart(0, midRow, 0, totalCols));
+          parts.push(extractPart(midRow, totalRows, 0, totalCols));
+        } else if (splitMode === 'vertical') {
+          parts.push(extractPart(0, totalRows, 0, midCol));
+          parts.push(extractPart(0, totalRows, midCol, totalCols));
+        } else if (splitMode === 'grid2x2') {
+          parts.push(extractPart(0, midRow, 0, midCol));
+          parts.push(extractPart(0, midRow, midCol, totalCols));
+          parts.push(extractPart(midRow, totalRows, 0, midCol));
+          parts.push(extractPart(midRow, totalRows, midCol, totalCols));
+        }
+
+        const names = partNames[splitMode];
+        const totalParts = parts.length;
+        let currentIndex = 0;
+        let failCount = 0;
+        const shouldRemoveEdge = that.data.removeEdge !== false;
+
+        // 渲染一张分块到 canvas
+        const renderPart = (part, partName) => {
+          const { gridData: partGridData, rows, cols } = part;
+
+          // 统计
+          const statsList = [];
+          const colorMap = {};
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              const cell = partGridData[r] && partGridData[r][c];
+              if (!cell || !cell.markCode) continue;
+              if (shouldRemoveEdge && cell.isEdge) continue;
+              const code = formatMarkCode(cell.markCode);
+              if (!colorMap[code]) {
+                colorMap[code] = { code, originalCode: cell.markCode, hex: cell.markHex || '#000', count: 0 };
+              }
+              colorMap[code].count++;
+            }
+          }
+          Object.values(colorMap).sort((a, b) => b.count - a.count).forEach(item => statsList.push(item));
+
+          // 布局
+          const titleHeight = 180;
+          const rulerWidth = 50;
+          const rulerHeight = 40;
+          const itemsPerRow = 10;
+          const statsItemHeight = 50;
+          const statsRowCount = Math.ceil(statsList.length / itemsPerRow);
+          const statsH = statsItemHeight * statsRowCount + 20;
+
+          const maxExportDimension = 4096;
+          const baseW = cols * gridSize + rulerWidth * 2;
+          const baseH = rows * gridSize + rulerHeight * 2 + titleHeight + statsH;
+          const scX = maxExportDimension / baseW;
+          const scY = maxExportDimension / baseH;
+          const exportScale = Math.max(1, Math.min(scX, scY));
+          const cellW = gridSize * exportScale;
+          const mosaicW = cols * cellW;
+          const mosaicH = rows * cellW;
+          const canvasW = mosaicW + rulerWidth * 2;
+          const canvasH = titleHeight + rulerHeight * 2 + mosaicH + statsH;
+
+          canvas.width = canvasW;
+          canvas.height = canvasH;
+
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvasW, canvasH);
+
+          // 标题
+          ctx.fillStyle = '#f5f5f5';
+          ctx.fillRect(0, 0, canvasW, titleHeight);
+          ctx.font = 'bold 80px "KaiTi", "STKaiti", "楷体", "PingFang SC", cursive, sans-serif';
+          ctx.fillStyle = '#ff7eb3';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('🐱 微信小程序：拼豆酥（' + partName + '）' + rows + '行×' + cols + '列', rulerWidth + 12, titleHeight / 2);
+
+          const offX = rulerWidth;
+          const offY = titleHeight + rulerHeight;
+
+          // 列标尺
+          const topRulerY = titleHeight;
+          ctx.fillStyle = '#d0d0d0';
+          ctx.fillRect(rulerWidth, topRulerY, mosaicW, rulerHeight);
+          ctx.strokeStyle = '#999';
+          ctx.lineWidth = 1;
+          const cfs = Math.max(7, Math.min(12, mosaicW / cols * 0.7));
+          ctx.font = cfs + 'px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          for (let col = 1; col <= cols; col++) {
+            const x = rulerWidth + (col - 0.5) * cellW;
+            ctx.beginPath();
+            ctx.moveTo(rulerWidth + (col - 1) * cellW, topRulerY + rulerHeight - 8);
+            ctx.lineTo(rulerWidth + (col - 1) * cellW, topRulerY + rulerHeight);
+            ctx.stroke();
+            ctx.fillStyle = '#333';
+            ctx.fillText(col.toString(), x, topRulerY + rulerHeight / 2);
+          }
+
+          // 行标尺
+          const rfs = Math.max(7, Math.min(12, mosaicH / rows * 0.7));
+          ctx.fillStyle = '#d0d0d0';
+          ctx.fillRect(0, topRulerY + rulerHeight, rulerWidth, mosaicH);
+          ctx.font = rfs + 'px sans-serif';
+          for (let row = 1; row <= rows; row++) {
+            const y = topRulerY + rulerHeight + (row - 0.5) * cellW;
+            ctx.beginPath();
+            ctx.moveTo(rulerWidth - 8, topRulerY + rulerHeight + (row - 1) * cellW);
+            ctx.lineTo(rulerWidth, topRulerY + rulerHeight + (row - 1) * cellW);
+            ctx.stroke();
+            ctx.fillStyle = '#333';
+            ctx.textAlign = 'right';
+            ctx.fillText(row.toString(), rulerWidth - 8, y);
+          }
+
+          // 马赛克
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              const cell = partGridData[r] && partGridData[r][c];
+              if (!cell || (shouldRemoveEdge && cell.isEdge)) continue;
+              const x = offX + c * cellW;
+              const y = offY + r * cellW;
+              ctx.fillStyle = cell.isEmpty ? '#F0F0F0' : (cell.markHex || '#cccccc');
+              ctx.fillRect(x, y, cellW, cellW);
+              ctx.strokeStyle = cell.isEmpty ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.1)';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellW) - 1, Math.ceil(cellW) - 1);
+              if (!cell.isEmpty && cellW >= 4) {
+                const isLt = isLightColor(cell.markHex);
+                ctx.fillStyle = isLt ? '#333' : '#fff';
+                const fontSize = Math.max(4, cellW * 0.35);
+                ctx.font = 'bold ' + fontSize.toFixed(0) + 'px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(formatMarkCode(cell.markCode), x + cellW / 2, y + cellW / 2);
+              }
+            }
+          }
+
+          // 参考线
+          that.drawExportGuideLines(ctx, offX, offY, cols, rows, cellW);
+
+          // 统计行
+          const statsY = titleHeight + rulerHeight + mosaicH + rulerHeight + 10;
+          ctx.fillStyle = '#f8f9fa';
+          ctx.fillRect(0, titleHeight + rulerHeight + mosaicH + rulerHeight, canvasW, statsH);
+
+          for (let i = 0; i < statsList.length; i++) {
+            const item = statsList[i];
+            const sr = Math.floor(i / itemsPerRow);
+            const sc = i % itemsPerRow;
+            const itemWidth = mosaicW / itemsPerRow;
+            const sx = rulerWidth + sc * itemWidth + 8;
+            const sy = statsY + sr * statsItemHeight;
+            const btnW = itemWidth - 16;
+            const btnH = statsItemHeight - 5;
+
+            let displayCode = item.code;
+            if (displayCode.length >= 2 && displayCode[1] === '0') {
+              displayCode = displayCode.charAt(0) + displayCode.substring(2);
+            }
+            const isLt = isLightColor(item.hex);
+
+            ctx.fillStyle = item.hex;
+            that.drawRoundedRect(ctx, sx, sy, btnW, btnH, 15);
+            ctx.save();
+            that.drawRoundedRect(ctx, sx, sy, btnW, btnH, 15);
+            ctx.clip();
+            const grad = ctx.createLinearGradient(sx, sy, sx, sy + btnH * 0.4);
+            grad.addColorStop(0, 'rgba(255,255,255,0.4)');
+            grad.addColorStop(1, 'rgba(255,255,255,0.1)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(sx, sy, btnW, btnH * 0.4);
+            ctx.restore();
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+            ctx.lineWidth = 1;
+            that.drawRoundedRect(ctx, sx, sy, btnW, btnH, 15);
+
+            ctx.fillStyle = isLt ? '#333' : '#fff';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(displayCode + ' (' + item.count + ')', sx + btnW / 2, sy + btnH / 2);
+          }
+
+          // 水印
+          that.drawWatermark(ctx, canvasW, canvasH);
+        };
+
+        const exportNext = () => {
+          if (currentIndex >= totalParts) {
+            that.setData({ isExporting: false });
+            if (failCount > 0) {
+              wx.showToast({ title: failCount + '张导出失败，请重试', icon: 'none' });
+            } else {
+              wx.showToast({ title: '分块导出完成', icon: 'success' });
+            }
+            return;
+          }
+
+          const part = parts[currentIndex];
+          const partName = names[currentIndex];
+          wx.showToast({ title: '导出中 ' + (currentIndex + 1) + '/' + totalParts, icon: 'loading', duration: 1500 });
+
+          // 渲染到 canvas
+          renderPart(part, partName);
+
+          // 等待渲染完成后导出
+          setTimeout(() => {
+            wx.canvasToTempFilePath({
+              canvas: canvas,
+              success: (res) => {
+                that.doSaveImage(res.tempFilePath, true);
+                currentIndex++;
+                setTimeout(() => exportNext(), 1000);
+              },
+              fail: (err) => {
+                console.error('[exportSplitPNG] 第' + (currentIndex + 1) + '张失败:', err?.errMsg || err);
+                failCount++;
+                currentIndex++;
+                setTimeout(() => exportNext(), 500);
+              }
+            }, that);
+          }, 3000);
+        };
+
+        exportNext();
+      });
+  },
+
   // 保存图片到相册（带权限检查）
   saveToPhotoAlbum(tempFilePath) {
     const that = this;
-    
+
 
     // 直接尝试保存，让系统弹窗来处理权限请求
     // 如果权限未决定，会弹出系统授权弹窗
@@ -1175,13 +1482,15 @@ Page({
   },
 
   // 执行保存图片
-  doSaveImage(tempFilePath) {
+  doSaveImage(tempFilePath, skipExportFlag) {
     const that = this;
     wx.saveImageToPhotosAlbum({
       filePath: tempFilePath,
       success() {
         wx.showToast({ title: '保存成功', icon: 'success' });
-        that.setData({ isExporting: false });
+        if (!skipExportFlag) {
+          that.setData({ isExporting: false });
+        }
       },
       fail(err) {
         console.error('[exportPNG] saveImageToPhotosAlbum 失败:', err?.errMsg || err);
@@ -1191,7 +1500,9 @@ Page({
         that.showAuthDeniedModal(tempFilePath);
         } else {
         wx.showToast({ title: '保存失败: ' + (err.errMsg || ''), icon: 'none', duration: 2000 });
-        that.setData({ isExporting: false });
+        if (!skipExportFlag) {
+          that.setData({ isExporting: false });
+        }
         }
       }
     });

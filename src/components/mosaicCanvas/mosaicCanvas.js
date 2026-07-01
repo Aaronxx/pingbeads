@@ -22,7 +22,9 @@ Component({
     mirrorImage: { type: Boolean, value: false },  // 是否镜像翻转
     forceGridSize: { type: Number, value: null },  // 强制使用的网格大小（跳过检测）
     // 网格预设：[预设索引, 目标列数, 目标行数]
-    gridPreset: { type: Array, value: [0, 0, 0 ] }
+    gridPreset: { type: Array, value: [0, 0, 0 ] },
+    // 分块导出模式：'' | 'horizontal' | 'vertical' | 'grid2x2'
+    splitMode: { type: String, value: '' }
   },
 
   data: {
@@ -124,6 +126,12 @@ Component({
     },
     'mirrorImage': function() {
       // 镜像开关变化时，只需要重新渲染
+      this._waitForData((rows, cols, gridSize) => {
+        this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+      });
+    },
+    'splitMode': function() {
+      // 分块模式切换时只需重绘分割线
       this._waitForData((rows, cols, gridSize) => {
         this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
       });
@@ -1097,6 +1105,8 @@ Component({
           if (that.data.hasUserZoomed && cellSize >= 8) {
             that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
           }
+          // 分块导出的分割指示线
+          that.drawSplitLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale);
           // 渲染完成，隐藏 loading
           that.isRendering = false;
           that.triggerEvent('loadingChange', { show: false, text: '' });
@@ -2076,6 +2086,129 @@ Component({
       }
 
       return { gridData: newGridData, cols: newCols, rows: newRows };
+    },
+
+    // ========== 分块导出：分割指示线 ==========
+    drawSplitLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale) {
+      const splitMode = this.data.splitMode;
+      if (!splitMode) return;
+
+      const totalWidth = cols * gridSize * scale;
+      const totalHeight = rows * gridSize * scale;
+
+      ctx.save();
+      ctx.setLineDash([12, 8]);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+      // 下层白色虚线（发光效果）
+      if (splitMode === 'horizontal') {
+        const midY = offsetY + totalHeight / 2;
+        ctx.beginPath();
+        ctx.moveTo(offsetX, midY);
+        ctx.lineTo(offsetX + totalWidth, midY);
+        ctx.stroke();
+      } else if (splitMode === 'vertical') {
+        const midX = offsetX + totalWidth / 2;
+        ctx.beginPath();
+        ctx.moveTo(midX, offsetY);
+        ctx.lineTo(midX, offsetY + totalHeight);
+        ctx.stroke();
+      } else if (splitMode === 'grid2x2') {
+        const midY = offsetY + totalHeight / 2;
+        const midX = offsetX + totalWidth / 2;
+        ctx.beginPath();
+        ctx.moveTo(offsetX, midY);
+        ctx.lineTo(offsetX + totalWidth, midY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(midX, offsetY);
+        ctx.lineTo(midX, offsetY + totalHeight);
+        ctx.stroke();
+      }
+      // 上层深色虚线（清晰可见）
+      ctx.setLineDash([12, 8]);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.setLineDash([]);
+      // 重新绘制一次（用不同offset使上下层虚线交替）
+      ctx.setLineDash([12, 8]);
+      ctx.lineDashOffset = 10;
+      if (splitMode === 'horizontal') {
+        const midY = offsetY + totalHeight / 2;
+        ctx.beginPath();
+        ctx.moveTo(offsetX, midY);
+        ctx.lineTo(offsetX + totalWidth, midY);
+        ctx.stroke();
+      } else if (splitMode === 'vertical') {
+        const midX = offsetX + totalWidth / 2;
+        ctx.beginPath();
+        ctx.moveTo(midX, offsetY);
+        ctx.lineTo(midX, offsetY + totalHeight);
+        ctx.stroke();
+      } else if (splitMode === 'grid2x2') {
+        const midY = offsetY + totalHeight / 2;
+        const midX = offsetX + totalWidth / 2;
+        ctx.beginPath();
+        ctx.moveTo(offsetX, midY);
+        ctx.lineTo(offsetX + totalWidth, midY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(midX, offsetY);
+        ctx.lineTo(midX, offsetY + totalHeight);
+        ctx.stroke();
+      }
+      ctx.restore();
+    },
+
+    // ========== 分块导出：获取分块统计 ==========
+    getSplitStats(splitMode) {
+      if (!this.cachedGridData || !this.cachedGridInfo) return null;
+      const { cols, rows } = this.cachedGridInfo;
+      const gridData = this.cachedGridData;
+
+      const parts = [];
+      const partNames = {
+        horizontal: ['上半', '下半'],
+        vertical: ['左侧', '右侧'],
+        grid2x2: ['左上', '右上', '左下', '右下']
+      };
+
+      const midRow = Math.floor(rows / 2);
+      const midCol = Math.floor(cols / 2);
+
+      const extractPart = (startRow, endRow, startCol, endCol) => {
+        const partGridData = [];
+        for (let r = startRow; r < endRow; r++) {
+          const newRow = [];
+          for (let c = startCol; c < endCol; c++) {
+            const cell = gridData[r] && gridData[r][c];
+            newRow.push(cell ? { ...cell } : null);
+          }
+          partGridData.push(newRow);
+        }
+        const partRows = endRow - startRow;
+        const partCols = endCol - startCol;
+        const stats = this.calculateStats(partGridData, partRows, partCols);
+        return { gridData: partGridData, rows: partRows, cols: partCols, stats };
+      };
+
+      if (splitMode === 'horizontal') {
+        parts.push(extractPart(0, midRow, 0, cols));
+        parts.push(extractPart(midRow, rows, 0, cols));
+      } else if (splitMode === 'vertical') {
+        parts.push(extractPart(0, rows, 0, midCol));
+        parts.push(extractPart(0, rows, midCol, cols));
+      } else if (splitMode === 'grid2x2') {
+        parts.push(extractPart(0, midRow, 0, midCol));
+        parts.push(extractPart(0, midRow, midCol, cols));
+        parts.push(extractPart(midRow, rows, 0, midCol));
+        parts.push(extractPart(midRow, rows, midCol, cols));
+      } else {
+        return null;
+      }
+
+      const names = partNames[splitMode];
+      return parts.map((p, i) => ({ ...p, name: names[i] }));
     }
   }
 });
