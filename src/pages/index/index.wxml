@@ -41,7 +41,7 @@
   <!-- ========================
      自定义 loading 覆盖层
      ======================== -->
-  <view class="loading-overlay {{showLoading ? 'show' : ''}}" catchtouchmove="preventBubbling">
+  <view class="loading-overlay {{showLoading ? 'show' : ''}} {{exportProgress > 0 ? 'export-loading' : ''}}" catchtouchmove="preventBubbling">
     <view class="loading-box">
       <view class="loading-spinner-ring">
         <view class="spinner-dot dot-1"></view>
@@ -49,6 +49,17 @@
         <view class="spinner-dot dot-3"></view>
       </view>
       <text class="loading-text">{{loadingText}}</text>
+      <view wx:if="{{exportProgress > 0}}" class="loading-progress-bar">
+        <view class="loading-progress-fill" style="width: {{exportProgress}}%"></view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 自定义成功提示 -->
+  <view class="success-toast {{showSuccessToast ? 'show' : ''}}" catchtouchmove="preventBubbling">
+    <view class="success-toast-box">
+      <view class="success-icon">✓</view>
+      <text class="success-text">{{successToastText}}</text>
     </view>
   </view>
 

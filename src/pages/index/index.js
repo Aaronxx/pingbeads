@@ -31,6 +31,11 @@ Page({
     exportHeight: 300,
     // 是否正在导出
     isExporting: false,
+    // 分块导出进度 (0-100)
+    exportProgress: 0,
+    // 成功提示
+    showSuccessToast: false,
+    successToastText: '',
     // 分块导出模式：'' | 'horizontal' | 'vertical' | 'grid2x2'
     splitMode: '',
     splitModeText: '',
@@ -144,13 +149,26 @@ Page({
   },
 
   // 显示自定义 loading
-  showCustomLoading(text) {
-    this.setData({ showLoading: true, loadingText: text || '加载中...' });
+  showCustomLoading(text, progress) {
+    const data = { showLoading: true, loadingText: text || '加载中...' };
+    if (typeof progress === 'number') {
+      data.exportProgress = progress;
+    }
+    this.setData(data);
   },
 
   // 隐藏自定义 loading
   hideCustomLoading() {
-    this.setData({ showLoading: false, loadingText: '' });
+    this.setData({ showLoading: false, loadingText: '', exportProgress: 0 });
+  },
+
+  // 显示自定义成功提示
+  showSuccessToast(text, duration) {
+    const that = this;
+    this.setData({ showSuccessToast: true, successToastText: text || '操作成功' });
+    setTimeout(() => {
+      that.setData({ showSuccessToast: false, successToastText: '' });
+    }, duration || 2000);
   },
 
   // 预览区点击事件（未选择图片时触发选择图片）
@@ -530,7 +548,8 @@ Page({
       // 分块导出
       splitMode: '',
       splitModeText: '',
-      showSplitPopup: false
+      showSplitPopup: false,
+      exportProgress: 0
     });
 
     // 重置预览缩放和平移
@@ -1404,16 +1423,17 @@ Page({
           if (currentIndex >= totalParts) {
             that.setData({ isExporting: false });
             if (failCount > 0) {
-              wx.showToast({ title: failCount + '张导出失败，请重试', icon: 'none' });
+              that.showSuccessToast(failCount + '张导出失败，请重试', 2500);
             } else {
-              wx.showToast({ title: '分块导出完成', icon: 'success' });
+              that.showSuccessToast('分块导出完成', 2000);
             }
             return;
           }
 
           const part = parts[currentIndex];
           const partName = names[currentIndex];
-          wx.showToast({ title: '导出中 ' + (currentIndex + 1) + '/' + totalParts, icon: 'loading', duration: 1500 });
+          const progress = Math.round(((currentIndex + 1) / totalParts) * 100);
+          that.showCustomLoading('导出中 ' + (currentIndex + 1) + '/' + totalParts, progress);
 
           // 渲染到 canvas
           renderPart(part, partName);
@@ -1425,6 +1445,12 @@ Page({
               success: (res) => {
                 that.doSaveImage(res.tempFilePath, true);
                 currentIndex++;
+                if (currentIndex < totalParts) {
+                  const nextProgress = Math.round((currentIndex / totalParts) * 100);
+                  that.showCustomLoading('保存中...', nextProgress);
+                } else {
+                  that.hideCustomLoading();
+                }
                 setTimeout(() => exportNext(), 1000);
               },
               fail: (err) => {
@@ -1487,7 +1513,7 @@ Page({
     wx.saveImageToPhotosAlbum({
       filePath: tempFilePath,
       success() {
-        wx.showToast({ title: '保存成功', icon: 'success' });
+        that.showSuccessToast('保存成功', 1500);
         if (!skipExportFlag) {
           that.setData({ isExporting: false });
         }
