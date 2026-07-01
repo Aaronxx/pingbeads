@@ -64,46 +64,48 @@ function medianColor(pixelData, width, height, srcX, srcY, endX, endY) {
  * @param {number} srcY - 起始Y
  * @param {number} endX - 结束X
  * @param {number} endY - 结束Y
- * @returns {{r: number, g: number, b: number, maxDist: number, colors: Array}}
+ * @returns {{r: number, g: number, b: number, maxDist: number}}
  */
 function extractDominantColor(pixelData, width, height, srcX, srcY, endX, endY) {
-  const colors = [];
+  // 收集 R/G/B 通道值（用于中位数和加权平均计算）
+  const rs = [], gs = [], bs = [];
   for (let y = srcY; y < endY && y < height; y++) {
     for (let x = srcX; x < endX && x < width; x++) {
       const idx = (y * width + x) * 4;
-      colors.push({ r: pixelData[idx], g: pixelData[idx + 1], b: pixelData[idx + 2] });
+      rs.push(pixelData[idx]);
+      gs.push(pixelData[idx + 1]);
+      bs.push(pixelData[idx + 2]);
     }
   }
 
-  if (colors.length === 0) return { r: 0, g: 0, b: 0, maxDist: 0, colors };
-  if (colors.length <= 4) {
-    const m = medianColor(pixelData, width, height, srcX, srcY, endX, endY);
-    return { r: m.r, g: m.g, b: m.b, maxDist: 0, colors };
+  if (rs.length === 0) return { r: 0, g: 0, b: 0, maxDist: 0 };
+  if (rs.length <= 4) {
+    const m = { r: quickMedian(rs), g: quickMedian(gs), b: quickMedian(bs) };
+    return { r: m.r, g: m.g, b: m.b, maxDist: 0 };
   }
 
-  // 先找中位数作参考中心
-  const rs = [], gs = [], bs = [];
-  for (const c of colors) { rs.push(c.r); gs.push(c.g); bs.push(c.b); }
+  // 中位数作参考中心
   const median = { r: quickMedian(rs), g: quickMedian(gs), b: quickMedian(bs) };
 
   // 高斯加权平均：离中位数越近权重越高
   const sigmaSq = 2 * 25 * 25; // σ=25，与马赛克模式一致
+  const len = rs.length;
   let sumW = 0, sumR = 0, sumG = 0, sumB = 0;
   let maxDist = 0;
-  for (const c of colors) {
-    const dr = c.r - median.r, dg = c.g - median.g, db = c.b - median.b;
+  for (let i = 0; i < len; i++) {
+    const dr = rs[i] - median.r, dg = gs[i] - median.g, db = bs[i] - median.b;
     const distSq = dr * dr + dg * dg + db * db;
     const w = Math.exp(-distSq / sigmaSq);
     sumW += w;
-    sumR += c.r * w;
-    sumG += c.g * w;
-    sumB += c.b * w;
+    sumR += rs[i] * w;
+    sumG += gs[i] * w;
+    sumB += bs[i] * w;
     if (distSq > maxDist) maxDist = distSq;
   }
   maxDist = Math.sqrt(maxDist);
 
-  if (sumW === 0) return { r: median.r, g: median.g, b: median.b, maxDist, colors };
-  return { r: Math.round(sumR / sumW), g: Math.round(sumG / sumW), b: Math.round(sumB / sumW), maxDist, colors };
+  if (sumW === 0) return { r: median.r, g: median.g, b: median.b, maxDist };
+  return { r: Math.round(sumR / sumW), g: Math.round(sumG / sumW), b: Math.round(sumB / sumW), maxDist };
 }
 
 /**
@@ -165,10 +167,14 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
       // 高方差回退：颜色混杂时用 16 级量化众数，不平均
       let dominantColor;
       if (extracted.maxDist > 30) {
+        // 直接从像素数据做量化，无需额外对象分配
         const colorCount = {};
-        for (const c of extracted.colors) {
-          const key = `${Math.round(c.r / 16) * 16},${Math.round(c.g / 16) * 16},${Math.round(c.b / 16) * 16}`;
-          colorCount[key] = (colorCount[key] || 0) + 1;
+        for (let y = srcY; y < endY && y < height; y++) {
+          for (let x = srcX; x < endX && x < width; x++) {
+            const idx = (y * width + x) * 4;
+            const key = `${(processedPixelData[idx] >> 4) << 4},${(processedPixelData[idx + 1] >> 4) << 4},${(processedPixelData[idx + 2] >> 4) << 4}`;
+            colorCount[key] = (colorCount[key] || 0) + 1;
+          }
         }
         let maxCount = 0;
         let modeColor = extracted;
