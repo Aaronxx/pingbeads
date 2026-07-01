@@ -64,7 +64,7 @@ function medianColor(pixelData, width, height, srcX, srcY, endX, endY) {
  * @param {number} srcY - 起始Y
  * @param {number} endX - 结束X
  * @param {number} endY - 结束Y
- * @returns {{r: number, g: number, b: number}}
+ * @returns {{r: number, g: number, b: number, maxDist: number}}
  */
 function extractDominantColor(pixelData, width, height, srcX, srcY, endX, endY) {
   const colors = [];
@@ -75,8 +75,11 @@ function extractDominantColor(pixelData, width, height, srcX, srcY, endX, endY) 
     }
   }
 
-  if (colors.length === 0) return { r: 0, g: 0, b: 0 };
-  if (colors.length <= 4) return medianColor(pixelData, width, height, srcX, srcY, endX, endY);
+  if (colors.length === 0) return { r: 0, g: 0, b: 0, maxDist: 0 };
+  if (colors.length <= 4) {
+    const m = medianColor(pixelData, width, height, srcX, srcY, endX, endY);
+    return { r: m.r, g: m.g, b: m.b, maxDist: 0 };
+  }
 
   // 先找中位数作参考中心
   const rs = [], gs = [], bs = [];
@@ -86,17 +89,21 @@ function extractDominantColor(pixelData, width, height, srcX, srcY, endX, endY) 
   // 高斯加权平均：离中位数越近权重越高
   const sigmaSq = 2 * 25 * 25; // σ=25，与马赛克模式一致
   let sumW = 0, sumR = 0, sumG = 0, sumB = 0;
+  let maxDist = 0;
   for (const c of colors) {
     const dr = c.r - median.r, dg = c.g - median.g, db = c.b - median.b;
-    const w = Math.exp(-(dr * dr + dg * dg + db * db) / sigmaSq);
+    const distSq = dr * dr + dg * dg + db * db;
+    const w = Math.exp(-distSq / sigmaSq);
     sumW += w;
     sumR += c.r * w;
     sumG += c.g * w;
     sumB += c.b * w;
+    if (distSq > maxDist) maxDist = distSq;
   }
+  maxDist = Math.sqrt(maxDist);
 
-  if (sumW === 0) return median;
-  return { r: Math.round(sumR / sumW), g: Math.round(sumG / sumW), b: Math.round(sumB / sumW) };
+  if (sumW === 0) return { r: median.r, g: median.g, b: median.b, maxDist };
+  return { r: Math.round(sumR / sumW), g: Math.round(sumG / sumW), b: Math.round(sumB / sumW), maxDist };
 }
 
 /**
@@ -153,7 +160,36 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
       const { srcX, srcY, endX, endY } = gridRegions[row][col];
 
       // 中位数引导加权平均取色：保持颜色簇完整性，避免通道错配
-      const dominantColor = extractDominantColor(processedPixelData, width, height, srcX, srcY, endX, endY);
+      const extracted = extractDominantColor(processedPixelData, width, height, srcX, srcY, endX, endY);
+
+      // 高方差回退：颜色混杂时用 16 级量化众数，不平均
+      let dominantColor;
+      if (extracted.maxDist > 30) {
+        const colors = [];
+        for (let y = srcY; y < endY && y < height; y++) {
+          for (let x = srcX; x < endX && x < width; x++) {
+            const idx = (y * width + x) * 4;
+            colors.push({ r: processedPixelData[idx], g: processedPixelData[idx + 1], b: processedPixelData[idx + 2] });
+          }
+        }
+        const colorCount = {};
+        for (const c of colors) {
+          const key = `${Math.round(c.r / 16) * 16},${Math.round(c.g / 16) * 16},${Math.round(c.b / 16) * 16}`;
+          colorCount[key] = (colorCount[key] || 0) + 1;
+        }
+        let maxCount = 0;
+        let modeColor = extracted;
+        for (const key in colorCount) {
+          if (colorCount[key] > maxCount) {
+            maxCount = colorCount[key];
+            const [r, g, b] = key.split(',').map(Number);
+            modeColor = { r, g, b };
+          }
+        }
+        dominantColor = modeColor;
+      } else {
+        dominantColor = extracted;
+      }
 
       // 鲜艳度增强/降低：饱和度 + 亮度 + 对比度 组合调整
       // vibrantScale 范围：-10 到 10
