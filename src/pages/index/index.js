@@ -717,7 +717,7 @@ Page({
 
   onSelectSplitMode(e) {
     const mode = e.currentTarget.dataset.mode;
-    const textMap = { horizontal: '上下', vertical: '左右', grid2x2: '2×2' };
+    const textMap = { horizontal: '上下', vertical: '左右', grid2x2: '2×2', grid52: '52×52', grid104: '104×104' };
     this.setData({ splitMode: mode, splitModeText: textMap[mode] || '', showSplitPopup: false });
   },
 
@@ -1213,20 +1213,25 @@ Page({
         const partNames = {
           horizontal: ['上半', '下半'],
           vertical: ['左侧', '右侧'],
-          grid2x2: ['左上', '右上', '左下', '右下']
+          grid2x2: ['左上', '右上', '左下', '右下'],
+          grid52: [],
+          grid104: []
         };
 
-        const extractPart = (startRow, endRow, startCol, endCol) => {
+        const extractPart = (startRow, endRow, startCol, endCol, blockSize) => {
+          const actualEndRow = Math.min(endRow, totalRows);
+          const actualEndCol = Math.min(endCol, totalCols);
           const partGrid = [];
-          for (let r = startRow; r < endRow; r++) {
+
+          for (let r = startRow; r < startRow + (blockSize || (endRow - startRow)); r++) {
             const row = [];
-            for (let c = startCol; c < endCol; c++) {
-              const cell = fullGridData[r] && fullGridData[r][c];
+            for (let c = startCol; c < startCol + (blockSize || (endCol - startCol)); c++) {
+              const cell = (r < totalRows && c < totalCols) ? (fullGridData[r] && fullGridData[r][c]) : null;
               row.push(cell ? { ...cell } : null);
             }
             partGrid.push(row);
           }
-          return { gridData: partGrid, rows: endRow - startRow, cols: endCol - startCol };
+          return { gridData: partGrid, rows: blockSize || (endRow - startRow), cols: blockSize || (endCol - startCol) };
         };
 
         if (splitMode === 'horizontal') {
@@ -1240,6 +1245,20 @@ Page({
           parts.push(extractPart(0, midRow, midCol, totalCols));
           parts.push(extractPart(midRow, totalRows, 0, midCol));
           parts.push(extractPart(midRow, totalRows, midCol, totalCols));
+        } else if (splitMode === 'grid52' || splitMode === 'grid104') {
+          // 52×52 或 104×104 分块，从左上角开始，向右向下切割
+          const blockSize = splitMode === 'grid52' ? 52 : 104;
+          let index = 0;
+          for (let r = 0; r < totalRows; r += blockSize) {
+            for (let c = 0; c < totalCols; c += blockSize) {
+              parts.push(extractPart(r, r + blockSize, c, c + blockSize, blockSize));
+              index++;
+            }
+          }
+          // 生成分块名称
+          for (let i = 0; i < parts.length; i++) {
+            partNames[splitMode].push((i + 1) + '/' + parts.length);
+          }
         }
 
         const names = partNames[splitMode];

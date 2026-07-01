@@ -365,6 +365,16 @@
       <text class="split-option-label">2×2 分割</text>
       <text class="split-option-desc">均分为4等份，导出四张图</text>
     </view>
+    <view class="split-popup-option" bindtap="onSelectSplitMode" data-mode="grid52">
+      <text class="split-option-icon">📦</text>
+      <text class="split-option-label">52×52 分块</text>
+      <text class="split-option-desc">按52×52色块分块，从左上角开始</text>
+    </view>
+    <view class="split-popup-option" bindtap="onSelectSplitMode" data-mode="grid104">
+      <text class="split-option-icon">📦</text>
+      <text class="split-option-label">104×104 分块</text>
+      <text class="split-option-desc">按104×104色块分块，从左上角开始</text>
+    </view>
     <view class="split-popup-cancel" bindtap="hideSplitPopup">取消</view>
   </view>
 

@@ -763,6 +763,8 @@ Component({
       this._cropOffsetCol = 0;
       this._cropOffsetRow = 0;
 
+      // 立即显示 loading，与普通 loading 效果一致
+      this.triggerEvent('loadingChange', { show: true, text: '正在处理图片...' });
       this.setData({ isProcessing: true });
 
       const that = this;
@@ -2095,68 +2097,67 @@ Component({
 
       const totalWidth = cols * gridSize * scale;
       const totalHeight = rows * gridSize * scale;
+      const cellSize = gridSize * scale;
+
+      // 绘制网格线的辅助函数
+      const drawGridLines = (lineWidth, strokeColor, dashOffset) => {
+        ctx.setLineDash([12, 8]);
+        ctx.lineWidth = lineWidth;
+        ctx.strokeStyle = strokeColor;
+        ctx.lineDashOffset = dashOffset || 0;
+
+        if (splitMode === 'grid52' || splitMode === 'grid104') {
+          // 52×52 或 104×104 分块网格线
+          const blockSize = splitMode === 'grid52' ? 52 : 104;
+          const blockPixelSize = blockSize * cellSize;
+
+          // 垂直线（每 blockSize 列一条）
+          for (let c = blockSize; c < cols; c += blockSize) {
+            const x = offsetX + c * cellSize;
+            ctx.beginPath();
+            ctx.moveTo(x, offsetY);
+            ctx.lineTo(x, offsetY + totalHeight);
+            ctx.stroke();
+          }
+          // 水平线（每 blockSize 行一条）
+          for (let r = blockSize; r < rows; r += blockSize) {
+            const y = offsetY + r * cellSize;
+            ctx.beginPath();
+            ctx.moveTo(offsetX, y);
+            ctx.lineTo(offsetX + totalWidth, y);
+            ctx.stroke();
+          }
+        } else if (splitMode === 'horizontal') {
+          const midY = offsetY + totalHeight / 2;
+          ctx.beginPath();
+          ctx.moveTo(offsetX, midY);
+          ctx.lineTo(offsetX + totalWidth, midY);
+          ctx.stroke();
+        } else if (splitMode === 'vertical') {
+          const midX = offsetX + totalWidth / 2;
+          ctx.beginPath();
+          ctx.moveTo(midX, offsetY);
+          ctx.lineTo(midX, offsetY + totalHeight);
+          ctx.stroke();
+        } else if (splitMode === 'grid2x2') {
+          const midY = offsetY + totalHeight / 2;
+          const midX = offsetX + totalWidth / 2;
+          ctx.beginPath();
+          ctx.moveTo(offsetX, midY);
+          ctx.lineTo(offsetX + totalWidth, midY);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(midX, offsetY);
+          ctx.lineTo(midX, offsetY + totalHeight);
+          ctx.stroke();
+        }
+      };
 
       ctx.save();
-      ctx.setLineDash([12, 8]);
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
       // 下层白色虚线（发光效果）
-      if (splitMode === 'horizontal') {
-        const midY = offsetY + totalHeight / 2;
-        ctx.beginPath();
-        ctx.moveTo(offsetX, midY);
-        ctx.lineTo(offsetX + totalWidth, midY);
-        ctx.stroke();
-      } else if (splitMode === 'vertical') {
-        const midX = offsetX + totalWidth / 2;
-        ctx.beginPath();
-        ctx.moveTo(midX, offsetY);
-        ctx.lineTo(midX, offsetY + totalHeight);
-        ctx.stroke();
-      } else if (splitMode === 'grid2x2') {
-        const midY = offsetY + totalHeight / 2;
-        const midX = offsetX + totalWidth / 2;
-        ctx.beginPath();
-        ctx.moveTo(offsetX, midY);
-        ctx.lineTo(offsetX + totalWidth, midY);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(midX, offsetY);
-        ctx.lineTo(midX, offsetY + totalHeight);
-        ctx.stroke();
-      }
+      drawGridLines(3, 'rgba(255, 255, 255, 0.7)', 0);
       // 上层深色虚线（清晰可见）
-      ctx.setLineDash([12, 8]);
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
-      ctx.setLineDash([]);
-      // 重新绘制一次（用不同offset使上下层虚线交替）
-      ctx.setLineDash([12, 8]);
-      ctx.lineDashOffset = 10;
-      if (splitMode === 'horizontal') {
-        const midY = offsetY + totalHeight / 2;
-        ctx.beginPath();
-        ctx.moveTo(offsetX, midY);
-        ctx.lineTo(offsetX + totalWidth, midY);
-        ctx.stroke();
-      } else if (splitMode === 'vertical') {
-        const midX = offsetX + totalWidth / 2;
-        ctx.beginPath();
-        ctx.moveTo(midX, offsetY);
-        ctx.lineTo(midX, offsetY + totalHeight);
-        ctx.stroke();
-      } else if (splitMode === 'grid2x2') {
-        const midY = offsetY + totalHeight / 2;
-        const midX = offsetX + totalWidth / 2;
-        ctx.beginPath();
-        ctx.moveTo(offsetX, midY);
-        ctx.lineTo(offsetX + totalWidth, midY);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(midX, offsetY);
-        ctx.lineTo(midX, offsetY + totalHeight);
-        ctx.stroke();
-      }
+      drawGridLines(1.5, 'rgba(0, 0, 0, 0.4)', 10);
       ctx.restore();
     },
 
@@ -2170,26 +2171,31 @@ Component({
       const partNames = {
         horizontal: ['上半', '下半'],
         vertical: ['左侧', '右侧'],
-        grid2x2: ['左上', '右上', '左下', '右下']
+        grid2x2: ['左上', '右上', '左下', '右下'],
+        grid52: [],
+        grid104: []
       };
 
       const midRow = Math.floor(rows / 2);
       const midCol = Math.floor(cols / 2);
 
-      const extractPart = (startRow, endRow, startCol, endCol) => {
+      const extractPart = (startRow, endRow, startCol, endCol, blockSize) => {
+        const targetRows = blockSize || (endRow - startRow);
+        const targetCols = blockSize || (endCol - startCol);
         const partGridData = [];
-        for (let r = startRow; r < endRow; r++) {
+
+        for (let r = 0; r < targetRows; r++) {
           const newRow = [];
-          for (let c = startCol; c < endCol; c++) {
-            const cell = gridData[r] && gridData[r][c];
+          for (let c = 0; c < targetCols; c++) {
+            const actualR = startRow + r;
+            const actualC = startCol + c;
+            const cell = (actualR < rows && actualC < cols) ? (gridData[actualR] && gridData[actualR][actualC]) : null;
             newRow.push(cell ? { ...cell } : null);
           }
           partGridData.push(newRow);
         }
-        const partRows = endRow - startRow;
-        const partCols = endCol - startCol;
-        const stats = this.calculateStats(partGridData, partRows, partCols);
-        return { gridData: partGridData, rows: partRows, cols: partCols, stats };
+        const stats = this.calculateStats(partGridData, targetRows, targetCols);
+        return { gridData: partGridData, rows: targetRows, cols: targetCols, stats };
       };
 
       if (splitMode === 'horizontal') {
@@ -2203,6 +2209,17 @@ Component({
         parts.push(extractPart(0, midRow, midCol, cols));
         parts.push(extractPart(midRow, rows, 0, midCol));
         parts.push(extractPart(midRow, rows, midCol, cols));
+      } else if (splitMode === 'grid52' || splitMode === 'grid104') {
+        const blockSize = splitMode === 'grid52' ? 52 : 104;
+        for (let r = 0; r < rows; r += blockSize) {
+          for (let c = 0; c < cols; c += blockSize) {
+            parts.push(extractPart(r, r + blockSize, c, c + blockSize, blockSize));
+            partNames[splitMode].push((parts.length) + '/' + Math.ceil(rows / blockSize) * Math.ceil(cols / blockSize));
+          }
+        }
+        // 更新名称为总数
+        const totalParts = parts.length;
+        partNames[splitMode] = partNames[splitMode].map((_, i) => (i + 1) + '/' + totalParts);
       } else {
         return null;
       }
