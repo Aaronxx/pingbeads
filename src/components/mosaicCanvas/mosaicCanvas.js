@@ -134,16 +134,7 @@ Component({
     'gridPreset': function(newVal, oldVal) {
       if (oldVal && oldVal[0] === newVal[0]) return;
 
-      const waitForOriginal = (retryCount) => {
-        if (retryCount > 10) {
-          console.warn('[mosaicCanvas] gridPreset: 等待 cachedOriginalGridData 超时');
-          return;
-        }
-        if (!this.cachedOriginalGridData) {
-          setTimeout(() => waitForOriginal(retryCount + 1), 100);
-          return;
-        }
-
+      const applyPreset = () => {
         const targetCols = newVal[1];
         const targetRows = newVal[2];
         const origCols = this.cachedOriginalGridData[0] ? this.cachedOriginalGridData[0].length : 0;
@@ -151,22 +142,24 @@ Component({
         const gridSize = this.cachedGridInfo ? this.cachedGridInfo.gridSize : 10;
 
         if (targetCols === 0 || targetRows === 0) {
+          // 原图比例：从快照快速恢复，无需重处理
           this.cachedGridData = this.deepCloneGridData(this.cachedOriginalGridData, origRows, origCols);
           this.cachedGridInfo = { cols: origCols, rows: origRows, gridSize };
         } else {
           const presetResult = this._applyGridPreset(this.cachedOriginalGridData, origCols, origRows, newVal);
           this.cachedGridData = presetResult.gridData;
           this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
-        }
 
-        const vibrantScale = this.data.vibrantScale;
-        if (vibrantScale === 0) {
-          if (!this.data.useSpecialColors) {
+          // 非原图比例才需要重新处理颜色
+          const vibrantScale = this.data.vibrantScale;
+          if (vibrantScale === 0) {
+            if (!this.data.useSpecialColors) {
+              this.replaceSpecialColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
+            }
+          } else {
             this.replaceSpecialColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
+            this.reapplyVibrantScale(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
           }
-        } else {
-          this.replaceSpecialColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
-          this.reapplyVibrantScale(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
         }
 
         const stats = this.calculateStats(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
@@ -183,7 +176,23 @@ Component({
         this.resetPreviewState();
         this.renderToCanvas(this.cachedGridData, this.cachedGridInfo.cols, this.cachedGridInfo.rows, gridSize);
       };
-      waitForOriginal(0);
+
+      if (this.cachedOriginalGridData) {
+        applyPreset();
+      } else {
+        const waitForOriginal = (retryCount) => {
+          if (retryCount > 10) {
+            console.warn('[mosaicCanvas] gridPreset: 等待 cachedOriginalGridData 超时');
+            return;
+          }
+          if (!this.cachedOriginalGridData) {
+            setTimeout(() => waitForOriginal(retryCount + 1), 100);
+            return;
+          }
+          applyPreset();
+        };
+        waitForOriginal(0);
+      }
     },
     'scale': function() {
       if (this._isResetting) return;
