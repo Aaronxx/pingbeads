@@ -459,10 +459,23 @@ Page({
   onCustomGridToggle(e) {
     if (this._checkExporting()) return;
     const checked = e.detail.value.length > 0;
-    this.setData({
-      useCustomGridSize: checked,
-      gridPresetIndex: 0  // 重置为原图比例
-    });
+    const canvas = this.selectComponent('#mosaic-canvas');
+    if (checked) {
+      // 勾选：同步 customGridSize 到当前实际网格尺寸
+      const info = canvas && canvas.cachedGridInfo;
+      const currentSize = info ? info.gridSize : this.data.customGridSize;
+      this.setData({
+        useCustomGridSize: true,
+        customGridSize: currentSize,
+        gridPresetIndex: 0
+      });
+    } else {
+      // 取消勾选
+      this.setData({
+        useCustomGridSize: false,
+        gridPresetIndex: 0
+      });
+    }
   },
 
   // 自定义网格大小滑块变化

@@ -152,17 +152,7 @@ Component({
       // 网格预设变化时，使用原始缓存数据重新裁剪
       if (oldVal && oldVal[0] === newVal[0]) return;
 
-      // 等待 cachedOriginalGridData 就绪（最多 1 秒）
-      const waitForOriginal = (retryCount) => {
-        if (retryCount > 10) {
-          console.warn('[mosaicCanvas] gridPreset: 等待 cachedOriginalGridData 超时');
-          return;
-        }
-        if (!this.cachedOriginalGridData) {
-          setTimeout(() => waitForOriginal(retryCount + 1), 100);
-          return;
-        }
-
+      const applyPreset = () => {
         const targetCols = newVal[1];
         const targetRows = newVal[2];
         const origCols = this.cachedOriginalGridData[0] ? this.cachedOriginalGridData[0].length : 0;
@@ -171,7 +161,8 @@ Component({
 
         // 从快照（原始数据，含特殊色）恢复并裁剪
         if (targetCols === 0 || targetRows === 0) {
-          // 原图比例：从快照恢复，并重新应用颜色处理(含聚合)，否则聚合结果丢失
+          // 原图比例：从快照快速恢复，无需重处理
+          // 重置 cropOffset，避免之前预设设置的偏移残留（修复预览无法还原）
           this._cropOffsetCol = 0;
           this._cropOffsetRow = 0;
           this.cachedGridData = this.deepCloneGridData(this.cachedOriginalGridData, origRows, origCols);
@@ -180,22 +171,22 @@ Component({
           const presetResult = this._applyGridPreset(this.cachedOriginalGridData, origCols, origRows, newVal);
           this.cachedGridData = presetResult.gridData;
           this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
-        }
 
-        // 重新应用颜色处理
-        // 注意：裁剪后的数据索引与 snapshot 不对齐，不能直接调用 reapplyVibrantScale
-        // （其内部的 resetToOriginalColors 会用 snapshot[row][col] 恢复，但裁剪后 row/col 对应的是原图中心区域，而非 snapshot 的同一索引）
-        // 裁剪时已从 snapshot 浅拷贝了 markCode/markHex/markRgb，只需重新应用替换逻辑
-        const vibrantScale = this.data.vibrantScale;
-        if (vibrantScale === 0) {
-          // 鲜艳度为 0：快照的 mark 值就是最终值，仅需处理特殊色替换
-          if (!this.data.useSpecialColors) {
+          // 非原图比例才需要重新处理颜色
+          // 注意：裁剪后的数据索引与 snapshot 不对齐，不能直接调用 reapplyVibrantScale
+          // （其内部的 resetToOriginalColors 会用 snapshot[row][col] 恢复，但裁剪后 row/col 对应的是原图中心区域，而非 snapshot 的同一索引）
+          // 裁剪时已从 snapshot 浅拷贝了 markCode/markHex/markRgb，只需重新应用替换逻辑
+          const vibrantScale = this.data.vibrantScale;
+          if (vibrantScale === 0) {
+            // 鲜艳度为 0：快照的 mark 值就是最终值，仅需处理特殊色替换
+            if (!this.data.useSpecialColors) {
+              this.replaceSpecialColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
+            }
+          } else {
+            // 鲜艳度非 0：需要重新增强（从 rawRgb 计算，不依赖 snapshot 索引）
             this.replaceSpecialColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
+            this.reapplyVibrantScale(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
           }
-        } else {
-          // 鲜艳度非 0：需要重新增强（从 rawRgb 计算，不依赖 snapshot 索引）
-          this.replaceSpecialColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
-          this.reapplyVibrantScale(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
         }
 
         const stats = this.calculateStats(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
@@ -212,7 +203,23 @@ Component({
         this.resetPreviewState();
         this.renderToCanvas(this.cachedGridData, this.cachedGridInfo.cols, this.cachedGridInfo.rows, gridSize);
       };
-      waitForOriginal(0);
+
+      if (this.cachedOriginalGridData) {
+        applyPreset();
+      } else {
+        const waitForOriginal = (retryCount) => {
+          if (retryCount > 10) {
+            console.warn('[mosaicCanvas] gridPreset: 等待 cachedOriginalGridData 超时');
+            return;
+          }
+          if (!this.cachedOriginalGridData) {
+            setTimeout(() => waitForOriginal(retryCount + 1), 100);
+            return;
+          }
+          applyPreset();
+        };
+        waitForOriginal(0);
+      }
     },
     'scale': function() {
       // 程序重置时不要自动设置 hasUserZoomed
