@@ -1596,6 +1596,116 @@ function convertSegmentsToGridData(segments, cols, rows) {
 }
 
 /**
+ * 清理孤立杂色：连通域分析，将面积过小的同色区域替换为邻居主色
+ * @param {Array} gridData - 2D 网格数据
+ * @param {number} rows
+ * @param {number} cols
+ * @param {number} minArea - 最小保留面积（格数），<= 此值的区域被清理
+ * @returns {Array} 清理后的 gridData（原地修改）
+ */
+function cleanIsolatedColors(gridData, rows, cols, minArea) {
+  if (minArea === undefined) minArea = 2;
+  const visited = [];
+  for (let r = 0; r < rows; r++) {
+    visited[r] = [];
+    for (let c = 0; c < cols; c++) {
+      visited[r][c] = false;
+    }
+  }
+
+  const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  const replacements = [];
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (visited[r][c]) continue;
+      const cell = gridData[r][c];
+      if (!cell || !cell.markCode) continue;
+      const code = cell.markCode;
+
+      // BFS 找同色连通区域
+      const region = [{ r, c }];
+      visited[r][c] = true;
+      let head = 0;
+      while (head < region.length) {
+        const cur = region[head++];
+        for (let d = 0; d < 4; d++) {
+          const nr = cur.r + dirs[d][0];
+          const nc = cur.c + dirs[d][1];
+          if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+          if (visited[nr][nc]) continue;
+          const n = gridData[nr][nc];
+          if (!n || n.markCode !== code) continue;
+          visited[nr][nc] = true;
+          region.push({ r: nr, c: nc });
+        }
+      }
+
+      if (region.length > minArea) continue;
+
+      // 统计邻居色号，找面积最大的作为替代色
+      const neighborCounts = {};
+      for (let i = 0; i < region.length; i++) {
+        const rr = region[i].r, cc = region[i].c;
+        for (let d = 0; d < 4; d++) {
+          const nr = rr + dirs[d][0];
+          const nc = cc + dirs[d][1];
+          if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+          const n = gridData[nr][nc];
+          if (n && n.markCode !== code) {
+            if (!neighborCounts[n.markCode]) neighborCounts[n.markCode] = 0;
+            neighborCounts[n.markCode]++;
+          }
+        }
+      }
+
+      let bestCode = null, bestCount = 0;
+      for (const k in neighborCounts) {
+        if (neighborCounts[k] > bestCount) {
+          bestCount = neighborCounts[k];
+          bestCode = k;
+        }
+      }
+      if (bestCode) {
+        replacements.push({ region: region, bestCode: bestCode });
+      }
+    }
+  }
+
+  if (replacements.length === 0) return gridData;
+
+  // 预建 markCode → mark 信息的查找表（从 gridData 中收集一次）
+  const markLookup = {};
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cell = gridData[r][c];
+      if (cell && cell.markCode && !markLookup[cell.markCode]) {
+        markLookup[cell.markCode] = {
+          markHex: cell.markHex,
+          markRgb: cell.markRgb
+        };
+      }
+    }
+  }
+
+  // 应用替换
+  for (let i = 0; i < replacements.length; i++) {
+    const rep = replacements[i];
+    const info = markLookup[rep.bestCode];
+    if (!info) continue;
+    for (let j = 0; j < rep.region.length; j++) {
+      const { r, c } = rep.region[j];
+      const cell = gridData[r][c];
+      cell.markCode = rep.bestCode;
+      cell.markHex = info.markHex;
+      cell.markRgb = info.markRgb;
+    }
+  }
+
+  return gridData;
+}
+
+/**
  * 鲜艳度增强：饱和度 + 亮度 + 对比度 组合调整
  * @param {Object} rgb - RGB颜色对象 {r, g, b}
  * @param {number} scale - 增强强度 0-1
@@ -1796,5 +1906,6 @@ module.exports = {
   aggregateSimilarColors,
   enhanceVibrant: cachedEnhanceVibrant,
   reduceVibrant: cachedReduceVibrant,
-  processMosaicV2
+  processMosaicV2,
+  cleanIsolatedColors
 };
