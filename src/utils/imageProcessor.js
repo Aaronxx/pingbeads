@@ -31,6 +31,43 @@ function saturation(r, g, b) {
   return mx === 0 ? 0 : (mx - mn) / mx;
 }
 
+/**
+ * 判断 Mark 色是否为"中明度浊色"（灰扑扑的脏色，应避免作为彩色簇的代表）
+ * 特征：饱和度低（<0.15）且 明度中等（70-225，既不深也不浅）
+ * 深色(H5/H6/H7)和浅色(H1/H2/T1)不算浊色，不过滤
+ */
+function isMuddyMarkColor(rgb) {
+  const mx = Math.max(rgb.r, rgb.g, rgb.b);
+  const mn = Math.min(rgb.r, rgb.g, rgb.b);
+  const s = mx === 0 ? 0 : (mx - mn) / mx;
+  return s < 0.15 && mx > 70 && mx < 225;
+}
+
+/**
+ * 查找最近的 Mark 色，跳过浊色（仅当目标色本身是彩色时）
+ * @param {{r,g,b}} targetRgb - 簇中心 RGB
+ * @returns 最近 Mark 色；若 target 是浊色/灰色则正常 snap（不跳过）
+ */
+function findClosestMarkColorSkipMuddy(targetRgb) {
+  const tSat = saturation(targetRgb.r, targetRgb.g, targetRgb.b);
+  // 簇中心本身是浊色/灰色 → 正常 snap（背景灰区域该是灰的就让它灰）
+  if (tSat < 0.15) {
+    return fastFindClosestMarkColor(targetRgb);
+  }
+  // 簇中心是彩色 → 在非浊色里找最近
+  let best = null, bestDist = Infinity;
+  for (const c of markPalette) {
+    if (isMuddyMarkColor(c.rgb)) continue;
+    const dr = c.rgb.r - targetRgb.r;
+    const dg = c.rgb.g - targetRgb.g;
+    const db = c.rgb.b - targetRgb.b;
+    const d = dr * dr + dg * dg + db * db;
+    if (d < bestDist) { bestDist = d; best = c; }
+  }
+  // 兜底：若全部被过滤(不应发生)，回退普通查找
+  return best || fastFindClosestMarkColor(targetRgb);
+}
+
 // ===== 聚类可调参数（默认值为均衡偏向还原度的实测调优结果）=====
 // 色相保护惩罚强度：防止彩色被灰色吸收、冷色变暖色
 //   增大→还原度↑(浅彩色更易保留)，但整合度可能↓；减小则相反
@@ -543,7 +580,8 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
     if (!changed) break;
   }
 
-  const centerMarkColors = centers.map(center => fastFindClosestMarkColor(center));
+  // snap 簇中心到 Mark 色：彩色中心跳过浊色，避免粉/蓝等被吸到 M10/H11 等脏色
+  const centerMarkColors = centers.map(center => findClosestMarkColorSkipMuddy(center));
 
   const rgbToCenterIdx = new Map();
   for (let ci = 0; ci < uniqueColors.length; ci++) {
