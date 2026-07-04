@@ -107,7 +107,7 @@ Page({
     aggChromaPenalty: 30,      // 色相保护强度，0-100（实际 = 值/100，默认30=0.3）
     aggCountWeightExp: 10,     // count 权重指数，5-15（实际 = 值/10，默认10=1.0）
     aggMaxIterations: 5,       // 最大迭代次数，3-10（默认5）
-    aggConvergeThreshold: 9,   // 收敛阈值，4-25（默认9）
+    aggConvergeThreshold: 20,   // 收敛阈值，4-25（默认20）
     aggHueDiffThreshold: 30,   // 色相差门槛，20-45（默认30）
     showAggDebug: false,       // 是否展开聚类调试面板
 
@@ -558,7 +558,7 @@ Page({
       aggChromaPenalty: 30,
       aggCountWeightExp: 10,
       aggMaxIterations: 5,
-      aggConvergeThreshold: 9,
+      aggConvergeThreshold: 20,
       aggHueDiffThreshold: 30
     });
     this._applyAggParams();

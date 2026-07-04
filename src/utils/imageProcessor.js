@@ -41,7 +41,7 @@ let COUNT_WEIGHT_EXP = 1.0;
 // K-means 最大迭代次数：增大→更充分收敛(结果更稳但略慢)
 let MAX_ITERATIONS = 5;
 // 收敛阈值(欧氏距离平方)：中心移动距离平方 <= 此值则停止。增大→迭代更久
-let CONVERGE_THRESHOLD = 9;
+let CONVERGE_THRESHOLD = 20;
 // 色相保护触发门槛(色相差度数)：色相差 > 此值才惩罚。减小→更严格(更多合并被阻止)
 let HUE_DIFF_THRESHOLD = 30;
 
