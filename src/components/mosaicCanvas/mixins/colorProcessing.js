@@ -162,9 +162,9 @@ module.exports = {
   _getAggregationOptions() {
     const mode = this.data.aggregationMode || 'new-euclidean';
     if (mode === 'legacy') return { legacy: true };
-    if (mode === 'new-euclidean-quantile') return { legacy: false, distance: 'euclidean', initStrategy: 'quantile' };
+    if (mode === 'new-euclidean-weighted') return { legacy: false, distance: 'euclidean', initStrategy: 'weighted-farthest' };
     if (mode === 'new-euclidean') return { legacy: false, distance: 'euclidean' };
-    return { legacy: false, distance: 'redmean' };
+    return { legacy: false, distance: 'euclidean' };
   },
 
   _applyColorAndPreset(gridData, rows, cols, gridSize) {

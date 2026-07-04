@@ -389,22 +389,26 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount, options) {
       centers.push({ ...uniqueColors[centers.length].rgb });
     }
   } else {
-    // 最远点初始化（默认）：count 最大优先，后续选离已有中心最远
+    // 最远点初始化（默认）
+    // first 中心: count 最大；后续: farthest=纯最远, weighted-farthest=count×D²兼顾高频
     let firstIdx = 0, firstCount = -1;
     for (let i = 0; i < uniqueColors.length; i++) {
       if (uniqueColors[i].count > firstCount) { firstCount = uniqueColors[i].count; firstIdx = i; }
     }
     centers.push({ ...uniqueColors[firstIdx].rgb });
 
+    const useWeighted = initStrategy === 'weighted-farthest';
     while (centers.length < targetCount && centers.length < uniqueColors.length) {
-      let bestIdx = -1, bestDist = -1;
+      let bestIdx = -1, bestScore = -1;
       for (let i = 0; i < uniqueColors.length; i++) {
         let dMin = Infinity;
         for (let k = 0; k < centers.length; k++) {
           const d = newDist(uniqueColors[i].rgb, centers[k]);
           if (d < dMin) dMin = d;
         }
-        if (dMin > bestDist) { bestDist = dMin; bestIdx = i; }
+        // weighted: count×D² 兼顾高频和散布；纯最远: 只看 D²
+        const score = useWeighted ? (uniqueColors[i].count * dMin) : dMin;
+        if (score > bestScore) { bestScore = score; bestIdx = i; }
       }
       if (bestIdx < 0) break;
       centers.push({ ...uniqueColors[bestIdx].rgb });

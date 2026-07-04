@@ -259,11 +259,11 @@
         </view>
       </view>
 
-      <!-- 聚类算法对比开关：两态切换 -->
+      <!-- 聚类算法对比开关：三态切换 -->
       <view class="setting-group">
         <view class="group-title">🔬 聚类算法</view>
-        <view class="mode-switch-btn {{aggregationMode === 'legacy' ? 'active' : ''}}" bindtap="toggleLegacyAggregation">
-          <text class="mode-text">{{aggregationMode === 'legacy' ? '老算法' : '欧氏·最远点'}}</text>
+        <view class="mode-switch-btn {{aggregationMode !== 'new-euclidean' ? 'active' : ''}}" bindtap="toggleLegacyAggregation">
+          <text class="mode-text">{{aggregationMode === 'legacy' ? '老算法' : (aggregationMode === 'new-euclidean-weighted' ? '欧氏·加权' : '欧氏·最远点')}}</text>
         </view>
       </view>
 
