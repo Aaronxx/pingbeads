@@ -47,9 +47,34 @@ function saturation(r, g, b) {
 }
 
 /**
+ * RGB → 色相(0-360°)。饱和度过低时返回 -1（无明确色相）
+ */
+function hue(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b);
+  const mn = Math.min(r, g, b);
+  const d = mx - mn;
+  const s = mx === 0 ? 0 : d / mx;
+  if (s < 0.08) return -1; // 饱和度太低，无明确色相
+  let h;
+  if (mx === r) h = ((g - b) / d + (g < b ? 6 : 0));
+  else if (mx === g) h = ((b - r) / d + 2);
+  else h = ((r - g) / d + 4);
+  return h * 60;
+}
+
+/**
+ * 色相差(考虑环形，0-180°)
+ */
+function hueDiff(h1, h2) {
+  if (h1 < 0 || h2 < 0) return 0; // 任一方无色相不惩罚(由饱和度差处理)
+  let d = Math.abs(h1 - h2) % 360;
+  return d > 180 ? 360 - d : d;
+}
+
+/**
  * 带色相保护的欧氏距离平方
- * 在纯欧氏基础上，当"彩色色(高饱和)"要归到"灰色中心(低饱和)"时增大距离，
- * 防止浅蓝/浅粉等彩色被中性灰吸收（还原度损失）。
+ * 防止不同色相的色被合并(浅蓝↔浅黄、彩色↔灰色)，保护色彩还原度。
  * chromaPenalty 控制惩罚强度，0=纯欧氏。
  */
 function euclideanDistanceSqProtected(c1, c2, chromaPenalty) {
@@ -60,10 +85,16 @@ function euclideanDistanceSqProtected(c1, c2, chromaPenalty) {
   if (chromaPenalty > 0) {
     const s1 = saturation(c1.r, c1.g, c1.b);
     const s2 = saturation(c2.r, c2.g, c2.b);
-    // 仅当一方彩色(s>0.1)、另一方灰色(s<0.05)时惩罚，避免误伤同色系
+    const h1 = hue(c1.r, c1.g, c1.b);
+    const h2 = hue(c2.r, c2.g, c2.b);
+    // 情况1: 一方彩色、一方灰色 → 惩罚(防止彩色被灰吸收)
     if ((s1 > 0.1 && s2 < 0.05) || (s2 > 0.1 && s1 < 0.05)) {
-      // 饱和度差 × 惩罚系数 × 一个量级因子(让惩罚与距离平方可比)
       d += Math.abs(s1 - s2) * 255 * 255 * chromaPenalty;
+    }
+    // 情况2: 双方都有色相但色相差大(>30°) → 惩罚(防止冷色变暖色)
+    const hd = hueDiff(h1, h2);
+    if (h1 >= 0 && h2 >= 0 && hd > 30) {
+      d += (hd / 180) * 255 * 255 * chromaPenalty;
     }
   }
   return d;
