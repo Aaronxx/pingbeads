@@ -31,19 +31,19 @@ function saturation(r, g, b) {
   return mx === 0 ? 0 : (mx - mn) / mx;
 }
 
-// ===== 聚类可调参数（默认值为多图实测调优结果）=====
+// ===== 聚类可调参数（默认值为均衡偏向还原度的实测调优结果）=====
 // 色相保护惩罚强度：防止彩色被灰色吸收、冷色变暖色
 //   增大→还原度↑(浅彩色更易保留)，但整合度可能↓；减小则相反
-let CHROMA_PENALTY = 0.3;
+let CHROMA_PENALTY = 0.35;
 // count 权重指数：初始化选中心时 count 的幂次
 //   1.0=标准加权最远；>1(如1.5)→高频色更强、整合度↑；<1(如0.5)→中心更散布、还原度↑
 let COUNT_WEIGHT_EXP = 1.0;
 // K-means 最大迭代次数：增大→更充分收敛(结果更稳但略慢)
-let MAX_ITERATIONS = 5;
+let MAX_ITERATIONS = 6;
 // 收敛阈值(欧氏距离平方)：中心移动距离平方 <= 此值则停止。增大→迭代更久
-let CONVERGE_THRESHOLD = 20;
+let CONVERGE_THRESHOLD = 15;
 // 色相保护触发门槛(色相差度数)：色相差 > 此值才惩罚。减小→更严格(更多合并被阻止)
-let HUE_DIFF_THRESHOLD = 30;
+let HUE_DIFF_THRESHOLD = 28;
 
 /**
  * 运行时调整聚类参数（调试/对比用）

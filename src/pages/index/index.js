@@ -104,11 +104,11 @@ Page({
     antiGrayBlockColor: '#f59e0b',  // 滑块颜色（橙色，表示偏向鲜艳/深色）
 
     // ===== 聚类算法调试参数（滑块值，单位见注释）=====
-    aggChromaPenalty: 30,      // 色相保护强度，0-100（实际 = 值/100，默认30=0.3）
+    aggChromaPenalty: 35,      // 色相保护强度，0-100（实际 = 值/100，默认35=0.35）
     aggCountWeightExp: 10,     // count 权重指数，5-15（实际 = 值/10，默认10=1.0）
-    aggMaxIterations: 5,       // 最大迭代次数，3-10（默认5）
-    aggConvergeThreshold: 20,   // 收敛阈值，4-25（默认20）
-    aggHueDiffThreshold: 30,   // 色相差门槛，20-45（默认30）
+    aggMaxIterations: 6,       // 最大迭代次数，3-10（默认6）
+    aggConvergeThreshold: 15,   // 收敛阈值，4-25（默认15）
+    aggHueDiffThreshold: 28,   // 色相差门槛，20-45（默认28）
     showAggDebug: false,       // 是否展开聚类调试面板
 
     // 自定义网格大小
@@ -555,11 +555,11 @@ Page({
   resetAggParams() {
     if (this._checkExporting()) return;
     this.setData({
-      aggChromaPenalty: 30,
+      aggChromaPenalty: 35,
       aggCountWeightExp: 10,
-      aggMaxIterations: 5,
-      aggConvergeThreshold: 20,
-      aggHueDiffThreshold: 30
+      aggMaxIterations: 6,
+      aggConvergeThreshold: 15,
+      aggHueDiffThreshold: 28
     });
     this._applyAggParams();
   },
