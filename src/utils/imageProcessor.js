@@ -7,7 +7,7 @@
  * 3. 边缘检测与裁剪
  */
 
-const { fastFindClosestMarkColor } = require('../utils/colorMapper');
+const { fastFindClosestMarkColor, computeGrayness, markPalette } = require('../utils/colorMapper');
 const { MosaicProcessor } = require('./mosaicProcessor');
 
 /**
@@ -20,6 +20,21 @@ function colorDistance(c1, c2) {
     Math.pow(c1.g - c2.g, 2) +
     Math.pow(c1.b - c2.b, 2)
   );
+}
+
+/**
+ * 感知距离 (redmean 加权欧氏)
+ * Runge-Hinton 近似：按平均红分量对 R/B 通道加权，
+ * 比纯曼哈顿/欧氏更贴合人眼色差感知。
+ */
+function perceptualDistance(c1, c2) {
+  const rMean = (c1.r + c2.r) / 2;
+  const dr = c1.r - c2.r;
+  const dg = c1.g - c2.g;
+  const db = c1.b - c2.b;
+  const wr = 2 + rMean / 256;
+  const wb = 2 + (255 - rMean) / 256;
+  return wr * dr * dr + 4 * dg * dg + wb * db * db; // 不开方，保序即可
 }
 
 /** 快速中位数 */
@@ -235,10 +250,9 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
 
     }
   }
-  // 颜色聚合 - 将相近的原始 RGB 颜色映射到相同的 Mark 色号
-  if (mergeThreshold > 0) {
-    aggregateSimilarColors(gridData, rows, cols, mergeThreshold);
-  }
+  // 注意：颜色聚合不再在 processSimple 内执行，统一由调用方的 reapplyVibrantScale 负责，
+  // 避免 cartoon 模式下聚合被重复执行 (processSimple 一次 + reapplyVibrantScale 一次) 导致结果不一致。
+  // mergeThreshold 参数保留仅为兼容签名，实际聚合在 mosaicCanvas 的 _applyColorAndPreset 流程中触发。
 
   return { gridData, cols, rows, gridSize };
 }
@@ -280,7 +294,7 @@ function generatePlaceholderGrid(cols, rows, gridSize) {
 }
 
 /**
- * 颜色聚合 - 基于目标色块数量的 K-means 聚类（优化版）
+ * 颜色聚合 - 基于目标色块数量的 K-means 聚类（临时回退为旧版排查灰色问题）
  * @param {Array} gridData - 网格数据
  * @param {number} rows - 行数
  * @param {number} cols - 列数
@@ -288,9 +302,6 @@ function generatePlaceholderGrid(cols, rows, gridSize) {
  */
 function aggregateSimilarColors(gridData, rows, cols, targetCount) {
   if (!gridData || targetCount <= 0) return gridData;
-
-  
-  
 
   // 收集所有格子的主导色 RGB
   const allColors = [];
@@ -309,19 +320,15 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
 
   if (allColors.length === 0) return gridData;
 
-  
-
   // 如果格子数量已经小于目标数量，不需要聚类
   if (allColors.length <= targetCount) {
-    
     return gridData;
   }
 
   // K-means 聚类优化：只对唯一颜色进行聚类
-  // 1. 收集唯一的 RGB 颜色，并统计每个唯一颜色的数量
   const colorCountMap = new Map();
   for (const c of allColors) {
-    const key = `${c.rgb.r},${c.rgb.g},${c.rgb.b}`;
+    const key = c.rgb.r + ',' + c.rgb.g + ',' + c.rgb.b;
     if (!colorCountMap.has(key)) {
       colorCountMap.set(key, { rgb: c.rgb, count: 0 });
     }
@@ -329,38 +336,38 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
   }
 
   const uniqueColors = Array.from(colorCountMap.values());
-  
 
-  // 如果唯一颜色数量已经小于等于目标，不需要聚类
   if (uniqueColors.length <= targetCount) {
-    
     return gridData;
   }
 
-  // 2. 简化：直接对唯一颜色进行聚类（减少计算量）
-  // 使用加权采样选择初始中心
+  // 确定性最远点初始化（替代空间顺序采样，改善收敛）
+  // 第一个中心：count 最大的点（主体色）；后续：离已有中心最远的点
   const centers = [];
-  const step = Math.max(1, Math.floor(uniqueColors.length / targetCount));
-  for (let i = 0; i < targetCount && i * step < uniqueColors.length; i++) {
-    centers.push({ ...uniqueColors[i * step].rgb });
+  let firstIdx = 0, firstCount = -1;
+  for (let i = 0; i < uniqueColors.length; i++) {
+    if (uniqueColors[i].count > firstCount) { firstCount = uniqueColors[i].count; firstIdx = i; }
   }
+  centers.push({ ...uniqueColors[firstIdx].rgb });
 
-  // 确保至少有 targetCount 个中心
   while (centers.length < targetCount && centers.length < uniqueColors.length) {
-    centers.push({ ...uniqueColors[centers.length].rgb });
+    let bestIdx = -1, bestDist = -1;
+    for (let i = 0; i < uniqueColors.length; i++) {
+      let dMin = Infinity;
+      for (let k = 0; k < centers.length; k++) {
+        const d = perceptualDistance(uniqueColors[i].rgb, centers[k]);
+        if (d < dMin) dMin = d;
+      }
+      if (dMin > bestDist) { bestDist = dMin; bestIdx = i; }
+    }
+    if (bestIdx < 0) break;
+    centers.push({ ...uniqueColors[bestIdx].rgb });
   }
 
-  // 4. 减少迭代次数
   const maxIterations = 5;
-  let iterCount = 0;
-
-  // 记录每次迭代的分配结果，用于最终映射
   let lastAssign = new Array(uniqueColors.length);
-  let lastDist = new Array(uniqueColors.length);
 
   for (let iter = 0; iter < maxIterations; iter++) {
-    iterCount++;
-    // 分配每个唯一颜色到最近的中心
     const clusters = Array.from({ length: centers.length }, () => []);
 
     for (let ci = 0; ci < uniqueColors.length; ci++) {
@@ -373,7 +380,7 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
       let minIdx = 0;
 
       for (let i = 0; i < centers.length; i++) {
-        const dist = Math.abs(centers[i].r - cr) + Math.abs(centers[i].g - cg) + Math.abs(centers[i].b - cb);
+        const dist = perceptualDistance({ r: cr, g: cg, b: cb }, centers[i]);
         if (dist < minDist) {
           minDist = dist;
           minIdx = i;
@@ -381,11 +388,9 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
       }
 
       lastAssign[ci] = minIdx;
-      lastDist[ci] = minDist;
       clusters[minIdx].push(colorInfo);
     }
 
-    // 更新中心（使用内联距离计算避免函数调用）
     let changed = false;
     for (let i = 0; i < centers.length; i++) {
       if (clusters[i].length === 0) continue;
@@ -404,9 +409,8 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
         b: Math.round(sumB / totalWeight)
       };
 
-      // 使用内联曼哈顿距离
-      const dist = Math.abs(centers[i].r - newCenter.r) + Math.abs(centers[i].g - newCenter.g) + Math.abs(centers[i].b - newCenter.b);
-      if (dist > 3) {
+      const dist = perceptualDistance(centers[i], newCenter);
+      if (dist > 5000) {  // redmean 距离平方量级，约对应原曼哈顿阈值 3
         centers[i] = newCenter;
         changed = true;
       }
@@ -415,22 +419,15 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
     if (!changed) break;
   }
 
-  // 5. 为每个聚类中心找到最接近的 Mark 色号
   const centerMarkColors = centers.map(center => fastFindClosestMarkColor(center));
 
-  
-
-  // 6. 将每个唯一颜色映射到其所属聚类的 Mark 色号
-  // 使用上次迭代的结果，避免重复计算
   const rgbToCenterIdx = new Map();
-
   for (let ci = 0; ci < uniqueColors.length; ci++) {
     const colorInfo = uniqueColors[ci];
     const key = (colorInfo.rgb.r << 16) | (colorInfo.rgb.g << 8) | colorInfo.rgb.b;
     rgbToCenterIdx.set(key, lastAssign[ci]);
   }
 
-  // 7. 应用到所有格子
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const cell = gridData[row] && gridData[row][col];
@@ -448,36 +445,8 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
     }
   }
 
-  // 统计实际使用的色号数量
-  const usedCodes = new Set();
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const cell = gridData[row] && gridData[row][col];
-      if (cell && cell.markCode) {
-        usedCodes.add(cell.markCode);
-      }
-    }
-  }
-
   return gridData;
 }
-
-/**
- * 智能色块处理 - 保留黑色边界 + 区域合并
- * 适用于马赛克原图，识别色块并合并相近颜色
- */
-
-/**
- * 智能处理图像 - 保留边界 + 区域合并
- * @param {Uint8ClampedArray} pixelData - 像素数据
- * @param {number} width - 图像宽度
- * @param {number} height - 图像高度
- * @param {number} gridSize - 网格大小
- * @param {object} options - 选项
- *   - mergeThreshold: 颜色相似度阈值 (10-50)，越小越严格
- *   - preserveBlack: 是否保留黑色边界，默认true
- *   - blackThreshold: 黑色判定阈值，默认50
- */
 /**
  * 自动检测图像的色块大小
  * 扫描图像的多条水平线和垂直线（舍弃最外圈），记录颜色变化点
@@ -1706,6 +1675,104 @@ function cleanIsolatedColors(gridData, rows, cols, minArea) {
 }
 
 /**
+ * 浊色规避（后处理）：把浊色色号的格子替换为视觉最近的非浊色邻居
+ *
+ * 与 cleanIsolatedColors 互补：cleanIsolatedColors 处理"空间噪声"(小面积)，
+ * 本函数处理"色板偏好"(灰浊色号)。借鉴 cleanIsolatedColors 的邻居统计 + markLookup 缓存结构。
+ *
+ * 算法：
+ * 1. 预建 markCode → {grayness, markInfo} 查找表
+ * 2. 遍历浊色格子(grayness>0)，统计其 4 邻居中非浊色色号
+ * 3. 按邻居数量加权 + 视觉距离最近，选最佳替代色
+ * 4. 无非浊色邻居则保留(避免盲区：若整片都是浊色则无法替换)
+ *
+ * intensity 控制力度：0=不替换，1=对所有 grayness>0 的浊色格子都尝试替换
+ * 实际是否替换还取决于"是否有非浊色邻居"
+ *
+ * @param {Array} gridData - 2D 网格数据(原地修改)
+ * @param {number} rows
+ * @param {number} cols
+ * @param {number} intensity - 规避强度 0~1，0 关闭
+ * @returns {Array} gridData
+ */
+function desaturateGrayColors(gridData, rows, cols, intensity) {
+  if (!gridData || !intensity || intensity <= 0) return gridData;
+
+  // 1. 预建 markCode → {grayness, hex, rgb} 查找表
+  const markLookup = {};
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cell = gridData[r][c];
+      if (cell && cell.markCode && !markLookup[cell.markCode]) {
+        markLookup[cell.markCode] = {
+          grayness: computeGrayness(cell.markRgb),
+          markHex: cell.markHex,
+          markRgb: cell.markRgb
+        };
+      }
+    }
+  }
+
+  // grayness 阈值：intensity 越高，越多浊色被纳入处理
+  // intensity=1 时所有 grayness>0 的色号都处理；intensity=0.3 时只处理 grayness>0.3 的
+  const grayThreshold = 1 - intensity; // intensity 0.3 → 阈值 0.7；intensity 1 → 阈值 0
+
+  const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  const replacements = [];
+
+  // 2. 遍历浊色格子，找非浊色邻居
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cell = gridData[r][c];
+      if (!cell || !cell.markCode) continue;
+      const info = markLookup[cell.markCode];
+      if (!info || info.grayness <= grayThreshold) continue; // 非浊色或浊度不够，跳过
+
+      // 统计 4 邻居中非浊色色号
+      const neighborCounts = {};
+      for (let d = 0; d < 4; d++) {
+        const nr = r + dirs[d][0];
+        const nc = c + dirs[d][1];
+        if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+        const n = gridData[nr][nc];
+        if (!n || !n.markCode) continue;
+        const nInfo = markLookup[n.markCode];
+        if (!nInfo || nInfo.grayness > 0) continue; // 邻居也是浊色，跳过
+        if (!neighborCounts[n.markCode]) neighborCounts[n.markCode] = 0;
+        neighborCounts[n.markCode]++;
+      }
+
+      // 选邻居数量最多的非浊色色号
+      let bestCode = null, bestCount = 0;
+      for (const k in neighborCounts) {
+        if (neighborCounts[k] > bestCount) {
+          bestCount = neighborCounts[k];
+          bestCode = k;
+        }
+      }
+      if (bestCode) {
+        replacements.push({ r, c, bestCode });
+      }
+    }
+  }
+
+  if (replacements.length === 0) return gridData;
+
+  // 3. 应用替换
+  for (let i = 0; i < replacements.length; i++) {
+    const rep = replacements[i];
+    const info = markLookup[rep.bestCode];
+    if (!info) continue;
+    const cell = gridData[rep.r][rep.c];
+    cell.markCode = rep.bestCode;
+    cell.markHex = info.markHex;
+    cell.markRgb = info.markRgb;
+  }
+
+  return gridData;
+}
+
+/**
  * 鲜艳度增强：饱和度 + 亮度 + 对比度 组合调整
  * @param {Object} rgb - RGB颜色对象 {r, g, b}
  * @param {number} scale - 增强强度 0-1
@@ -1907,5 +1974,6 @@ module.exports = {
   enhanceVibrant: cachedEnhanceVibrant,
   reduceVibrant: cachedReduceVibrant,
   processMosaicV2,
-  cleanIsolatedColors
+  cleanIsolatedColors,
+  desaturateGrayColors
 };

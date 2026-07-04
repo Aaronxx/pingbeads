@@ -31,6 +31,12 @@ module.exports = {
 
     if (vibrantScale === 0) {
       this.resetToOriginalColors(gridData, rows, cols);
+      // vibrant=0 时同样需要执行颜色聚合 (修复：原实现在此分支漏掉聚合，
+      // 导致 vibrant=0 + mergeThreshold>0 时不聚类的 bug)
+      const mergeThreshold0 = this.data.mergeThreshold;
+      if (mergeThreshold0 > 0) {
+        aggregateSimilarColors(gridData, rows, cols, mergeThreshold0);
+      }
       if (!this.data.useSpecialColors) {
         this.replaceSpecialColors(gridData, rows, cols);
       }
