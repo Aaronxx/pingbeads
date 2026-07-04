@@ -503,7 +503,11 @@ Page({
       convergeThreshold: this.data.aggConvergeThreshold,
       hueDiffThreshold: this.data.aggHueDiffThreshold
     });
-    this.setData({ mosaicData: null, currentStep: 1 });
+    // 不清 mosaicData（否则统计/按钮消失）。通过递增 regenerateTrigger
+    // 触发组件 observer → regenerateFromCache，重处理后自动刷新统计和预览。
+    if (this.data.mosaicData) {
+      this.setData({ regenerateTrigger: this.data.regenerateTrigger + 1 });
+    }
   },
 
   // 色相保护强度滑块（拖动中仅更新显示）
