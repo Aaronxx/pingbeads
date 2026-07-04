@@ -98,8 +98,11 @@ function hueDiff(h1, h2) {
 }
 
 /**
- * 带色相保护的欧氏距离平方
- * 防止不同色相的色被合并(浅蓝↔浅黄、彩色↔灰色)，保护色彩还原度。
+ * 带色相+明度保护的欧氏距离平方
+ * 三重保护防止颜色被错误合并，保护色彩还原度：
+ *   1. 彩色↔灰色：防彩色被灰吸收（浅蓝变灰）
+ *   2. 色相差大：防冷色变暖色（浅蓝变浅黄）
+ *   3. 明度差大：防亮色被暗色拉低（粉红变深灰）—— 同色系但明暗悬殊
  * chromaPenalty 控制惩罚强度，0=纯欧氏。
  */
 function euclideanDistanceSqProtected(c1, c2, chromaPenalty) {
@@ -120,6 +123,15 @@ function euclideanDistanceSqProtected(c1, c2, chromaPenalty) {
     const hd = hueDiff(h1, h2);
     if (h1 >= 0 && h2 >= 0 && hd > HUE_DIFF_THRESHOLD) {
       d += (hd / 180) * 255 * 255 * chromaPenalty;
+    }
+    // 情况3: 明度差大 → 惩罚(防止亮色被暗色拉低，如粉红和暗紫红混成深灰)
+    //   明度用 max(r,g,b) 近似；差>40(约占255的16%)且差值占高明度比例>35%才惩罚
+    const v1 = Math.max(c1.r, c1.g, c1.b);
+    const v2 = Math.max(c2.r, c2.g, c2.b);
+    const vDiff = Math.abs(v1 - v2);
+    const vMax = Math.max(v1, v2);
+    if (vDiff > 40 && vMax > 0 && vDiff / vMax > 0.35) {
+      d += (vDiff / vMax) * 255 * 255 * chromaPenalty * 0.5; // 明度保护力度减半，避免过度
     }
   }
   return d;
