@@ -221,7 +221,7 @@ Page({
     this._panelTouchStartY = e.touches[0].clientY;
     // 获取屏幕高度计算面板最大高度
     const sysInfo = wx.getSystemInfoSync();
-    this._panelMaxHeight = sysInfo.windowHeight * 0.75;
+    this._panelMaxHeight = sysInfo.windowHeight * 0.5;
   },
 
   // 面板拖动中（向上拖动缩小，向下拖动放大）
