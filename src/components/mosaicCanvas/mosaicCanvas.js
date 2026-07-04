@@ -161,6 +161,8 @@ Component({
       }
     },
     'gridPreset': function(newVal, oldVal) {
+      // oldVal 为 undefined(首次/异常触发) 或预设索引未变时跳过
+      if (!newVal) return;
       if (oldVal && oldVal[0] === newVal[0]) return;
 
       const applyPreset = () => {
@@ -171,9 +173,11 @@ Component({
         const gridSize = this.cachedGridInfo ? this.cachedGridInfo.gridSize : 10;
 
         if (targetCols === 0 || targetRows === 0) {
-          // 原图比例：从快照快速恢复，无需重处理
+          // 原图比例：从快照恢复，并重新应用颜色处理(含聚合)，否则聚合结果丢失
           this.cachedGridData = this.deepCloneGridData(this.cachedOriginalGridData, origRows, origCols);
           this.cachedGridInfo = { cols: origCols, rows: origRows, gridSize };
+          // 重跑颜色处理(resetToOriginalColors + 聚合 + 特殊色替换)
+          this.reapplyVibrantScale(this.cachedGridData, origRows, origCols);
         } else {
           const presetResult = this._applyGridPreset(this.cachedOriginalGridData, origCols, origRows, newVal);
           this.cachedGridData = presetResult.gridData;
