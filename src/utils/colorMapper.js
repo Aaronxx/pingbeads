@@ -132,19 +132,20 @@ function findClosestNonMuddy(target) {
 }
 
 // 预计算替代色信息的缓存（避免每次都调用 markPalette.find）
-// 若静态替代表里的替代色是浊色，改取最近的非浊色，避免特殊色被替换成脏色
+// 预计算替代色：所有特殊色统一用"特殊色自身 RGB 找最近非浊色、非特殊色普通色"
+// 这样既避开浊色(防 M10/H3 等脏色)，又保证色相匹配(以特殊色自身而非浊色替代为 target)
 const alternativeColorCache = new Map();
-for (const [specialCode, altCode] of Object.entries(SPECIAL_ALTERNATIVES)) {
-  const altColor = markPalette.find(c => c.code === altCode);
+for (const specialCode of Object.keys(SPECIAL_ALTERNATIVES)) {
   const specialColor = markPalette.find(c => c.code === specialCode);
-  if (altColor && specialColor) {
-    let final = altColor;
-    if (isMuddyMarkColor(altColor.rgb)) {
-      // 替代色是浊色：以特殊色自身的 RGB 为 target 找最近非浊色（保持色相匹配）
-      const better = findClosestNonMuddy(specialColor.rgb);
-      if (better) final = better;
+  if (specialColor) {
+    const better = findClosestNonMuddy(specialColor.rgb);
+    if (better) {
+      alternativeColorCache.set(specialCode, better);
+    } else {
+      // 兜底：用原静态表
+      const altColor = markPalette.find(c => c.code === SPECIAL_ALTERNATIVES[specialCode]);
+      if (altColor) alternativeColorCache.set(specialCode, altColor);
     }
-    alternativeColorCache.set(specialCode, final);
   }
 }
 
