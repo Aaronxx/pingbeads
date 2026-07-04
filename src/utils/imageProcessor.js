@@ -31,9 +31,45 @@ function saturation(r, g, b) {
   return mx === 0 ? 0 : (mx - mn) / mx;
 }
 
+// ===== 聚类可调参数（默认值为多图实测调优结果）=====
 // 色相保护惩罚强度：防止彩色被灰色吸收、冷色变暖色
-// 0.3 为实测调优值，过大会过度阻止合并导致色数偏多，过小则还原度不足
-const CHROMA_PENALTY = 0.3;
+//   增大→还原度↑(浅彩色更易保留)，但整合度可能↓；减小则相反
+let CHROMA_PENALTY = 0.3;
+// count 权重指数：初始化选中心时 count 的幂次
+//   1.0=标准加权最远；>1(如1.5)→高频色更强、整合度↑；<1(如0.5)→中心更散布、还原度↑
+let COUNT_WEIGHT_EXP = 1.0;
+// K-means 最大迭代次数：增大→更充分收敛(结果更稳但略慢)
+let MAX_ITERATIONS = 5;
+// 收敛阈值(欧氏距离平方)：中心移动距离平方 <= 此值则停止。增大→迭代更久
+let CONVERGE_THRESHOLD = 9;
+// 色相保护触发门槛(色相差度数)：色相差 > 此值才惩罚。减小→更严格(更多合并被阻止)
+let HUE_DIFF_THRESHOLD = 30;
+
+/**
+ * 运行时调整聚类参数（调试/对比用）
+ * @param {object} opts - { chromaPenalty?, countWeightExp?, maxIterations?, convergeThreshold?, hueDiffThreshold? }
+ */
+function setAggregationParams(opts) {
+  if (!opts) return;
+  if (typeof opts.chromaPenalty === 'number') CHROMA_PENALTY = opts.chromaPenalty;
+  if (typeof opts.countWeightExp === 'number') COUNT_WEIGHT_EXP = opts.countWeightExp;
+  if (typeof opts.maxIterations === 'number') MAX_ITERATIONS = opts.maxIterations;
+  if (typeof opts.convergeThreshold === 'number') CONVERGE_THRESHOLD = opts.convergeThreshold;
+  if (typeof opts.hueDiffThreshold === 'number') HUE_DIFF_THRESHOLD = opts.hueDiffThreshold;
+}
+
+/**
+ * 获取当前聚类参数（调试显示用）
+ */
+function getAggregationParams() {
+  return {
+    chromaPenalty: CHROMA_PENALTY,
+    countWeightExp: COUNT_WEIGHT_EXP,
+    maxIterations: MAX_ITERATIONS,
+    convergeThreshold: CONVERGE_THRESHOLD,
+    hueDiffThreshold: HUE_DIFF_THRESHOLD
+  };
+}
 
 /**
  * RGB → 色相(0-360°)。饱和度过低时返回 -1（无明确色相）
@@ -80,9 +116,9 @@ function euclideanDistanceSqProtected(c1, c2, chromaPenalty) {
     if ((s1 > 0.1 && s2 < 0.05) || (s2 > 0.1 && s1 < 0.05)) {
       d += Math.abs(s1 - s2) * 255 * 255 * chromaPenalty;
     }
-    // 情况2: 双方都有色相但色相差大(>30°) → 惩罚(防止冷色变暖色)
+    // 情况2: 双方都有色相但色相差大(超过门槛) → 惩罚(防止冷色变暖色)
     const hd = hueDiff(h1, h2);
-    if (h1 >= 0 && h2 >= 0 && hd > 30) {
+    if (h1 >= 0 && h2 >= 0 && hd > HUE_DIFF_THRESHOLD) {
       d += (hd / 180) * 255 * 255 * chromaPenalty;
     }
   }
@@ -427,14 +463,14 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
         const d = euclideanDistanceSqProtected(uniqueColors[i].rgb, centers[k], CHROMA_PENALTY);
         if (d < dMin) dMin = d;
       }
-      const score = uniqueColors[i].count * dMin;  // count×D² 加权最远
+      const score = Math.pow(uniqueColors[i].count, COUNT_WEIGHT_EXP) * dMin;  // count^exp × D² 加权最远
       if (score > bestScore) { bestScore = score; bestIdx = i; }
     }
     if (bestIdx < 0) break;
     centers.push({ ...uniqueColors[bestIdx].rgb });
   }
 
-  const maxIterations = 5;
+  const maxIterations = MAX_ITERATIONS;
   let lastAssign = new Array(uniqueColors.length);
 
   for (let iter = 0; iter < maxIterations; iter++) {
@@ -480,9 +516,9 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
         b: Math.round(sumB / totalWeight)
       };
 
-      // 收敛判定：欧氏距离平方阈值 9（约对应欧氏距离 3）
+      // 收敛判定：欧氏距离平方阈值
       const dist = euclideanDistanceSqProtected(centers[i], newCenter, 0);  // 收敛判定不用色相保护
-      if (dist > 9) {
+      if (dist > CONVERGE_THRESHOLD) {
         centers[i] = newCenter;
         changed = true;
       }
@@ -2043,6 +2079,8 @@ module.exports = {
   findCropBoundaryFromGrid,
   convertSegmentsToGridData,
   aggregateSimilarColors,
+  setAggregationParams,
+  getAggregationParams,
   enhanceVibrant: cachedEnhanceVibrant,
   reduceVibrant: cachedReduceVibrant,
   processMosaicV2,
