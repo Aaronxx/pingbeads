@@ -56,14 +56,16 @@ function findClosestMarkColorSkipMuddy(targetRgb) {
   }
   // 簇中心是彩色 → 在非浊色里找最近
   let best = null, bestDist = Infinity;
+  let skipped = 0;
   for (const c of markPalette) {
-    if (isMuddyMarkColor(c.rgb)) continue;
+    if (isMuddyMarkColor(c.rgb)) { skipped++; continue; }
     const dr = c.rgb.r - targetRgb.r;
     const dg = c.rgb.g - targetRgb.g;
     const db = c.rgb.b - targetRgb.b;
     const d = dr * dr + dg * dg + db * db;
     if (d < bestDist) { bestDist = d; best = c; }
   }
+  console.log('[snap诊断] 目标rgb(' + targetRgb.r + ',' + targetRgb.g + ',' + targetRgb.b + ') sat=' + tSat.toFixed(2) + ' 跳过浊色' + skipped + '个 → ' + (best ? best.code : 'null'));
   // 兜底：若全部被过滤(不应发生)，回退普通查找
   return best || fastFindClosestMarkColor(targetRgb);
 }
