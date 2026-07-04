@@ -100,8 +100,8 @@ Page({
 
     // 浊色规避：偏向高饱和高明度或深色，避开灰扑扑的中间色（默认关闭）
     antiGrayIntensity: 0,  // 滑块值 0-100（实际强度 = 值/100，传给组件）
-    // 聚类算法对比：new-redmean(新·redmean) | new-euclidean(新·欧氏) | legacy(老算法)
-    aggregationMode: 'new-redmean',
+    // 聚类算法对比：new-euclidean(欧氏·最远点) | new-euclidean-quantile(欧氏·分位) | new-redmean(redmean) | legacy(老算法)
+    aggregationMode: 'new-euclidean',
     antiGrayBlockColor: '#f59e0b',  // 滑块颜色（橙色，表示偏向鲜艳/深色）
 
     // 自定义网格大小
@@ -481,11 +481,11 @@ Page({
     });
   },
 
-  // 切换聚类算法（三态循环）：新·redmean → 新·欧氏 → 老算法 → 循环
+  // 切换聚类算法（四态循环）：欧氏最远点 → 欧氏分位 → redmean → 老算法 → 循环
   toggleLegacyAggregation() {
     if (this._checkExporting()) return;
-    const order = ['new-redmean', 'new-euclidean', 'legacy'];
-    const cur = this.data.aggregationMode || 'new-redmean';
+    const order = ['new-euclidean', 'new-euclidean-quantile', 'new-redmean', 'legacy'];
+    const cur = this.data.aggregationMode || 'new-euclidean';
     const next = order[(order.indexOf(cur) + 1) % order.length];
     this.setData({
       aggregationMode: next,

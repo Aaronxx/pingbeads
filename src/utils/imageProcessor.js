@@ -316,6 +316,8 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount, options) {
   const useLegacy = !!(options && options.legacy);
   // 距离模式：'redmean'(默认) | 'euclidean'。仅新算法生效，老算法固定曼哈顿
   const distanceMode = (options && options.distance) || 'redmean';
+  // 初始化策略：'farthest'(最远点,默认) | 'quantile'(count分位)。仅新算法生效
+  const initStrategy = (options && options.initStrategy) || 'farthest';
   // 新算法的距离函数（老算法用内联曼哈顿）
   const newDist = distanceMode === 'euclidean' ? euclideanDistanceSq : perceptualDistance;
   if (!gridData || targetCount <= 0) return gridData;
@@ -369,8 +371,25 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount, options) {
     while (centers.length < targetCount && centers.length < uniqueColors.length) {
       centers.push({ ...uniqueColors[centers.length].rgb });
     }
+  } else if (initStrategy === 'quantile') {
+    // count 分位初始化：按 count 降序，按累计 count 均匀切分选中心
+    // 中心更贴近真实色彩分布（高频色区域中心密），相似色更容易合并
+    const sorted = [...uniqueColors].sort((a, b) => b.count - a.count);
+    const total = sorted.reduce((s, c) => s + c.count, 0);
+    let acc = 0, idx = 0;
+    for (let t = 1; t <= targetCount && idx < sorted.length; t++) {
+      const threshold = total * t / (targetCount + 1);
+      while (idx < sorted.length - 1 && acc + sorted[idx].count / 2 < threshold) {
+        acc += sorted[idx].count;
+        idx++;
+      }
+      centers.push({ ...sorted[idx].rgb });
+    }
+    while (centers.length < targetCount && centers.length < uniqueColors.length) {
+      centers.push({ ...uniqueColors[centers.length].rgb });
+    }
   } else {
-    // 新算法：确定性最远点（count 最大优先，后续选离已有中心最远）
+    // 最远点初始化（默认）：count 最大优先，后续选离已有中心最远
     let firstIdx = 0, firstCount = -1;
     for (let i = 0; i < uniqueColors.length; i++) {
       if (uniqueColors[i].count > firstCount) { firstCount = uniqueColors[i].count; firstIdx = i; }

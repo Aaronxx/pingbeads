@@ -158,10 +158,11 @@ module.exports = {
   },
 
   // 解析当前聚合模式为 options 对象
-  // aggregationMode: 'new-redmean' | 'new-euclidean' | 'legacy'
+  // aggregationMode: 'new-redmean' | 'new-euclidean' | 'new-euclidean-quantile' | 'legacy'
   _getAggregationOptions() {
-    const mode = this.data.aggregationMode || 'new-redmean';
+    const mode = this.data.aggregationMode || 'new-euclidean';
     if (mode === 'legacy') return { legacy: true };
+    if (mode === 'new-euclidean-quantile') return { legacy: false, distance: 'euclidean', initStrategy: 'quantile' };
     if (mode === 'new-euclidean') return { legacy: false, distance: 'euclidean' };
     return { legacy: false, distance: 'redmean' };
   },

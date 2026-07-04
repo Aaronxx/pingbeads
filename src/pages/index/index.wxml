@@ -259,11 +259,11 @@
         </view>
       </view>
 
-      <!-- 聚类算法对比开关：三态循环切换 -->
+      <!-- 聚类算法对比开关：四态循环切换 -->
       <view class="setting-group">
         <view class="group-title">🔬 聚类算法</view>
-        <view class="mode-switch-btn {{aggregationMode !== 'new-redmean' ? 'active' : ''}}" bindtap="toggleLegacyAggregation">
-          <text class="mode-text">{{aggregationMode === 'legacy' ? '老算法' : (aggregationMode === 'new-euclidean' ? '新·欧氏' : '新·redmean')}}</text>
+        <view class="mode-switch-btn {{aggregationMode !== 'new-euclidean' ? 'active' : ''}}" bindtap="toggleLegacyAggregation">
+          <text class="mode-text">{{aggregationMode === 'legacy' ? '老算法' : (aggregationMode === 'new-redmean' ? 'redmean' : (aggregationMode === 'new-euclidean-quantile' ? '欧氏·分位' : '欧氏·最远点'))}}</text>
         </view>
       </view>
 
