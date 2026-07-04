@@ -356,7 +356,10 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount, options) {
 
   const uniqueColors = Array.from(colorCountMap.values());
 
+  console.log('[聚合诊断] uniqueColors=', uniqueColors.length, 'targetCount=', targetCount, 'useLegacy=', useLegacy, 'distance=', distanceMode, 'init=', initStrategy);
+
   if (uniqueColors.length <= targetCount) {
+    console.log('[聚合诊断] 早返回：uniqueColors <= targetCount');
     return gridData;
   }
 
