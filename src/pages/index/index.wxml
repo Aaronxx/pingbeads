@@ -165,12 +165,14 @@
      ======================== -->
   <view
     class="settings-panel {{isPanelOpen ? 'show' : ''}} {{isPanelMinimized ? 'minimized' : ''}}"
-    bindtouchstart="onPanelTouchStart"
-    bindtouchmove="onPanelTouchMove"
-    bindtouchend="onPanelTouchEnd"
   >
-    <!-- 拖动指示条 -->
-    <view class="panel-handle" catchtap="onPanelHandleTap">
+    <!-- 拖动指示条（catch 阻止冒泡，避免影响内容区滚动） -->
+    <view class="panel-handle"
+      catchtap="onPanelHandleTap"
+      catchtouchstart="onPanelTouchStart"
+      catchtouchmove="onPanelTouchMove"
+      catchtouchend="onPanelTouchEnd"
+    >
       <view class="handle-bar"></view>
     </view>
 
