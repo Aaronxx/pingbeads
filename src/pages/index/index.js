@@ -802,7 +802,7 @@ Page({
 
     const exportData = mosaicCanvas.getExportData();
 
-    // 【临时诊断】导出时打印当前算法和 cachedGridData 色号分布
+    // 【临时诊断】弹窗显示当前算法和 cachedGridData 色号数（排查切换算法后导出图不变）
     {
       const codeCount = {};
       const gd = exportData.gridData;
@@ -813,8 +813,9 @@ Page({
             if (cell && cell.markCode) codeCount[cell.markCode] = (codeCount[cell.markCode] || 0) + 1;
           }
         }
-        const top = Object.entries(codeCount).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => k + '(' + v + ')').join(' ');
-        console.log('[导出诊断] aggregationMode=', this.data.aggregationMode, '色号分布:', top, '总色数:', Object.keys(codeCount).length);
+        const top = Object.entries(codeCount).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => k + '(' + v + ')').join(' ');
+        console.log('[导出诊断] aggregationMode=', this.data.aggregationMode, '色号:', top, '总色数:', Object.keys(codeCount).length);
+        wx.showToast({ title: '算法:' + (this.data.aggregationMode || '?') + ' | 色数:' + Object.keys(codeCount).length, icon: 'none', duration: 3000 });
       }
     }
 
