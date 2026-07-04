@@ -115,9 +115,13 @@ function euclideanDistanceSqProtected(c1, c2, chromaPenalty) {
     const s2 = saturation(c2.r, c2.g, c2.b);
     const h1 = hue(c1.r, c1.g, c1.b);
     const h2 = hue(c2.r, c2.g, c2.b);
-    // 情况1: 一方彩色、一方灰色 → 惩罚(防止彩色被灰吸收)
-    if ((s1 > 0.1 && s2 < 0.05) || (s2 > 0.1 && s1 < 0.05)) {
-      d += Math.abs(s1 - s2) * 255 * 255 * chromaPenalty;
+    // 情况1: 饱和度差异保护（防止鲜艳色被浊色/灰色吸收）
+    //   当一方明显比另一方鲜艳时(饱和度差>0.12)，按饱和度差连续惩罚。
+    //   覆盖: 鲜艳粉↔纯灰、鲜艳粉↔浊粉(M10饱和度0.10) 等场景。
+    //   仅当高饱和方>0.18(确实彩色)且差异显著时触发，避免误伤同色系深浅变化。
+    const sDiff = Math.abs(s1 - s2);
+    if (sDiff > 0.12 && Math.max(s1, s2) > 0.18) {
+      d += sDiff * 255 * 255 * chromaPenalty;
     }
     // 情况2: 双方都有色相但色相差大(超过门槛) → 惩罚(防止冷色变暖色)
     const hd = hueDiff(h1, h2);
