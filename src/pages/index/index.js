@@ -481,10 +481,10 @@ Page({
     });
   },
 
-  // 切换聚类算法（三态循环）：欧氏最远点 → 欧氏分位 → 老算法 → 循环
+  // 切换聚类算法（两态）：欧氏最远点 ↔ 老算法
   toggleLegacyAggregation() {
     if (this._checkExporting()) return;
-    const order = ['new-euclidean', 'new-euclidean-quantile', 'legacy'];
+    const order = ['new-euclidean', 'legacy'];
     const cur = this.data.aggregationMode || 'new-euclidean';
     const next = order[(order.indexOf(cur) + 1) % order.length];
     this.setData({
