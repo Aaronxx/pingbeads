@@ -102,12 +102,49 @@ const SPECIAL_ALTERNATIVES = {
   "Y5": "D18"
 };
 
+/**
+ * 判断 Mark 色是否为"中明度浊色"（灰扑扑的脏色）
+ * 饱和度低(<0.15) 且 明度中等(70-225)。深色/浅色不算。
+ */
+function isMuddyMarkColor(rgb) {
+  const mx = Math.max(rgb.r, rgb.g, rgb.b);
+  const mn = Math.min(rgb.r, rgb.g, rgb.b);
+  const s = mx === 0 ? 0 : (mx - mn) / mx;
+  return s < 0.15 && mx > 70 && mx < 225;
+}
+
+/**
+ * 在全色板中找离 target 最近的非浊色、非特殊色 Mark 色
+ * （替代色必须是普通色，不能用特殊色替代特殊色）
+ */
+function findClosestNonMuddy(target) {
+  let best = null, bestDist = Infinity;
+  for (const c of markPalette) {
+    if (isMuddyMarkColor(c.rgb)) continue;
+    if (isSpecialColor(c.code)) continue;  // 排除特殊色(避免自映射)
+    const dr = c.rgb.r - target.r;
+    const dg = c.rgb.g - target.g;
+    const db = c.rgb.b - target.b;
+    const d = dr * dr + dg * dg + db * db;
+    if (d < bestDist) { bestDist = d; best = c; }
+  }
+  return best;
+}
+
 // 预计算替代色信息的缓存（避免每次都调用 markPalette.find）
+// 若静态替代表里的替代色是浊色，改取最近的非浊色，避免特殊色被替换成脏色
 const alternativeColorCache = new Map();
 for (const [specialCode, altCode] of Object.entries(SPECIAL_ALTERNATIVES)) {
   const altColor = markPalette.find(c => c.code === altCode);
-  if (altColor) {
-    alternativeColorCache.set(specialCode, altColor);
+  const specialColor = markPalette.find(c => c.code === specialCode);
+  if (altColor && specialColor) {
+    let final = altColor;
+    if (isMuddyMarkColor(altColor.rgb)) {
+      // 替代色是浊色：以特殊色自身的 RGB 为 target 找最近非浊色（保持色相匹配）
+      const better = findClosestNonMuddy(specialColor.rgb);
+      if (better) final = better;
+    }
+    alternativeColorCache.set(specialCode, final);
   }
 }
 
