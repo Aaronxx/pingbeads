@@ -161,7 +161,6 @@ module.exports = {
   // aggregationMode: 'new-euclidean' | 'new-euclidean-quantile' | 'legacy'
   _getAggregationOptions() {
     const mode = this.data.aggregationMode || 'new-euclidean';
-    console.log('[聚合诊断] _getAggregationOptions mode=', mode);
     if (mode === 'legacy') return { legacy: true };
     if (mode === 'new-euclidean-quantile') return { legacy: false, distance: 'euclidean', initStrategy: 'quantile' };
     if (mode === 'new-euclidean') return { legacy: false, distance: 'euclidean' };

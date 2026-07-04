@@ -356,10 +356,7 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount, options) {
 
   const uniqueColors = Array.from(colorCountMap.values());
 
-  console.log('[聚合诊断] uniqueColors=', uniqueColors.length, 'targetCount=', targetCount, 'useLegacy=', useLegacy, 'distance=', distanceMode, 'init=', initStrategy);
-
   if (uniqueColors.length <= targetCount) {
-    console.log('[聚合诊断] 早返回：uniqueColors <= targetCount');
     return gridData;
   }
 
@@ -486,8 +483,6 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount, options) {
     rgbToCenterIdx.set(key, lastAssign[ci]);
   }
 
-  let writtenCount = 0;
-  const afterCodes = new Set();
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const cell = gridData[row] && gridData[row][col];
@@ -501,13 +496,9 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount, options) {
         cell.markCode = markColor.code;
         cell.markHex = markColor.hex;
         cell.markRgb = markColor.rgb;
-        writtenCount++;
       }
-      if (cell.markCode) afterCodes.add(cell.markCode);
     }
   }
-
-  console.log('[聚合诊断] 回写完成: writtenCount=', writtenCount, '聚合后色号数=', afterCodes.size, 'centers=', centers.length);
 
   return gridData;
 }
