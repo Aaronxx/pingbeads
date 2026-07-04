@@ -38,6 +38,38 @@ function perceptualDistance(c1, c2) {
 }
 
 /**
+ * 计算饱和度（HSV 的 S，0-1）
+ */
+function saturation(r, g, b) {
+  const mx = Math.max(r, g, b);
+  const mn = Math.min(r, g, b);
+  return mx === 0 ? 0 : (mx - mn) / mx;
+}
+
+/**
+ * 带色相保护的欧氏距离平方
+ * 在纯欧氏基础上，当"彩色色(高饱和)"要归到"灰色中心(低饱和)"时增大距离，
+ * 防止浅蓝/浅粉等彩色被中性灰吸收（还原度损失）。
+ * chromaPenalty 控制惩罚强度，0=纯欧氏。
+ */
+function euclideanDistanceSqProtected(c1, c2, chromaPenalty) {
+  const dr = c1.r - c2.r;
+  const dg = c1.g - c2.g;
+  const db = c1.b - c2.b;
+  let d = dr * dr + dg * dg + db * db;
+  if (chromaPenalty > 0) {
+    const s1 = saturation(c1.r, c1.g, c1.b);
+    const s2 = saturation(c2.r, c2.g, c2.b);
+    // 仅当一方彩色(s>0.1)、另一方灰色(s<0.05)时惩罚，避免误伤同色系
+    if ((s1 > 0.1 && s2 < 0.05) || (s2 > 0.1 && s1 < 0.05)) {
+      // 饱和度差 × 惩罚系数 × 一个量级因子(让惩罚与距离平方可比)
+      d += Math.abs(s1 - s2) * 255 * 255 * chromaPenalty;
+    }
+  }
+  return d;
+}
+
+/**
  * 欧氏距离平方（无通道权重，与 Mark 色板预计算的欧氏距离一致）
  */
 function euclideanDistanceSq(c1, c2) {
@@ -316,10 +348,15 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount, options) {
   const useLegacy = !!(options && options.legacy);
   // 距离模式：'redmean'(默认) | 'euclidean'。仅新算法生效，老算法固定曼哈顿
   const distanceMode = (options && options.distance) || 'redmean';
-  // 初始化策略：'farthest'(最远点,默认) | 'quantile'(count分位)。仅新算法生效
+  // 初始化策略：'farthest'(最远点,默认) | 'quantile'(count分位) | 'weighted-farthest'。仅新算法生效
   const initStrategy = (options && options.initStrategy) || 'farthest';
+  // 色相保护惩罚(防止彩色被灰色吸收)，0=关闭。仅 euclidean 模式生效
+  const chromaPenalty = (options && options.chromaPenalty) || 0;
   // 新算法的距离函数（老算法用内联曼哈顿）
-  const newDist = distanceMode === 'euclidean' ? euclideanDistanceSq : perceptualDistance;
+  const useProtected = distanceMode === 'euclidean' && chromaPenalty > 0;
+  const newDist = useProtected
+    ? (a, b) => euclideanDistanceSqProtected(a, b, chromaPenalty)
+    : (distanceMode === 'euclidean' ? euclideanDistanceSq : perceptualDistance);
   if (!gridData || targetCount <= 0) return gridData;
 
   // 收集所有格子的主导色 RGB

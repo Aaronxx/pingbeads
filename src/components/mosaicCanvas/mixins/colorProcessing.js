@@ -162,7 +162,8 @@ module.exports = {
   _getAggregationOptions() {
     const mode = this.data.aggregationMode || 'new-euclidean';
     if (mode === 'legacy') return { legacy: true };
-    if (mode === 'new-euclidean-weighted') return { legacy: false, distance: 'euclidean', initStrategy: 'weighted-farthest' };
+    // 加权最远 + 色相保护(防止彩色浅蓝/浅粉被中性灰吸收)
+    if (mode === 'new-euclidean-weighted') return { legacy: false, distance: 'euclidean', initStrategy: 'weighted-farthest', chromaPenalty: 0.3 };
     if (mode === 'new-euclidean') return { legacy: false, distance: 'euclidean' };
     return { legacy: false, distance: 'euclidean' };
   },
