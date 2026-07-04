@@ -37,6 +37,16 @@ function perceptualDistance(c1, c2) {
   return wr * dr * dr + 4 * dg * dg + wb * db * db; // 不开方，保序即可
 }
 
+/**
+ * 欧氏距离平方（无通道权重，与 Mark 色板预计算的欧氏距离一致）
+ */
+function euclideanDistanceSq(c1, c2) {
+  const dr = c1.r - c2.r;
+  const dg = c1.g - c2.g;
+  const db = c1.b - c2.b;
+  return dr * dr + dg * dg + db * db;
+}
+
 /** 快速中位数 */
 function quickMedian(arr) {
   const len = arr.length;
@@ -304,6 +314,10 @@ function generatePlaceholderGrid(cols, rows, gridSize) {
  */
 function aggregateSimilarColors(gridData, rows, cols, targetCount, options) {
   const useLegacy = !!(options && options.legacy);
+  // 距离模式：'redmean'(默认) | 'euclidean'。仅新算法生效，老算法固定曼哈顿
+  const distanceMode = (options && options.distance) || 'redmean';
+  // 新算法的距离函数（老算法用内联曼哈顿）
+  const newDist = distanceMode === 'euclidean' ? euclideanDistanceSq : perceptualDistance;
   if (!gridData || targetCount <= 0) return gridData;
 
   // 收集所有格子的主导色 RGB
@@ -368,7 +382,7 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount, options) {
       for (let i = 0; i < uniqueColors.length; i++) {
         let dMin = Infinity;
         for (let k = 0; k < centers.length; k++) {
-          const d = perceptualDistance(uniqueColors[i].rgb, centers[k]);
+          const d = newDist(uniqueColors[i].rgb, centers[k]);
           if (d < dMin) dMin = d;
         }
         if (dMin > bestDist) { bestDist = dMin; bestIdx = i; }
@@ -394,10 +408,10 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount, options) {
       let minIdx = 0;
 
       for (let i = 0; i < centers.length; i++) {
-        // 老算法用曼哈顿距离，新算法用 redmean
+        // 老算法用曼哈顿距离，新算法用 newDist(redmean 或 euclidean)
         const dist = useLegacy
           ? (Math.abs(centers[i].r - cr) + Math.abs(centers[i].g - cg) + Math.abs(centers[i].b - cb))
-          : perceptualDistance({ r: cr, g: cg, b: cb }, centers[i]);
+          : newDist({ r: cr, g: cg, b: cb }, centers[i]);
         if (dist < minDist) {
           minDist = dist;
           minIdx = i;
@@ -426,11 +440,13 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount, options) {
         b: Math.round(sumB / totalWeight)
       };
 
-      // 收敛判定：老算法曼哈顿阈值 3，新算法 redmean 阈值 5000(距离平方量级)
+      // 收敛判定：老算法曼哈顿阈值 3，新算法按距离模式不同阈值
       const dist = useLegacy
         ? (Math.abs(centers[i].r - newCenter.r) + Math.abs(centers[i].g - newCenter.g) + Math.abs(centers[i].b - newCenter.b))
-        : perceptualDistance(centers[i], newCenter);
-      if (useLegacy ? (dist > 3) : (dist > 5000)) {
+        : newDist(centers[i], newCenter);
+      // redmean 阈值 5000；euclidean 阈值 9(欧氏距离平方，对应欧氏距离3)
+      const threshold = useLegacy ? 3 : (distanceMode === 'euclidean' ? 9 : 5000);
+      if (dist > threshold) {
         centers[i] = newCenter;
         changed = true;
       }

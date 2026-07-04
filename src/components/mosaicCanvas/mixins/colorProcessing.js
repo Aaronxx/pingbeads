@@ -35,7 +35,7 @@ module.exports = {
       // 导致 vibrant=0 + mergeThreshold>0 时不聚类的 bug)
       const mergeThreshold0 = this.data.mergeThreshold;
       if (mergeThreshold0 > 0) {
-        aggregateSimilarColors(gridData, rows, cols, mergeThreshold0, { legacy: this.data.useLegacyAggregation });
+        aggregateSimilarColors(gridData, rows, cols, mergeThreshold0, this._getAggregationOptions());
       }
       if (!this.data.useSpecialColors) {
         this.replaceSpecialColors(gridData, rows, cols);
@@ -77,7 +77,7 @@ module.exports = {
 
     const mergeThreshold = this.data.mergeThreshold;
     if (mergeThreshold > 0) {
-      aggregateSimilarColors(gridData, rows, cols, mergeThreshold, { legacy: this.data.useLegacyAggregation });
+      aggregateSimilarColors(gridData, rows, cols, mergeThreshold, this._getAggregationOptions());
     }
 
     if (!this.data.useSpecialColors) {
@@ -155,6 +155,15 @@ module.exports = {
       g: Math.max(0, Math.min(255, Math.round(128 + (gn * 255 - 128) * contrast))),
       b: Math.max(0, Math.min(255, Math.round(128 + (bn * 255 - 128) * contrast)))
     };
+  },
+
+  // 解析当前聚合模式为 options 对象
+  // aggregationMode: 'new-redmean' | 'new-euclidean' | 'legacy'
+  _getAggregationOptions() {
+    const mode = this.data.aggregationMode || 'new-redmean';
+    if (mode === 'legacy') return { legacy: true };
+    if (mode === 'new-euclidean') return { legacy: false, distance: 'euclidean' };
+    return { legacy: false, distance: 'redmean' };
   },
 
   _applyColorAndPreset(gridData, rows, cols, gridSize) {

@@ -98,7 +98,7 @@
         regenerateTrigger="{{regenerateTrigger}}"
         vibrantScale="{{vibrantScale}}"
         antiGrayIntensity="{{antiGrayIntensity / 100}}"
-        useLegacyAggregation="{{useLegacyAggregation}}"
+        aggregationMode="{{aggregationMode}}"
         gridPreset="{{[gridPresetIndex, availableGridPresets[gridPresetIndex].cols, availableGridPresets[gridPresetIndex].rows]}}"
         splitMode="{{splitMode}}"
         bind:cellClick="onCodeClick"
@@ -259,11 +259,11 @@
         </view>
       </view>
 
-      <!-- 聚类算法对比开关：切换老算法/新算法 -->
+      <!-- 聚类算法对比开关：三态循环切换 -->
       <view class="setting-group">
         <view class="group-title">🔬 聚类算法</view>
-        <view class="mode-switch-btn {{useLegacyAggregation ? 'active' : ''}}" bindtap="toggleLegacyAggregation">
-          <text class="mode-text">{{useLegacyAggregation ? '老算法' : '新算法'}}</text>
+        <view class="mode-switch-btn {{aggregationMode !== 'new-redmean' ? 'active' : ''}}" bindtap="toggleLegacyAggregation">
+          <text class="mode-text">{{aggregationMode === 'legacy' ? '老算法' : (aggregationMode === 'new-euclidean' ? '新·欧氏' : '新·redmean')}}</text>
         </view>
       </view>
 
