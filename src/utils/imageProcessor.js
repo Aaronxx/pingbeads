@@ -23,21 +23,6 @@ function colorDistance(c1, c2) {
 }
 
 /**
- * 感知距离 (redmean 加权欧氏)
- * Runge-Hinton 近似：按平均红分量对 R/B 通道加权，
- * 比纯曼哈顿/欧氏更贴合人眼色差感知。
- */
-function perceptualDistance(c1, c2) {
-  const rMean = (c1.r + c2.r) / 2;
-  const dr = c1.r - c2.r;
-  const dg = c1.g - c2.g;
-  const db = c1.b - c2.b;
-  const wr = 2 + rMean / 256;
-  const wb = 2 + (255 - rMean) / 256;
-  return wr * dr * dr + 4 * dg * dg + wb * db * db; // 不开方，保序即可
-}
-
-/**
  * 计算饱和度（HSV 的 S，0-1）
  */
 function saturation(r, g, b) {
@@ -45,6 +30,10 @@ function saturation(r, g, b) {
   const mn = Math.min(r, g, b);
   return mx === 0 ? 0 : (mx - mn) / mx;
 }
+
+// 色相保护惩罚强度：防止彩色被灰色吸收、冷色变暖色
+// 0.3 为实测调优值，过大会过度阻止合并导致色数偏多，过小则还原度不足
+const CHROMA_PENALTY = 0.3;
 
 /**
  * RGB → 色相(0-360°)。饱和度过低时返回 -1（无明确色相）
@@ -98,16 +87,6 @@ function euclideanDistanceSqProtected(c1, c2, chromaPenalty) {
     }
   }
   return d;
-}
-
-/**
- * 欧氏距离平方（无通道权重，与 Mark 色板预计算的欧氏距离一致）
- */
-function euclideanDistanceSq(c1, c2) {
-  const dr = c1.r - c2.r;
-  const dg = c1.g - c2.g;
-  const db = c1.b - c2.b;
-  return dr * dr + dg * dg + db * db;
 }
 
 /** 快速中位数 */
@@ -367,27 +346,28 @@ function generatePlaceholderGrid(cols, rows, gridSize) {
 }
 
 /**
- * 颜色聚合 - 基于目标色块数量的 K-means 聚类（临时回退为旧版排查灰色问题）
- * @param {Array} gridData - 网格数据
+ * 颜色聚合 - 把全图格子的主导色浓缩到约 targetCount 种代表色
+ *
+ * 算法演进历史（详见 git tag v0.5-aggregation-comparison）：
+ *   1. 老算法：raw RGB 空间，空间顺序采样初始化 + 曼哈顿距离。还原度好但整合度一般。
+ *   2. Mark 色空间聚类(方案C)：在小程序环境产生灰色异常，已放弃。
+ *   3. 欧氏·最远点：整合度最好但还原度差(浅彩色被吞)。
+ *   4. 欧氏·加权最远(当前采用)：count×D² 初始化 + 欧氏距离 + 色相保护，
+ *      整合度与还原度的最佳折中。
+ *
+ * 当前实现：raw RGB 空间 K-means
+ *   - 初始化：count 最大的点作首个中心，后续选 count×D² 最大的点（兼顾高频和散布）
+ *   - 距离：欧氏距离平方 + 色相保护(防彩色被灰吸收、防冷色变暖色)
+ *   - 中心更新：簇内 count 加权平均 RGB
+ *   - snap：中心映射到最近的 Mark 色号
+ *
+ * @param {Array} gridData - 网格数据 (原地修改 markCode/markHex/markRgb)
  * @param {number} rows - 行数
  * @param {number} cols - 列数
- * @param {number} targetCount - 目标色块数量 (1-30)
- * @param {object} [options] - 可选参数
- * @param {boolean} [options.legacy=false] - true 用老算法(空间顺序采样+曼哈顿)，false 用新算法(确定性最远点+redmean)
+ * @param {number} targetCount - 目标色块数量
+ * @returns {Array} gridData (原地修改，返回引用)
  */
-function aggregateSimilarColors(gridData, rows, cols, targetCount, options) {
-  const useLegacy = !!(options && options.legacy);
-  // 距离模式：'redmean'(默认) | 'euclidean'。仅新算法生效，老算法固定曼哈顿
-  const distanceMode = (options && options.distance) || 'redmean';
-  // 初始化策略：'farthest'(最远点,默认) | 'quantile'(count分位) | 'weighted-farthest'。仅新算法生效
-  const initStrategy = (options && options.initStrategy) || 'farthest';
-  // 色相保护惩罚(防止彩色被灰色吸收)，0=关闭。仅 euclidean 模式生效
-  const chromaPenalty = (options && options.chromaPenalty) || 0;
-  // 新算法的距离函数（老算法用内联曼哈顿）
-  const useProtected = distanceMode === 'euclidean' && chromaPenalty > 0;
-  const newDist = useProtected
-    ? (a, b) => euclideanDistanceSqProtected(a, b, chromaPenalty)
-    : (distanceMode === 'euclidean' ? euclideanDistanceSq : perceptualDistance);
+function aggregateSimilarColors(gridData, rows, cols, targetCount) {
   if (!gridData || targetCount <= 0) return gridData;
 
   // 收集所有格子的主导色 RGB
@@ -428,59 +408,30 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount, options) {
     return gridData;
   }
 
-  // 初始化聚类中心
+  // 初始化聚类中心：加权最远点
+  // 首个中心取 count 最大的点（主体色），后续选 count×D² 最大的点
+  // （D = 到已有中心的最近距离）。兼顾高频色和色彩空间散布，
+  // 既贴近真实分布又保证中心覆盖不同色区。
   const centers = [];
-  if (useLegacy) {
-    // 老算法：空间顺序等距采样
-    const step = Math.max(1, Math.floor(uniqueColors.length / targetCount));
-    for (let i = 0; i < targetCount && i * step < uniqueColors.length; i++) {
-      centers.push({ ...uniqueColors[i * step].rgb });
-    }
-    while (centers.length < targetCount && centers.length < uniqueColors.length) {
-      centers.push({ ...uniqueColors[centers.length].rgb });
-    }
-  } else if (initStrategy === 'quantile') {
-    // count 分位初始化：按 count 降序，按累计 count 均匀切分选中心
-    // 中心更贴近真实色彩分布（高频色区域中心密），相似色更容易合并
-    const sorted = [...uniqueColors].sort((a, b) => b.count - a.count);
-    const total = sorted.reduce((s, c) => s + c.count, 0);
-    let acc = 0, idx = 0;
-    for (let t = 1; t <= targetCount && idx < sorted.length; t++) {
-      const threshold = total * t / (targetCount + 1);
-      while (idx < sorted.length - 1 && acc + sorted[idx].count / 2 < threshold) {
-        acc += sorted[idx].count;
-        idx++;
-      }
-      centers.push({ ...sorted[idx].rgb });
-    }
-    while (centers.length < targetCount && centers.length < uniqueColors.length) {
-      centers.push({ ...uniqueColors[centers.length].rgb });
-    }
-  } else {
-    // 最远点初始化（默认）
-    // first 中心: count 最大；后续: farthest=纯最远, weighted-farthest=count×D²兼顾高频
-    let firstIdx = 0, firstCount = -1;
-    for (let i = 0; i < uniqueColors.length; i++) {
-      if (uniqueColors[i].count > firstCount) { firstCount = uniqueColors[i].count; firstIdx = i; }
-    }
-    centers.push({ ...uniqueColors[firstIdx].rgb });
+  let firstIdx = 0, firstCount = -1;
+  for (let i = 0; i < uniqueColors.length; i++) {
+    if (uniqueColors[i].count > firstCount) { firstCount = uniqueColors[i].count; firstIdx = i; }
+  }
+  centers.push({ ...uniqueColors[firstIdx].rgb });
 
-    const useWeighted = initStrategy === 'weighted-farthest';
-    while (centers.length < targetCount && centers.length < uniqueColors.length) {
-      let bestIdx = -1, bestScore = -1;
-      for (let i = 0; i < uniqueColors.length; i++) {
-        let dMin = Infinity;
-        for (let k = 0; k < centers.length; k++) {
-          const d = newDist(uniqueColors[i].rgb, centers[k]);
-          if (d < dMin) dMin = d;
-        }
-        // weighted: count×D² 兼顾高频和散布；纯最远: 只看 D²
-        const score = useWeighted ? (uniqueColors[i].count * dMin) : dMin;
-        if (score > bestScore) { bestScore = score; bestIdx = i; }
+  while (centers.length < targetCount && centers.length < uniqueColors.length) {
+    let bestIdx = -1, bestScore = -1;
+    for (let i = 0; i < uniqueColors.length; i++) {
+      let dMin = Infinity;
+      for (let k = 0; k < centers.length; k++) {
+        const d = euclideanDistanceSqProtected(uniqueColors[i].rgb, centers[k], CHROMA_PENALTY);
+        if (d < dMin) dMin = d;
       }
-      if (bestIdx < 0) break;
-      centers.push({ ...uniqueColors[bestIdx].rgb });
+      const score = uniqueColors[i].count * dMin;  // count×D² 加权最远
+      if (score > bestScore) { bestScore = score; bestIdx = i; }
     }
+    if (bestIdx < 0) break;
+    centers.push({ ...uniqueColors[bestIdx].rgb });
   }
 
   const maxIterations = 5;
@@ -499,10 +450,8 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount, options) {
       let minIdx = 0;
 
       for (let i = 0; i < centers.length; i++) {
-        // 老算法用曼哈顿距离，新算法用 newDist(redmean 或 euclidean)
-        const dist = useLegacy
-          ? (Math.abs(centers[i].r - cr) + Math.abs(centers[i].g - cg) + Math.abs(centers[i].b - cb))
-          : newDist({ r: cr, g: cg, b: cb }, centers[i]);
+        // 欧氏距离平方 + 色相保护（防彩色被灰吸收、防冷色变暖色）
+        const dist = euclideanDistanceSqProtected({ r: cr, g: cg, b: cb }, centers[i], CHROMA_PENALTY);
         if (dist < minDist) {
           minDist = dist;
           minIdx = i;
@@ -531,13 +480,9 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount, options) {
         b: Math.round(sumB / totalWeight)
       };
 
-      // 收敛判定：老算法曼哈顿阈值 3，新算法按距离模式不同阈值
-      const dist = useLegacy
-        ? (Math.abs(centers[i].r - newCenter.r) + Math.abs(centers[i].g - newCenter.g) + Math.abs(centers[i].b - newCenter.b))
-        : newDist(centers[i], newCenter);
-      // redmean 阈值 5000；euclidean 阈值 9(欧氏距离平方，对应欧氏距离3)
-      const threshold = useLegacy ? 3 : (distanceMode === 'euclidean' ? 9 : 5000);
-      if (dist > threshold) {
+      // 收敛判定：欧氏距离平方阈值 9（约对应欧氏距离 3）
+      const dist = euclideanDistanceSqProtected(centers[i], newCenter, 0);  // 收敛判定不用色相保护
+      if (dist > 9) {
         centers[i] = newCenter;
         changed = true;
       }

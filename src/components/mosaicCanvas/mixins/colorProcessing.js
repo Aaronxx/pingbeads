@@ -35,7 +35,7 @@ module.exports = {
       // 导致 vibrant=0 + mergeThreshold>0 时不聚类的 bug)
       const mergeThreshold0 = this.data.mergeThreshold;
       if (mergeThreshold0 > 0) {
-        aggregateSimilarColors(gridData, rows, cols, mergeThreshold0, this._getAggregationOptions());
+        aggregateSimilarColors(gridData, rows, cols, mergeThreshold0);
       }
       if (!this.data.useSpecialColors) {
         this.replaceSpecialColors(gridData, rows, cols);
@@ -77,7 +77,7 @@ module.exports = {
 
     const mergeThreshold = this.data.mergeThreshold;
     if (mergeThreshold > 0) {
-      aggregateSimilarColors(gridData, rows, cols, mergeThreshold, this._getAggregationOptions());
+      aggregateSimilarColors(gridData, rows, cols, mergeThreshold);
     }
 
     if (!this.data.useSpecialColors) {
@@ -155,17 +155,6 @@ module.exports = {
       g: Math.max(0, Math.min(255, Math.round(128 + (gn * 255 - 128) * contrast))),
       b: Math.max(0, Math.min(255, Math.round(128 + (bn * 255 - 128) * contrast)))
     };
-  },
-
-  // 解析当前聚合模式为 options 对象
-  // aggregationMode: 'new-euclidean' | 'new-euclidean-quantile' | 'legacy'
-  _getAggregationOptions() {
-    const mode = this.data.aggregationMode || 'new-euclidean';
-    if (mode === 'legacy') return { legacy: true };
-    // 加权最远 + 色相保护(防止彩色浅蓝/浅粉被中性灰吸收)
-    if (mode === 'new-euclidean-weighted') return { legacy: false, distance: 'euclidean', initStrategy: 'weighted-farthest', chromaPenalty: 0.3 };
-    if (mode === 'new-euclidean') return { legacy: false, distance: 'euclidean' };
-    return { legacy: false, distance: 'euclidean' };
   },
 
   _applyColorAndPreset(gridData, rows, cols, gridSize) {

@@ -22,7 +22,6 @@ Component({
     regenerateTrigger: { type: Number, value: 0 },
     vibrantScale: { type: Number, value: 0 },  // 鲜艳度增强系数 (0-1)
     antiGrayIntensity: { type: Number, value: 0 },  // 浊色规避强度 (0-1，默认关闭)
-    aggregationMode: { type: String, value: 'new-redmean' },  // 聚类算法: new-redmean | new-euclidean | legacy
     mirrorImage: { type: Boolean, value: false },  // 是否镜像翻转
     forceGridSize: { type: Number, value: null },  // 强制使用的网格大小（跳过检测）
     // 网格预设：[预设索引, 目标列数, 目标行数]
@@ -137,19 +136,6 @@ Component({
     'antiGrayIntensity': function(newVal, oldVal) {
       // 值未变化时跳过（避免首次传值等场景的 observer 误触发导致重入竞态）
       if (oldVal === newVal || (oldVal !== oldVal && newVal !== newVal)) return;
-      if (this.data.isProcessing) return;
-      if (this.cachedPixelData && this.cachedWidth > 0) {
-        this.triggerEvent('loadingChange', { show: true, text: '正在处理图片...' });
-        this.setData({ isProcessing: true }, () => {
-          setTimeout(() => {
-            this.regenerateFromCache();
-          }, 100);
-        });
-      }
-    },
-    // 聚类算法切换：需重跑 regenerateFromCache（聚合参数变化）
-    'aggregationMode': function(newVal, oldVal) {
-      if (oldVal === newVal) return;
       if (this.data.isProcessing) return;
       if (this.cachedPixelData && this.cachedWidth > 0) {
         this.triggerEvent('loadingChange', { show: true, text: '正在处理图片...' });
