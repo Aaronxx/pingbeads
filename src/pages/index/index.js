@@ -100,6 +100,8 @@ Page({
 
     // 浊色规避：偏向高饱和高明度或深色，避开灰扑扑的中间色（默认关闭）
     antiGrayIntensity: 0,  // 滑块值 0-100（实际强度 = 值/100，传给组件）
+    // 聚类算法对比开关：false=新算法(最远点+redmean)，true=老算法(空间采样+曼哈顿)
+    useLegacyAggregation: false,
     antiGrayBlockColor: '#f59e0b',  // 滑块颜色（橙色，表示偏向鲜艳/深色）
 
     // 自定义网格大小
@@ -476,6 +478,16 @@ Page({
     const sliderVal = e.detail.value;
     this.setData({
       antiGrayIntensity: sliderVal
+    });
+  },
+
+  // 切换聚类算法（老/新），用于对比效果
+  toggleLegacyAggregation() {
+    if (this._checkExporting()) return;
+    this.setData({
+      useLegacyAggregation: !this.data.useLegacyAggregation,
+      mosaicData: null,
+      currentStep: 1
     });
   },
 

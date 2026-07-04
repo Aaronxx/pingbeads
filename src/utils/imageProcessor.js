@@ -299,8 +299,11 @@ function generatePlaceholderGrid(cols, rows, gridSize) {
  * @param {number} rows - 行数
  * @param {number} cols - 列数
  * @param {number} targetCount - 目标色块数量 (1-30)
+ * @param {object} [options] - 可选参数
+ * @param {boolean} [options.legacy=false] - true 用老算法(空间顺序采样+曼哈顿)，false 用新算法(确定性最远点+redmean)
  */
-function aggregateSimilarColors(gridData, rows, cols, targetCount) {
+function aggregateSimilarColors(gridData, rows, cols, targetCount, options) {
+  const useLegacy = !!(options && options.legacy);
   if (!gridData || targetCount <= 0) return gridData;
 
   // 收集所有格子的主导色 RGB
@@ -341,27 +344,38 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
     return gridData;
   }
 
-  // 确定性最远点初始化（替代空间顺序采样，改善收敛）
-  // 第一个中心：count 最大的点（主体色）；后续：离已有中心最远的点
+  // 初始化聚类中心
   const centers = [];
-  let firstIdx = 0, firstCount = -1;
-  for (let i = 0; i < uniqueColors.length; i++) {
-    if (uniqueColors[i].count > firstCount) { firstCount = uniqueColors[i].count; firstIdx = i; }
-  }
-  centers.push({ ...uniqueColors[firstIdx].rgb });
-
-  while (centers.length < targetCount && centers.length < uniqueColors.length) {
-    let bestIdx = -1, bestDist = -1;
-    for (let i = 0; i < uniqueColors.length; i++) {
-      let dMin = Infinity;
-      for (let k = 0; k < centers.length; k++) {
-        const d = perceptualDistance(uniqueColors[i].rgb, centers[k]);
-        if (d < dMin) dMin = d;
-      }
-      if (dMin > bestDist) { bestDist = dMin; bestIdx = i; }
+  if (useLegacy) {
+    // 老算法：空间顺序等距采样
+    const step = Math.max(1, Math.floor(uniqueColors.length / targetCount));
+    for (let i = 0; i < targetCount && i * step < uniqueColors.length; i++) {
+      centers.push({ ...uniqueColors[i * step].rgb });
     }
-    if (bestIdx < 0) break;
-    centers.push({ ...uniqueColors[bestIdx].rgb });
+    while (centers.length < targetCount && centers.length < uniqueColors.length) {
+      centers.push({ ...uniqueColors[centers.length].rgb });
+    }
+  } else {
+    // 新算法：确定性最远点（count 最大优先，后续选离已有中心最远）
+    let firstIdx = 0, firstCount = -1;
+    for (let i = 0; i < uniqueColors.length; i++) {
+      if (uniqueColors[i].count > firstCount) { firstCount = uniqueColors[i].count; firstIdx = i; }
+    }
+    centers.push({ ...uniqueColors[firstIdx].rgb });
+
+    while (centers.length < targetCount && centers.length < uniqueColors.length) {
+      let bestIdx = -1, bestDist = -1;
+      for (let i = 0; i < uniqueColors.length; i++) {
+        let dMin = Infinity;
+        for (let k = 0; k < centers.length; k++) {
+          const d = perceptualDistance(uniqueColors[i].rgb, centers[k]);
+          if (d < dMin) dMin = d;
+        }
+        if (dMin > bestDist) { bestDist = dMin; bestIdx = i; }
+      }
+      if (bestIdx < 0) break;
+      centers.push({ ...uniqueColors[bestIdx].rgb });
+    }
   }
 
   const maxIterations = 5;
@@ -380,7 +394,10 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
       let minIdx = 0;
 
       for (let i = 0; i < centers.length; i++) {
-        const dist = perceptualDistance({ r: cr, g: cg, b: cb }, centers[i]);
+        // 老算法用曼哈顿距离，新算法用 redmean
+        const dist = useLegacy
+          ? (Math.abs(centers[i].r - cr) + Math.abs(centers[i].g - cg) + Math.abs(centers[i].b - cb))
+          : perceptualDistance({ r: cr, g: cg, b: cb }, centers[i]);
         if (dist < minDist) {
           minDist = dist;
           minIdx = i;
@@ -409,8 +426,11 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
         b: Math.round(sumB / totalWeight)
       };
 
-      const dist = perceptualDistance(centers[i], newCenter);
-      if (dist > 5000) {  // redmean 距离平方量级，约对应原曼哈顿阈值 3
+      // 收敛判定：老算法曼哈顿阈值 3，新算法 redmean 阈值 5000(距离平方量级)
+      const dist = useLegacy
+        ? (Math.abs(centers[i].r - newCenter.r) + Math.abs(centers[i].g - newCenter.g) + Math.abs(centers[i].b - newCenter.b))
+        : perceptualDistance(centers[i], newCenter);
+      if (useLegacy ? (dist > 3) : (dist > 5000)) {
         centers[i] = newCenter;
         changed = true;
       }

@@ -35,7 +35,7 @@ module.exports = {
       // 导致 vibrant=0 + mergeThreshold>0 时不聚类的 bug)
       const mergeThreshold0 = this.data.mergeThreshold;
       if (mergeThreshold0 > 0) {
-        aggregateSimilarColors(gridData, rows, cols, mergeThreshold0);
+        aggregateSimilarColors(gridData, rows, cols, mergeThreshold0, { legacy: this.data.useLegacyAggregation });
       }
       if (!this.data.useSpecialColors) {
         this.replaceSpecialColors(gridData, rows, cols);
@@ -77,7 +77,7 @@ module.exports = {
 
     const mergeThreshold = this.data.mergeThreshold;
     if (mergeThreshold > 0) {
-      aggregateSimilarColors(gridData, rows, cols, mergeThreshold);
+      aggregateSimilarColors(gridData, rows, cols, mergeThreshold, { legacy: this.data.useLegacyAggregation });
     }
 
     if (!this.data.useSpecialColors) {
