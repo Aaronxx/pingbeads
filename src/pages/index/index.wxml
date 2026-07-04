@@ -97,6 +97,7 @@
         previewQuality="{{previewQuality}}"
         regenerateTrigger="{{regenerateTrigger}}"
         vibrantScale="{{vibrantScale}}"
+        antiGrayIntensity="{{antiGrayIntensity / 100}}"
         gridPreset="{{[gridPresetIndex, availableGridPresets[gridPresetIndex].cols, availableGridPresets[gridPresetIndex].rows]}}"
         splitMode="{{splitMode}}"
         bind:cellClick="onCodeClick"
@@ -232,6 +233,28 @@
             </view>
           </view>
           <text class="vibrant-label-right">鲜艳</text>
+        </view>
+      </view>
+
+      <!-- 浊色规避滑块：偏向高饱和高明度或深色，避开灰浊中间色 -->
+      <view class="setting-group">
+        <view class="group-title">✨ 浊色规避</view>
+        <view class="vibrant-control">
+          <text class="vibrant-label-left">关</text>
+          <view class="vibrant-slider-outer">
+            <view class="vibrant-slider-wrapper">
+              <slider
+                min="0"
+                max="100"
+                value="{{antiGrayIntensity}}"
+                bindchange="onAntiGrayChange"
+                bindchanging="onAntiGrayChanging"
+                block-color="{{antiGrayBlockColor}}"
+                selected-color="{{antiGrayBlockColor}}"
+              />
+            </view>
+          </view>
+          <text class="vibrant-label-right">强</text>
         </view>
       </view>
 

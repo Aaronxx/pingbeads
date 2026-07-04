@@ -1,7 +1,7 @@
 /**
  * 图片处理 mixin：图片加载、像素处理、马赛克/卡通模式生成
  */
-const { processSimple, processWithSmartRegions, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData, processMosaicV2, cleanIsolatedColors } = require('../../../utils/imageProcessor');
+const { processSimple, processWithSmartRegions, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData, processMosaicV2, cleanIsolatedColors, desaturateGrayColors } = require('../../../utils/imageProcessor');
 
 module.exports = {
   _waitForData(callback, retryCount) {
@@ -360,6 +360,10 @@ module.exports = {
     }
 
     cleanIsolatedColors(gridData, result.rows, result.cols, 2);
+    // 浊色规避后处理（默认关闭，由 antiGrayIntensity 控制，>0 时启用）
+    if (this.data.antiGrayIntensity > 0) {
+      desaturateGrayColors(gridData, result.rows, result.cols, this.data.antiGrayIntensity);
+    }
 
     const presetResult = this._applyColorAndPreset(gridData, result.rows, result.cols, result.gridSize);
     const finalGridData = presetResult.gridData;
@@ -430,6 +434,10 @@ module.exports = {
     }
 
     cleanIsolatedColors(result.gridData, result.rows, result.cols, 2);
+    // 浊色规避后处理（默认关闭，由 antiGrayIntensity 控制，>0 时启用）
+    if (this.data.antiGrayIntensity > 0) {
+      desaturateGrayColors(result.gridData, result.rows, result.cols, this.data.antiGrayIntensity);
+    }
 
     const presetResult = this._applyColorAndPreset(result.gridData, result.rows, result.cols, qualityGridSize);
     const finalGridData = presetResult.gridData;
