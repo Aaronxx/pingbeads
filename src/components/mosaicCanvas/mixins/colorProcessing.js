@@ -1,7 +1,7 @@
 /**
  * 颜色处理 mixin：特殊色替换、鲜艳度增强/降低、原始颜色恢复
  */
-const { isSpecialColor, getAlternativeColor, batchMapColors } = require('../../../utils/colorMapper');
+const { isSpecialColor, getAlternativeColor, batchMapColors, setExcludeSpecial } = require('../../../utils/colorMapper');
 const { aggregateSimilarColors, enhanceVibrant } = require('../../../utils/imageProcessor');
 const { deepCloneGridData } = require('../../../utils/gridHelpers');
 

@@ -97,14 +97,16 @@ Component({
       }
     },
     'useSpecialColors': function() {
-      this._waitForData((rows, cols, gridSize) => {
-        this.resetToOriginalColors(this.cachedGridData, rows, cols);
-        this.replaceSpecialColors(this.cachedGridData, rows, cols);
-        this.reapplyVibrantScale(this.cachedGridData, rows, cols);
-        const stats = this.calculateStats(this.cachedGridData, rows, cols);
-        this.triggerEvent('statsUpdate', { stats: stats });
-        this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
-      });
+      // 特殊色开关变化会改变 phase-1 映射逻辑(excludeSpecial)，需重跑完整处理
+      if (this.data.isProcessing) return;
+      if (this.cachedPixelData && this.cachedWidth > 0) {
+        this.triggerEvent('loadingChange', { show: true, text: '正在处理图片...' });
+        this.setData({ isProcessing: true }, () => {
+          setTimeout(() => {
+            this.regenerateFromCache();
+          }, 100);
+        });
+      }
     },
     'removeEdge': function() {
       this._waitForData((rows, cols, gridSize) => {
