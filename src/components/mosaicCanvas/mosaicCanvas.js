@@ -147,6 +147,8 @@ Component({
 
         if (targetCols === 0 || targetRows === 0) {
           // 原图比例：从快照恢复，并重新应用颜色处理(含聚合)，否则聚合结果丢失
+          this._cropOffsetCol = 0;
+          this._cropOffsetRow = 0;
           this.cachedGridData = this.deepCloneGridData(this.cachedOriginalGridData, origRows, origCols);
           this.cachedGridInfo = { cols: origCols, rows: origRows, gridSize };
           // 重跑颜色处理(resetToOriginalColors + 聚合 + 特殊色替换)
