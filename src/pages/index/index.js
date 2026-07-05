@@ -503,10 +503,6 @@ Page({
       convergeThreshold: this.data.aggConvergeThreshold,
       hueDiffThreshold: this.data.aggHueDiffThreshold
     });
-    // 诊断：确认参数已设置
-    const { getAggregationParams } = require('../../utils/imageProcessor');
-    const p = getAggregationParams();
-    console.log('[agg诊断] 参数已设置:', p.chromaPenalty, p.countWeightExp, 'mosaicData=', !!this.data.mosaicData);
     // 不清 mosaicData（否则统计/按钮消失）。通过递增 regenerateTrigger
     // 触发组件 observer → regenerateFromCache，重处理后自动刷新统计和预览。
     if (this.data.mosaicData) {
