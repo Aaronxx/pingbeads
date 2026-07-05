@@ -453,7 +453,6 @@ Page({
     // 计算滑块颜色：正数变红，负数变灰
     const vibrantScale = e.detail.value;
     const blockColor = this.calculateVibrantBlockColor(vibrantScale);
-    console.log('[鲜艳度诊断] 滑块值=' + vibrantScale + ' 强度=' + (vibrantScale / 10).toFixed(2) + (vibrantScale > 0 ? '(增强)' : vibrantScale < 0 ? '(降低)' : '(关闭)'));
     this.setData({
       vibrantScale: vibrantScale,
       vibrantBlockColor: blockColor
