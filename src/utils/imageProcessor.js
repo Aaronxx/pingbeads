@@ -7,7 +7,7 @@
  * 3. 边缘检测与裁剪
  */
 
-const { fastFindClosestMarkColor, computeGrayness, markPalette } = require('../utils/colorMapper');
+const { fastFindClosestMarkColor, computeGrayness, markPalette, isSpecialColor } = require('../utils/colorMapper');
 const { MosaicProcessor } = require('./mosaicProcessor');
 
 /**
@@ -54,10 +54,12 @@ function findClosestMarkColorSkipMuddy(targetRgb) {
   if (tSat < 0.15) {
     return fastFindClosestMarkColor(targetRgb);
   }
-  // 簇中心是彩色 → 在非浊色里找最近
+  // 簇中心是彩色 → 在非浊色、非特殊色里找最近
+  // 跳过特殊色避免：原图蓝 → snap 到 ZG8(特殊色偏紫) → replaceSpecialColors 替代成紫
   let best = null, bestDist = Infinity;
   for (const c of markPalette) {
     if (isMuddyMarkColor(c.rgb)) continue;
+    if (isSpecialColor(c.code)) continue;
     const dr = c.rgb.r - targetRgb.r;
     const dg = c.rgb.g - targetRgb.g;
     const db = c.rgb.b - targetRgb.b;
