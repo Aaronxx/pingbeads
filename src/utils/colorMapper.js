@@ -485,13 +485,15 @@ function fastFindClosestMarkColor(targetRgb, excludeSpecial) {
  * @param {boolean} excludeSpecial - 是否排除特殊色（使用替代色），默认 false
  * @returns {{code: string, hex: string, rgb: {r: number, g: number, b: number}, distance: number}}
  */
-function findClosestMarkColor(targetRgb, excludeSpecial = false) {
+function findClosestMarkColor(targetRgb, excludeSpecial) {
+  const exclude = (excludeSpecial !== undefined) ? excludeSpecial : excludeSpecialGlobal;
   let minDistance = Infinity;
   let closestColor = null;
 
   // 性能：直接计算平方距离，避免每色 Math.sqrt + Math.pow
   // findClosestMarkColor 是 fastFindClosestMarkColor 的精确回退路径（无 LUT 时走这里）
   for (const color of markPalette) {
+    if (exclude && isSpecialColor(color.code)) continue;
     const dr = targetRgb.r - color.rgb.r;
     const dg = targetRgb.g - color.rgb.g;
     const db = targetRgb.b - color.rgb.b;
@@ -508,17 +510,6 @@ function findClosestMarkColor(targetRgb, excludeSpecial = false) {
     distance: minDistance === Infinity ? Infinity : Math.sqrt(minDistance)
   };
 
-  // 如果需要排除特殊色，替换为替代色
-  if (excludeSpecial && isSpecialColor(result.code)) {
-    const altColor = getAlternativeColor(result.code);
-    if (altColor) {
-      result = {
-        ...altColor,
-        distance: minDistance  // 保留原始距离
-      };
-    }
-  }
-
   return result;
 }
 
@@ -530,9 +521,9 @@ function findClosestMarkColor(targetRgb, excludeSpecial = false) {
  * @param {boolean} excludeSpecial - 是否排除特殊色，默认 false
  * @returns {{code: string, hex: string, rgb: {r: number, g: number, b: number}}}
  */
-function rgbToMark(r, g, b, excludeSpecial = false) {
+function rgbToMark(r, g, b, excludeSpecial) {
   const targetRgb = { r, g, b };
-  // 使用快速查找表版本，享受缓存优化
+  // 使用快速查找表版本，享受缓存优化（excludeSpecial 未传则用全局设置）
   const result = fastFindClosestMarkColor(targetRgb, excludeSpecial);
   return { code: result.code, hex: result.hex, rgb: result.rgb };
 }
@@ -543,7 +534,7 @@ function rgbToMark(r, g, b, excludeSpecial = false) {
  * @param {boolean} excludeSpecial - 是否排除特殊色，默认 false
  * @returns {{code: string, hex: string, rgb: {r: number, g: number, b: number}}}
  */
-function hexToMark(hex, excludeSpecial = false) {
+function hexToMark(hex, excludeSpecial) {
   const rgb = hexToRgb(hex);
   return rgbToMark(rgb.r, rgb.g, rgb.b, excludeSpecial);
 }
@@ -554,7 +545,7 @@ function hexToMark(hex, excludeSpecial = false) {
  * @param {boolean} excludeSpecial - 是否排除特殊色，默认 false
  * @returns {Array<{code: string, hex: string, rgb: {r: number, g: number, b: number}}>}
  */
-function batchMapColors(colors, excludeSpecial = false) {
+function batchMapColors(colors, excludeSpecial) {
   return colors.map(color => rgbToMark(color.r, color.g, color.b, excludeSpecial));
 }
 
