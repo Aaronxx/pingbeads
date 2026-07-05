@@ -149,11 +149,10 @@ module.exports = {
       case 5: rn = v; gn = p; bn = q; break;
     }
 
-    const contrast = 1.0 - scale * 0.3;
     return {
-      r: Math.max(0, Math.min(255, Math.round(128 + (rn * 255 - 128) * contrast))),
-      g: Math.max(0, Math.min(255, Math.round(128 + (gn * 255 - 128) * contrast))),
-      b: Math.max(0, Math.min(255, Math.round(128 + (bn * 255 - 128) * contrast)))
+      r: Math.max(0, Math.min(255, Math.round(rn * 255))),
+      g: Math.max(0, Math.min(255, Math.round(gn * 255))),
+      b: Math.max(0, Math.min(255, Math.round(bn * 255)))
     };
   },
 
