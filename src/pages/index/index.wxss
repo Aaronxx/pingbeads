@@ -1234,32 +1234,3 @@
     transform: rotate(90deg);
   }
 }
-
-/* 聚类调试面板 */
-.agg-param-row {
-  display: flex;
-  align-items: center;
-  margin-bottom: 16rpx;
-}
-
-.agg-param-label {
-  font-size: 22rpx;
-  color: var(--text-secondary);
-  width: 180rpx;
-  flex-shrink: 0;
-}
-
-.agg-param-slider {
-  flex: 1;
-  margin: 0;
-}
-
-.agg-reset-btn {
-  font-size: 24rpx;
-  color: #ff7eb3;
-  text-align: center;
-  padding: 12rpx 0;
-  margin-top: 8rpx;
-  border: 1rpx solid #ffc3de;
-  border-radius: 8rpx;
-}

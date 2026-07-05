@@ -97,7 +97,6 @@
         previewQuality="{{previewQuality}}"
         regenerateTrigger="{{regenerateTrigger}}"
         vibrantScale="{{vibrantScale}}"
-        antiGrayIntensity="{{antiGrayIntensity / 100}}"
         gridPreset="{{[gridPresetIndex, availableGridPresets[gridPresetIndex].cols, availableGridPresets[gridPresetIndex].rows]}}"
         splitMode="{{splitMode}}"
         bind:cellClick="onCodeClick"
@@ -235,63 +234,6 @@
             </view>
           </view>
           <text class="vibrant-label-right">鲜艳</text>
-        </view>
-      </view>
-
-      <!-- 浊色规避滑块：偏向高饱和高明度或深色，避开灰浊中间色 -->
-      <view class="setting-group">
-        <view class="group-title">✨ 浊色规避</view>
-        <view class="vibrant-control">
-          <text class="vibrant-label-left">关</text>
-          <view class="vibrant-slider-outer">
-            <view class="vibrant-slider-wrapper">
-              <slider
-                min="0"
-                max="100"
-                value="{{antiGrayIntensity}}"
-                bindchange="onAntiGrayChange"
-                bindchanging="onAntiGrayChanging"
-                block-color="{{antiGrayBlockColor}}"
-                selected-color="{{antiGrayBlockColor}}"
-              />
-            </view>
-          </view>
-          <text class="vibrant-label-right">强</text>
-        </view>
-      </view>
-
-      <!-- 聚类算法调试面板（折叠） -->
-      <view class="setting-group">
-        <view class="group-title" bindtap="toggleAggDebug">
-          🛠 聚类调试 {{showAggDebug ? '▼' : '▶'}}
-        </view>
-        <view wx:if="{{showAggDebug}}">
-          <!-- 色相保护强度 0-100，默认30 -->
-          <view class="agg-param-row">
-            <text class="agg-param-label">色相保护 {{aggChromaPenalty}}</text>
-            <slider class="agg-param-slider" min="0" max="100" value="{{aggChromaPenalty}}" block-size="18" bindchanging="onAggChromaChanging" bindchange="onAggChromaChange" />
-          </view>
-          <!-- count 权重指数 5-15，默认10（值/10） -->
-          <view class="agg-param-row">
-            <text class="agg-param-label">整合/还原 {{aggCountWeightExp}}</text>
-            <slider class="agg-param-slider" min="5" max="15" value="{{aggCountWeightExp}}" block-size="18" bindchanging="onAggCountExpChanging" bindchange="onAggCountExpChange" />
-          </view>
-          <!-- 迭代次数 3-10，默认5 -->
-          <view class="agg-param-row">
-            <text class="agg-param-label">迭代次数 {{aggMaxIterations}}</text>
-            <slider class="agg-param-slider" min="3" max="10" value="{{aggMaxIterations}}" block-size="18" bindchange="onAggIterChange" />
-          </view>
-          <!-- 收敛阈值 4-25，默认9 -->
-          <view class="agg-param-row">
-            <text class="agg-param-label">收敛阈值 {{aggConvergeThreshold}}</text>
-            <slider class="agg-param-slider" min="4" max="25" value="{{aggConvergeThreshold}}" block-size="18" bindchange="onAggConvergeChange" />
-          </view>
-          <!-- 色相差门槛 20-45，默认30 -->
-          <view class="agg-param-row">
-            <text class="agg-param-label">色相门槛 {{aggHueDiffThreshold}}</text>
-            <slider class="agg-param-slider" min="20" max="45" value="{{aggHueDiffThreshold}}" block-size="18" bindchange="onAggHueDiffChange" />
-          </view>
-          <view class="agg-reset-btn" bindtap="resetAggParams">恢复默认</view>
         </view>
       </view>
 

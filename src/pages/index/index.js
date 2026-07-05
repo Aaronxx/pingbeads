@@ -1,7 +1,5 @@
 // pages/index/index.js
 const { isLightColor, formatMarkCode, parseMarkCode } = require('../../utils/colorHelpers');
-const { setAntiGrayIntensity } = require('../../utils/colorMapper');
-const { setAggregationParams } = require('../../utils/imageProcessor');
 
 Page({
   data: {
@@ -98,18 +96,6 @@ Page({
     // 鲜艳度增强
     vibrantScale: 0,  // 鲜艳度增强系数 (-10 到 10)
     vibrantBlockColor: '#9ca3af',  // 滑块颜色
-
-    // 浊色规避：偏向高饱和高明度或深色，避开灰扑扑的中间色（默认关闭）
-    antiGrayIntensity: 0,  // 滑块值 0-100（实际强度 = 值/100，传给组件）
-    antiGrayBlockColor: '#f59e0b',  // 滑块颜色（橙色，表示偏向鲜艳/深色）
-
-    // ===== 聚类算法调试参数（滑块值，单位见注释）=====
-    aggChromaPenalty: 35,      // 色相保护强度，0-100（实际 = 值/100，默认35=0.35）
-    aggCountWeightExp: 10,     // count 权重指数，5-15（实际 = 值/10，默认10=1.0）
-    aggMaxIterations: 6,       // 最大迭代次数，3-10（默认6）
-    aggConvergeThreshold: 15,   // 收敛阈值，4-25（默认15）
-    aggHueDiffThreshold: 28,   // 色相差门槛，20-45（默认28）
-    showAggDebug: false,       // 是否展开聚类调试面板
 
     // 自定义网格大小
     useCustomGridSize: false,  // 是否启用自定义网格大小
@@ -469,103 +455,6 @@ Page({
     });
   },
 
-  // 浊色规避滑块变化（完成）：更新映射表强度 + 传给组件触发重渲染
-  onAntiGrayChange(e) {
-    if (this._checkExporting()) return;
-    const sliderVal = e.detail.value;  // 0-100
-    const intensity = sliderVal / 100;
-    setAntiGrayIntensity(intensity);  // 更新 colorMapper 查找表强度
-    this.setData({
-      antiGrayIntensity: sliderVal
-    });
-  },
-
-  // 浊色规避滑块拖动中（仅更新显示，不触发重渲染避免卡顿）
-  onAntiGrayChanging(e) {
-    const sliderVal = e.detail.value;
-    this.setData({
-      antiGrayIntensity: sliderVal
-    });
-  },
-
-  // ===== 聚类调试参数滑块 =====
-  // 展开/收起聚类调试面板
-  toggleAggDebug() {
-    this.setData({ showAggDebug: !this.data.showAggDebug });
-  },
-
-  // 应用聚类参数（从滑块值转换并设置到 imageProcessor，触发重渲染）
-  _applyAggParams() {
-    setAggregationParams({
-      chromaPenalty: this.data.aggChromaPenalty / 100,
-      countWeightExp: this.data.aggCountWeightExp / 10,
-      maxIterations: this.data.aggMaxIterations,
-      convergeThreshold: this.data.aggConvergeThreshold,
-      hueDiffThreshold: this.data.aggHueDiffThreshold
-    });
-    // 不清 mosaicData（否则统计/按钮消失）。通过递增 regenerateTrigger
-    // 触发组件 observer → regenerateFromCache，重处理后自动刷新统计和预览。
-    if (this.data.mosaicData) {
-      this.setData({ regenerateTrigger: this.data.regenerateTrigger + 1 });
-    } else {
-      wx.showToast({ title: '请先生成预览图', icon: 'none', duration: 1500 });
-    }
-  },
-
-  // 色相保护强度滑块（拖动中仅更新显示）
-  onAggChromaChanging(e) {
-    this.setData({ aggChromaPenalty: e.detail.value });
-  },
-  onAggChromaChange(e) {
-    if (this._checkExporting()) return;
-    this.setData({ aggChromaPenalty: e.detail.value });
-    this._applyAggParams();
-  },
-
-  // count 权重指数滑块
-  onAggCountExpChanging(e) {
-    this.setData({ aggCountWeightExp: e.detail.value });
-  },
-  onAggCountExpChange(e) {
-    if (this._checkExporting()) return;
-    this.setData({ aggCountWeightExp: e.detail.value });
-    this._applyAggParams();
-  },
-
-  // 最大迭代次数滑块
-  onAggIterChange(e) {
-    if (this._checkExporting()) return;
-    this.setData({ aggMaxIterations: e.detail.value });
-    this._applyAggParams();
-  },
-
-  // 收敛阈值滑块
-  onAggConvergeChange(e) {
-    if (this._checkExporting()) return;
-    this.setData({ aggConvergeThreshold: e.detail.value });
-    this._applyAggParams();
-  },
-
-  // 色相差门槛滑块
-  onAggHueDiffChange(e) {
-    if (this._checkExporting()) return;
-    this.setData({ aggHueDiffThreshold: e.detail.value });
-    this._applyAggParams();
-  },
-
-  // 恢复聚类参数默认值
-  resetAggParams() {
-    if (this._checkExporting()) return;
-    this.setData({
-      aggChromaPenalty: 35,
-      aggCountWeightExp: 10,
-      aggMaxIterations: 6,
-      aggConvergeThreshold: 15,
-      aggHueDiffThreshold: 28
-    });
-    this._applyAggParams();
-  },
-
   // 自定义网格大小勾选
   onCustomGridToggle(e) {
     if (this._checkExporting()) return;
@@ -656,8 +545,6 @@ Page({
       // 鲜艳度
       vibrantScale: 0,
       vibrantBlockColor: defaultBlockColor,
-      // 浊色规避（默认关闭）
-      antiGrayIntensity: 0,
       // 替换面板
       showReplacePanel: false,
       replaceFromCode: '',
