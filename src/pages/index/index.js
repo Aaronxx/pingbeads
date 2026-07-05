@@ -73,8 +73,8 @@ Page({
       { name: '5', value: 5 },
       { name: '10', value: 10 },
       { name: '15', value: 15 },
-      { name: '20 (推荐)', value: 20 },
-      { name: '30 (推荐)', value: 30 },
+      { name: '20', value: 20 },
+      { name: '30', value: 30 },
       { name: '50', value: 50 },
       { name: '100', value: 100 },
       { name: '150', value: 150 },
@@ -84,13 +84,13 @@ Page({
     ],
     // 当前选项索引（用于 picker 绑定）
     gridOptionIndex: 2,  // 默认 10 (gridOptions[2].value = 10)
-    thresholdOptionIndex: 5,  // 默认 30 (thresholdOptions[5].value = 30，甜区推荐值)
+    thresholdOptionIndex: 5,  // 默认 30 (thresholdOptions[5].value = 30)
 
     // 特殊色设置
     useSpecialColors: false,  // 是否使用特殊色（P、Q、R、T、ZG系列）
 
     // 去除边缘设置
-    removeEdge: true,  // 是否去除边缘底色
+    removeEdge: false,  // 是否去除边缘底色
 
     // 镜像翻转
     mirrorImage: false,  // 是否镜像翻转
@@ -646,13 +646,13 @@ Page({
       gridOptionIndex: 2,
       gridSize: 10,  // gridOptions[2].value = 10
       thresholdOptionIndex: 5,
-      mergeThreshold: 30,  // thresholdOptions[5].value = 30 (甜区推荐)
+      mergeThreshold: 30,  // thresholdOptions[5].value = 30
       // 自定义网格（默认为当前豆豆数，限制在滑块范围内）
       useCustomGridSize: false,
       customGridSize: Math.min(50, Math.max(3, this.data.gridSize)),
       // 特殊设置
       useSpecialColors: false,
-      removeEdge: true,
+      removeEdge: false,
       mirrorImage: false,
       // 鲜艳度
       vibrantScale: 0,
