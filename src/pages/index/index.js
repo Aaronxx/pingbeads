@@ -96,7 +96,7 @@ Page({
     mirrorImage: false,  // 是否镜像翻转
 
     // 鲜艳度增强
-    vibrantScale: 0,  // 鲜艳度增强系数 (-10 到 10)
+    vibrantScale: 2,  // 鲜艳度增强系数 (-10 到 10，默认 2=强度0.2，实测对低饱和图效果较好)
     vibrantBlockColor: '#9ca3af',  // 滑块颜色
 
     // 浊色规避：偏向高饱和高明度或深色，避开灰扑扑的中间色（默认关闭）
@@ -149,7 +149,7 @@ Page({
 
   onLoad() {
     this.setData({
-      vibrantBlockColor: this.calculateVibrantBlockColor(0),
+      vibrantBlockColor: this.calculateVibrantBlockColor(this.data.vibrantScale),
       availableGridPresets: this.data.gridPresets.slice()
     });
   },
@@ -453,7 +453,6 @@ Page({
     // 计算滑块颜色：正数变红，负数变灰
     const vibrantScale = e.detail.value;
     const blockColor = this.calculateVibrantBlockColor(vibrantScale);
-    console.log('[鲜艳度诊断] 滑块值=' + vibrantScale + ' 强度=' + (vibrantScale / 10).toFixed(2) + (vibrantScale > 0 ? '(增强)' : vibrantScale < 0 ? '(降低)' : '(关闭)'));
     this.setData({
       vibrantScale: vibrantScale,
       vibrantBlockColor: blockColor
@@ -638,8 +637,8 @@ Page({
 
   // 重置所有设置项为默认值
   _resetSettings() {
-    // 计算默认鲜艳度滑块颜色
-    const defaultBlockColor = this.calculateVibrantBlockColor(0);
+    // 计算默认鲜艳度滑块颜色（默认 vibrantScale=2）
+    const defaultBlockColor = this.calculateVibrantBlockColor(2);
 
     this.setData({
       // 豆豆数、色彩
@@ -655,7 +654,7 @@ Page({
       removeEdge: true,
       mirrorImage: false,
       // 鲜艳度
-      vibrantScale: 0,
+      vibrantScale: 2,
       vibrantBlockColor: defaultBlockColor,
       // 浊色规避（默认关闭）
       antiGrayIntensity: 0,

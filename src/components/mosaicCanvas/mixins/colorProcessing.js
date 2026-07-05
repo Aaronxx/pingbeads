@@ -28,7 +28,6 @@ module.exports = {
 
   reapplyVibrantScale(gridData, rows, cols) {
     const vibrantScale = this.data.vibrantScale;
-    console.log('[鲜艳度诊断] reapplyVibrantScale 被调用, vibrantScale=' + vibrantScale + ' 格子数=' + (rows * cols));
 
     if (vibrantScale === 0) {
       this.resetToOriginalColors(gridData, rows, cols);
