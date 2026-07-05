@@ -6,6 +6,9 @@
 
 const { markPalette } = require('../data/colorPalettes');
 
+// 预构建 code → Mark 色信息 的 Map，O(1) 查找（替代每次 markPalette.find 线性扫描）
+const markColorByCode = new Map(markPalette.map(c => [c.code, c]));
+
 // 特殊色系列（不包括在普通色中）
 const SPECIAL_SERIES = ['P', 'Q', 'R', 'T', 'Y', 'ZG'];
 
@@ -136,14 +139,14 @@ function findClosestNonMuddy(target) {
 // 这样既避开浊色(防 M10/H3 等脏色)，又保证色相匹配(以特殊色自身而非浊色替代为 target)
 const alternativeColorCache = new Map();
 for (const specialCode of Object.keys(SPECIAL_ALTERNATIVES)) {
-  const specialColor = markPalette.find(c => c.code === specialCode);
+  const specialColor = markColorByCode.get(specialCode);
   if (specialColor) {
     const better = findClosestNonMuddy(specialColor.rgb);
     if (better) {
       alternativeColorCache.set(specialCode, better);
     } else {
       // 兜底：用原静态表
-      const altColor = markPalette.find(c => c.code === SPECIAL_ALTERNATIVES[specialCode]);
+      const altColor = markColorByCode.get(SPECIAL_ALTERNATIVES[specialCode]);
       if (altColor) alternativeColorCache.set(specialCode, altColor);
     }
   }
@@ -173,7 +176,7 @@ function getAlternativeCode(specialCode) {
  * @returns {{code: string, hex: string, rgb: {r: number, g: number, b: number}}|null}
  */
 function getMarkColorInfoByCode(code) {
-  return markPalette.find(c => c.code === code) || null;
+  return markColorByCode.get(code) || null;
 }
 
 // 预计算 256×256×256 RGB 到 Mark 的映射表
@@ -487,18 +490,24 @@ function findClosestMarkColor(targetRgb, excludeSpecial) {
   let minDistance = Infinity;
   let closestColor = null;
 
+  // 性能：直接计算平方距离，避免每色 Math.sqrt + Math.pow
+  // findClosestMarkColor 是 fastFindClosestMarkColor 的精确回退路径（无 LUT 时走这里）
   for (const color of markPalette) {
     if (exclude && isSpecialColor(color.code)) continue;
-    const distance = euclideanDistance(targetRgb, color.rgb);
-    if (distance < minDistance) {
-      minDistance = distance;
+    const dr = targetRgb.r - color.rgb.r;
+    const dg = targetRgb.g - color.rgb.g;
+    const db = targetRgb.b - color.rgb.b;
+    const distSq = dr * dr + dg * dg + db * db;
+    if (distSq < minDistance) {
+      minDistance = distSq;
       closestColor = color;
     }
   }
 
   let result = {
     ...closestColor,
-    distance: minDistance
+    // 内部按平方距离比较（更快），对外仍返回线性欧氏距离以保留语义
+    distance: minDistance === Infinity ? Infinity : Math.sqrt(minDistance)
   };
 
   return result;

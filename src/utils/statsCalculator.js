@@ -71,7 +71,24 @@ function calculateStats(mosaicData) {
 }
 
 function calculateTotalCount(mosaicData) {
-  return calculateStats(mosaicData).totalCount;
+  // 性能：直接遍历计数，避免调用 calculateStats 触发完整统计重建
+  // （原实现会构建 colorCounts 对象、两次排序、生成 simpleList，仅为取一个数字）
+  // 语义对齐 calculateGridStats 默认行为：ignoreEdge=true（跳过 isEdge 格子）
+  if (!mosaicData || !mosaicData.gridData) return 0;
+  const rows = mosaicData.rows || mosaicData.gridData.length;
+  const cols = mosaicData.cols || (mosaicData.gridData[0] ? mosaicData.gridData[0].length : 0);
+  let count = 0;
+  for (let row = 0; row < rows; row++) {
+    const rowData = mosaicData.gridData[row];
+    if (!rowData) continue;
+    for (let col = 0; col < cols; col++) {
+      const cell = rowData[col];
+      if (!cell || !cell.markCode) continue;
+      if (cell.isEdge) continue;
+      count++;
+    }
+  }
+  return count;
 }
 
 function generatePurchaseListCSV(stats) {

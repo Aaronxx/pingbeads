@@ -446,8 +446,18 @@ Page({
   },
 
   // 鲜艳度滑块拖动中（实时更新显示）
+  // 性能：节流到 ~12fps，避免 60fps 拖动时每帧都 setData 跨桥
+  // （拖动结束时会由 onVibrantChange 兜底同步最终值，中间帧丢一些不影响体验）
   onVibrantChanging(e) {
     const vibrantScale = e.detail.value;
+    const now = Date.now();
+    if (now - (this._lastVibrantChangingTs || 0) < 80) {
+      // 节流期间记录最新值，确保节流结束后能同步
+      this._pendingVibrantScale = vibrantScale;
+      return;
+    }
+    this._lastVibrantChangingTs = now;
+    this._pendingVibrantScale = vibrantScale;
     const blockColor = this.calculateVibrantBlockColor(vibrantScale);
     this.setData({
       vibrantScale: vibrantScale,
@@ -665,7 +675,9 @@ Page({
 
   // 添加撤销操作
   _addUndoOperation(operation) {
-    let { undoStack } = this.data;
+    // 性能：先拷贝数组再修改，避免直接 mutate this.data.undoStack
+    // （直接 mutate 会让框架无法 diff 新旧值，可能导致视图不更新）
+    let undoStack = this.data.undoStack.slice();
     undoStack.push(operation);
     // 最多保留20步
     if (undoStack.length > 20) {
@@ -705,11 +717,11 @@ Page({
       );
 
       if (result.success) {
-        // 移除最新的操作
-        undoStack.pop();
+        // 移除最新的操作（拷贝后再 pop，避免 mutate this.data）
+        const newStack = undoStack.slice(0, -1);
         this.setData({
-          undoStack: undoStack,
-          canUndo: undoStack.length > 0
+          undoStack: newStack,
+          canUndo: newStack.length > 0
         });
         wx.showToast({ title: `已撤销 ${result.count} 个色块`, icon: 'none' });
       }

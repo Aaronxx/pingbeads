@@ -15,11 +15,33 @@ const { MosaicProcessor } = require('./mosaicProcessor');
  */
 function colorDistance(c1, c2) {
   if (!c1 || !c2) return Infinity;
-  return Math.sqrt(
-    Math.pow(c1.r - c2.r, 2) +
-    Math.pow(c1.g - c2.g, 2) +
-    Math.pow(c1.b - c2.b, 2)
-  );
+  const dr = c1.r - c2.r;
+  const dg = c1.g - c2.g;
+  const db = c1.b - c2.b;
+  return Math.sqrt(dr * dr + dg * dg + db * db);
+}
+
+/**
+ * 颜色距离平方 —— 用于阈值比较，避免 Math.sqrt。
+ * 由于平方是单调的，(dSq <= tSq) 与 (d <= t) 等价。
+ */
+function colorDistanceSq(c1, c2) {
+  if (!c1 || !c2) return Infinity;
+  const dr = c1.r - c2.r;
+  const dg = c1.g - c2.g;
+  const db = c1.b - c2.b;
+  return dr * dr + dg * dg + db * db;
+}
+
+/**
+ * 创建 rows×cols 的二维访问标记数组（BFS 用）
+ */
+function createVisitedArray(rows, cols) {
+  const visited = new Array(rows);
+  for (let r = 0; r < rows; r++) {
+    visited[r] = new Array(cols).fill(false);
+  }
+  return visited;
 }
 
 /**
@@ -180,13 +202,13 @@ function euclideanDistanceSqProtected(c1, c2, chromaPenalty) {
   return d;
 }
 
-/** 快速中位数 */
+/** 快速中位数（就地排序，调用方传入的数组若需保留请先 copy） */
 function quickMedian(arr) {
   const len = arr.length;
   if (len === 0) return 0;
-  const sorted = arr.slice().sort((a, b) => a - b);
+  arr.sort((a, b) => a - b);
   const mid = len >> 1;
-  return len % 2 === 1 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+  return len % 2 === 1 ? arr[mid] : Math.round((arr[mid - 1] + arr[mid]) / 2);
 }
 
 /** 中位数取色：对 R/G/B 分别取中位数，保留原色、抗异常值 */
@@ -325,22 +347,30 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
       // 高方差回退：颜色混杂时用 16 级量化众数，不平均
       let dominantColor;
       if (extracted.maxDist > 30) {
-        // 直接从像素数据做量化，无需额外对象分配
-        const colorCount = {};
+        // 性能：用整数 key 替代字符串拼接，避免每像素分配字符串 + 后续 split 解析
+        // 量化与原算法等价：q(v) = Math.round(v/16)*16 = ((v+8)>>4)<<4，编码为 5-bit 字段
+        // 用 Map 保留插入顺序，与原 {} + 字符串 key 在 count 平局时选中相同 bucket
+        const colorCount = new Map();
         for (let y = srcY; y < endY && y < height; y++) {
           for (let x = srcX; x < endX && x < width; x++) {
             const idx = (y * width + x) * 4;
-            const key = `${(processedPixelData[idx] >> 4) << 4},${(processedPixelData[idx + 1] >> 4) << 4},${(processedPixelData[idx + 2] >> 4) << 4}`;
-            colorCount[key] = (colorCount[key] || 0) + 1;
+            const qr = (processedPixelData[idx] + 8) >> 4;
+            const qg = (processedPixelData[idx + 1] + 8) >> 4;
+            const qb = (processedPixelData[idx + 2] + 8) >> 4;
+            const key = (qr << 10) | (qg << 5) | qb;
+            colorCount.set(key, (colorCount.get(key) || 0) + 1);
           }
         }
         let maxCount = 0;
         let modeColor = extracted;
-        for (const key in colorCount) {
-          if (colorCount[key] > maxCount) {
-            maxCount = colorCount[key];
-            const [r, g, b] = key.split(',').map(Number);
-            modeColor = { r, g, b };
+        for (const [key, cnt] of colorCount) {
+          if (cnt > maxCount) {
+            maxCount = cnt;
+            modeColor = {
+              r: (key >> 10) << 4,
+              g: ((key >> 5) & 0x1F) << 4,
+              b: (key & 0x1F) << 4
+            };
           }
         }
         dominantColor = modeColor;
@@ -624,26 +654,21 @@ function aggregateSimilarColors(gridData, rows, cols, targetCount) {
  */
 function autoDetectBlockSize(pixelData, width, height, options = {}) {
   const defaultTolerance = options.tolerance !== undefined ? options.tolerance : 25;
+  // 性能：用平方阈值比较，避免每像素 Math.sqrt + Math.pow；
+  // 同时内联像素读取，不再为每个像素分配 {r,g,b} 对象
+  const defaultToleranceSq = defaultTolerance * defaultTolerance;
   try {
-  // 辅助函数：获取像素颜色
-  function getPixelColor(x, y) {
-    if (x < 0 || x >= width || y < 0 || y >= height) return null;
-    const idx = (y * width + x) * 4;
-    return { r: pixelData[idx], g: pixelData[idx + 1], b: pixelData[idx + 2] };
+  // 辅助函数：直接读像素索引（不做边界检查，调用方保证）
+  function pixelIdxAt(x, y) {
+    return (y * width + x) * 4;
   }
 
-  // 辅助函数：判断两个颜色是否相似（使用欧氏距离，更准确）
-  // 容差越小，对颜色变化越敏感
-  // 容差25：适合大多数马赛克图（包括有/无分界线）
-  // 容差50：适合有明显黑色分界线的马赛克原图
-  function isSameColor(c1, c2, tolerance = defaultTolerance) {
-    if (!c1 || !c2) return false;
-    const dist = Math.sqrt(
-      Math.pow(c1.r - c2.r, 2) +
-      Math.pow(c1.g - c2.g, 2) +
-      Math.pow(c1.b - c2.b, 2)
-    );
-    return dist <= tolerance;
+  // 辅助函数：判断相邻像素 (idx1, idx2) 颜色是否超出容差
+  function isColorChange(idx1, idx2) {
+    const dr = pixelData[idx1] - pixelData[idx2];
+    const dg = pixelData[idx1 + 1] - pixelData[idx2 + 1];
+    const db = pixelData[idx1 + 2] - pixelData[idx2 + 2];
+    return (dr * dr + dg * dg + db * db) > defaultToleranceSq;
   }
 
   // 辅助函数：找中位数
@@ -708,14 +733,13 @@ function autoDetectBlockSize(pixelData, width, height, options = {}) {
   for (let i = 0; i < hScanCount; i++) {
     const y = Math.floor(height * i / (hScanCount - 1));
     const changes = [];
-
-    // 从左到右扫描整行
-    let prevColor = getPixelColor(0, y);
-    for (let x = 1; x < width; x++) {
-      const currColor = getPixelColor(x, y);
-      if (!isSameColor(prevColor, currColor)) {
-        changes.push(x);
-        prevColor = currColor;
+    // 越界行（i=hScanCount-1 时 y=height）无有效像素，跳过扫描但记 0 变化点
+    if (y >= 0 && y < height) {
+      // 从左到右扫描整行（直接比较相邻像素索引，无对象分配）
+      for (let x = 1; x < width; x++) {
+        if (isColorChange(pixelIdxAt(x - 1, y), pixelIdxAt(x, y))) {
+          changes.push(x);
+        }
       }
     }
 
@@ -723,8 +747,8 @@ function autoDetectBlockSize(pixelData, width, height, options = {}) {
     hChangesCounts.push(changes.length);
 
     // 计算相邻变化点之间的距离
-    for (let i = 1; i < changes.length; i++) {
-      const dist = changes[i] - changes[i - 1];
+    for (let j = 1; j < changes.length; j++) {
+      const dist = changes[j] - changes[j - 1];
       // 扩大范围以适应不同大小的格子（3-50像素）
       if (dist >= 3 && dist <= 50) {
         hDistances.push(dist);
@@ -737,14 +761,12 @@ function autoDetectBlockSize(pixelData, width, height, options = {}) {
   for (let i = 0; i < vScanCount; i++) {
     const x = Math.floor(width * i / (vScanCount - 1));
     const changes = [];
-
-    // 从上到下扫描整列
-    let prevColor = getPixelColor(x, 0);
-    for (let y = 1; y < height; y++) {
-      const currColor = getPixelColor(x, y);
-      if (!isSameColor(prevColor, currColor)) {
-        changes.push(y);
-        prevColor = currColor;
+    if (x >= 0 && x < width) {
+      // 从上到下扫描整列
+      for (let y = 1; y < height; y++) {
+        if (isColorChange(pixelIdxAt(x, y - 1), pixelIdxAt(x, y))) {
+          changes.push(y);
+        }
       }
     }
 
@@ -1078,29 +1100,37 @@ function filterEdgeSegments(segments, cols, rows, edgeColor, diffThreshold = 25)
 
   // BFS 队列
   const queue = [];
+  const diffThresholdSq = diffThreshold * diffThreshold;
 
   // 将所有边缘上与边缘颜色相同的 segments 加入队列
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      // 只检查边缘行和列
-      if (row !== 0 && row !== rows - 1 && col !== 0 && col !== cols - 1) continue;
-
-      const seg = segGrid[row] && segGrid[row][col];
-      if (!seg || !seg.avgColor) continue;
-
-      const isSameAsEdge = colorDistance(seg.avgColor, edgeColor) <= diffThreshold;
-
-      if (isSameAsEdge && !visited[row][col]) {
-        visited[row][col] = true;
-        queue.push({ row, col });
-      }
+  // 性能：只扫描周长（4 条边），而非整个 rows×cols 网格
+  const checkEdgeCell = (row, col) => {
+    const seg = segGrid[row] && segGrid[row][col];
+    if (!seg || !seg.avgColor) return;
+    if (visited[row][col]) return;
+    if (colorDistanceSq(seg.avgColor, edgeColor) <= diffThresholdSq) {
+      visited[row][col] = true;
+      queue.push({ row, col });
     }
+  };
+  // 顶/底两行
+  for (let col = 0; col < cols; col++) {
+    checkEdgeCell(0, col);
+    if (rows > 1) checkEdgeCell(rows - 1, col);
+  }
+  // 左/右两列（跳过已处理过的顶/底角）
+  for (let row = 1; row < rows - 1; row++) {
+    checkEdgeCell(row, 0);
+    if (cols > 1) checkEdgeCell(row, cols - 1);
   }
 
   // BFS 遍历所有连通的与边缘颜色相同的 segments
+  // 性能：用索引游标代替 queue.shift()（shift 是 O(n)，BFS 会退化为 O(n²)）
   const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-  while (queue.length > 0) {
-    const { row, col } = queue.shift();
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    const row = cur.row, col = cur.col;
 
     for (const [dr, dc] of directions) {
       const newRow = row + dr;
@@ -1112,7 +1142,7 @@ function filterEdgeSegments(segments, cols, rows, edgeColor, diffThreshold = 25)
       const seg = segGrid[newRow] && segGrid[newRow][newCol];
       if (!seg || !seg.avgColor) continue;
 
-      const isSameAsEdge = colorDistance(seg.avgColor, edgeColor) <= diffThreshold;
+      const isSameAsEdge = colorDistanceSq(seg.avgColor, edgeColor) <= diffThresholdSq;
 
       if (isSameAsEdge) {
         visited[newRow][newCol] = true;
@@ -1188,41 +1218,36 @@ function filterEdgeBlocks(gridData, rows, cols, gridSize, edgeColor, boundary, d
 
     // 不裁剪，只标记边缘格子
     // 使用连通性判断：只有通过边缘颜色连接到图片边缘的格子才不显示色号
-    // 创建访问标记数组
-    const visited = [];
-    for (let r = 0; r < rows; r++) {
-      visited[r] = [];
-      for (let c = 0; c < cols; c++) {
-        visited[r][c] = false;
-      }
-    }
-
-    // BFS 队列
+    const visited = createVisitedArray(rows, cols);
     const queue = [];
+    const diffThresholdSq = diffThreshold * diffThreshold;
 
-    // 将所有边缘上与边缘颜色相同的格子加入队列
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        // 只检查边缘行和列
-        if (row !== 0 && row !== rows - 1 && col !== 0 && col !== cols - 1) continue;
-
-        const cell = gridData[row] && gridData[row][col];
-        if (!cell || !cell.originalRgb) continue;
-
-        const color = cell.originalRgb;
-        const isSameAsEdge = colorDistance(color, edgeColor) <= diffThreshold;
-
-        if (isSameAsEdge && !visited[row][col]) {
-          visited[row][col] = true;
-          queue.push({ row, col });
-        }
+    // 性能：只扫描周长（4 条边），而非整个 rows×cols 网格
+    const enqueueEdgeCell = (row, col) => {
+      const cell = gridData[row] && gridData[row][col];
+      if (!cell || !cell.originalRgb) return;
+      if (visited[row][col]) return;
+      if (colorDistanceSq(cell.originalRgb, edgeColor) <= diffThresholdSq) {
+        visited[row][col] = true;
+        queue.push({ row, col });
       }
+    };
+    for (let col = 0; col < cols; col++) {
+      enqueueEdgeCell(0, col);
+      if (rows > 1) enqueueEdgeCell(rows - 1, col);
+    }
+    for (let row = 1; row < rows - 1; row++) {
+      enqueueEdgeCell(row, 0);
+      if (cols > 1) enqueueEdgeCell(row, cols - 1);
     }
 
     // BFS 遍历所有连通的与边缘颜色相同的格子
+    // 性能：用索引游标代替 queue.shift()（shift 是 O(n)，BFS 会退化为 O(n²)）
     const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-    while (queue.length > 0) {
-      const { row, col } = queue.shift();
+    let head = 0;
+    while (head < queue.length) {
+      const cur = queue[head++];
+      const row = cur.row, col = cur.col;
 
       for (const [dr, dc] of directions) {
         const newRow = row + dr;
@@ -1234,10 +1259,7 @@ function filterEdgeBlocks(gridData, rows, cols, gridSize, edgeColor, boundary, d
         const cell = gridData[newRow] && gridData[newRow][newCol];
         if (!cell || !cell.originalRgb) continue;
 
-        const color = cell.originalRgb;
-        const isSameAsEdge = colorDistance(color, edgeColor) <= diffThreshold;
-
-        if (isSameAsEdge) {
+        if (colorDistanceSq(cell.originalRgb, edgeColor) <= diffThresholdSq) {
           visited[newRow][newCol] = true;
           queue.push({ row: newRow, col: newCol });
         }
@@ -1264,41 +1286,36 @@ function filterEdgeBlocks(gridData, rows, cols, gridSize, edgeColor, boundary, d
   // 2. 使用 BFS 找到所有连通的与边缘颜色相同的格子
   // 3. 只有这些连通的格子才标记为 isEdge
 
-  // 创建访问标记数组
-  const visited = [];
-  for (let r = 0; r < rows; r++) {
-    visited[r] = [];
-    for (let c = 0; c < cols; c++) {
-      visited[r][c] = false;
-    }
-  }
-
-  // BFS 队列
+  const visited = createVisitedArray(rows, cols);
   const queue = [];
+  const diffThresholdSq = diffThreshold * diffThreshold;
 
-  // 2. 将所有边缘上与边缘颜色相同的格子加入队列
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      // 只检查边缘行和列
-      if (row !== 0 && row !== rows - 1 && col !== 0 && col !== cols - 1) continue;
-
-      const cell = gridData[row] && gridData[row][col];
-      if (!cell || !cell.originalRgb) continue;
-
-      const color = cell.originalRgb;
-      const isSameAsEdge = colorDistance(color, edgeColor) <= diffThreshold;
-
-      if (isSameAsEdge && !visited[row][col]) {
-        visited[row][col] = true;
-        queue.push({ row, col });
-      }
+  // 2. 性能：只扫描周长（4 条边），而非整个 rows×cols 网格
+  const enqueueEdgeCell = (row, col) => {
+    const cell = gridData[row] && gridData[row][col];
+    if (!cell || !cell.originalRgb) return;
+    if (visited[row][col]) return;
+    if (colorDistanceSq(cell.originalRgb, edgeColor) <= diffThresholdSq) {
+      visited[row][col] = true;
+      queue.push({ row, col });
     }
+  };
+  for (let col = 0; col < cols; col++) {
+    enqueueEdgeCell(0, col);
+    if (rows > 1) enqueueEdgeCell(rows - 1, col);
+  }
+  for (let row = 1; row < rows - 1; row++) {
+    enqueueEdgeCell(row, 0);
+    if (cols > 1) enqueueEdgeCell(row, cols - 1);
   }
 
   // 3. BFS 遍历所有连通的与边缘颜色相同的格子
+  // 性能：用索引游标代替 queue.shift()（shift 是 O(n)，BFS 会退化为 O(n²)）
   const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]]; // 上下左右
-  while (queue.length > 0) {
-    const { row, col } = queue.shift();
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    const row = cur.row, col = cur.col;
 
     for (const [dr, dc] of directions) {
       const newRow = row + dr;
@@ -1311,10 +1328,7 @@ function filterEdgeBlocks(gridData, rows, cols, gridSize, edgeColor, boundary, d
       const cell = gridData[newRow] && gridData[newRow][newCol];
       if (!cell || !cell.originalRgb) continue;
 
-      const color = cell.originalRgb;
-      const isSameAsEdge = colorDistance(color, edgeColor) <= diffThreshold;
-
-      if (isSameAsEdge) {
+      if (colorDistanceSq(cell.originalRgb, edgeColor) <= diffThresholdSq) {
         visited[newRow][newCol] = true;
         queue.push({ row: newRow, col: newCol });
       }
@@ -1532,17 +1546,6 @@ function processWithSmartRegions(pixelData, width, height, gridSize) {
   // 大区检测暂时禁用，等采样方法稳定后再启用
   let largeRegionSize = null;
 
-  // 获取指定像素的颜色
-  function getPixelColor(x, y) {
-    if (x < 0 || x >= width || y < 0 || y >= height) return null;
-    const idx = (y * width + x) * 4;
-    return {
-      r: pixelData[idx],
-      g: pixelData[idx + 1],
-      b: pixelData[idx + 2]
-    };
-  }
-
   // 存储色块数据
   const segments = [];
   let segmentId = 0;
@@ -1561,22 +1564,23 @@ function processWithSmartRegions(pixelData, width, height, gridSize) {
         continue;
       }
 
-      // 收集网格内所有像素的颜色
-      const colors = [];
+      // 性能：直接累加 RGB 总和，避免为每个像素分配 {r,g,b} 对象
+      // （原实现每像素 push 一个对象，500×500 图会产生 ~25 万个临时对象）
+      let sumR = 0, sumG = 0, sumB = 0;
       let totalCount = 0;
-
       for (let y = cellStartY; y < endY; y++) {
+        const rowBase = y * width;
         for (let x = cellStartX; x < endX; x++) {
-          const color = getPixelColor(x, y);
-          if (color) {
-            colors.push(color);
-            totalCount++;
-          }
+          const idx = (rowBase + x) * 4;
+          sumR += pixelData[idx];
+          sumG += pixelData[idx + 1];
+          sumB += pixelData[idx + 2];
+          totalCount++;
         }
       }
 
       // 如果没有有效颜色，使用默认灰色
-      if (colors.length === 0) {
+      if (totalCount === 0) {
       let markColor = fastFindClosestMarkColor({ r: 128, g: 128, b: 128 });
         if (!markColor || !markColor.code) {
           markColor = { code: 'M001', hex: '#CCCCCC', rgb: { r: 204, g: 204, b: 204 } };
@@ -1597,45 +1601,56 @@ function processWithSmartRegions(pixelData, width, height, gridSize) {
         continue;
       }
 
-      // 计算平均颜色
-      let sumR = 0, sumG = 0, sumB = 0;
-      for (const c of colors) {
-        sumR += c.r;
-        sumG += c.g;
-        sumB += c.b;
-      }
-
       const avgColor = {
-        r: Math.round(sumR / colors.length),
-        g: Math.round(sumG / colors.length),
-        b: Math.round(sumB / colors.length)
+        r: Math.round(sumR / totalCount),
+        g: Math.round(sumG / totalCount),
+        b: Math.round(sumB / totalCount)
       };
 
-      // 判断是否为纯色区域（计算颜色方差）
-      let maxDist = 0;
-      for (const c of colors) {
-        const dist = colorDistance(c, avgColor);
-        if (dist > maxDist) maxDist = dist;
+      // 判断是否为纯色区域（计算最大颜色距离平方，避免 sqrt）
+      // 性能：直接读 pixelData 二次遍历，不再依赖 colors 数组
+      let maxDistSq = 0;
+      const maxDistThresholdSq = 30 * 30;
+      for (let y = cellStartY; y < endY; y++) {
+        const rowBase = y * width;
+        for (let x = cellStartX; x < endX; x++) {
+          const idx = (rowBase + x) * 4;
+          const dr = pixelData[idx] - avgColor.r;
+          const dg = pixelData[idx + 1] - avgColor.g;
+          const db = pixelData[idx + 2] - avgColor.b;
+          const distSq = dr * dr + dg * dg + db * db;
+          if (distSq > maxDistSq) maxDistSq = distSq;
+        }
       }
 
       // 如果颜色变化太大，可能是混合区域，使用主导色
       let finalColor = avgColor;
-      if (maxDist > 30) {
-        // 找到主导色（出现最多的颜色）
-        const colorCount = {};
-        for (const c of colors) {
-          // 将颜色量化到 16 级，减少噪声
-          const key = `${Math.round(c.r / 16) * 16},${Math.round(c.g / 16) * 16},${Math.round(c.b / 16) * 16}`;
-          colorCount[key] = (colorCount[key] || 0) + 1;
+      if (maxDistSq > maxDistThresholdSq) {
+        // 性能：用整数 key 替代字符串拼接 + split 解析（量化等价于 Math.round(v/16)*16）
+        // 用 Map 保留插入顺序，与原 {} + 字符串 key 在 count 平局时选中相同 bucket
+        const colorCount = new Map();
+        for (let y = cellStartY; y < endY; y++) {
+          const rowBase = y * width;
+          for (let x = cellStartX; x < endX; x++) {
+            const idx = (rowBase + x) * 4;
+            const qr = (pixelData[idx] + 8) >> 4;
+            const qg = (pixelData[idx + 1] + 8) >> 4;
+            const qb = (pixelData[idx + 2] + 8) >> 4;
+            const key = (qr << 10) | (qg << 5) | qb;
+            colorCount.set(key, (colorCount.get(key) || 0) + 1);
+          }
         }
 
         // 找到出现最多的颜色
         let maxCount = 0;
-        for (const key in colorCount) {
-          if (colorCount[key] > maxCount) {
-            maxCount = colorCount[key];
-            const [r, g, b] = key.split(',').map(Number);
-            finalColor = { r, g, b };
+        for (const [key, cnt] of colorCount) {
+          if (cnt > maxCount) {
+            maxCount = cnt;
+            finalColor = {
+              r: (key >> 10) << 4,
+              g: ((key >> 5) & 0x1F) << 4,
+              b: (key & 0x1F) << 4
+            };
           }
         }
       }

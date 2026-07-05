@@ -27,14 +27,31 @@ module.exports = {
     }
 
     let startCol = 0, endCol = cols - 1, startRow = 0, endRow = rows - 1;
-    let positionList = null;
+    let positionSet = null;
 
     if (positions && positions.length > 0) {
-      positionList = positions;
-      startCol = Math.min(...positions.map(p => p.col !== undefined ? p.col : p[1]));
-      endCol = Math.max(...positions.map(p => p.col !== undefined ? p.col : p[1]));
-      startRow = Math.min(...positions.map(p => p.row !== undefined ? p.row : p[0]));
-      endRow = Math.max(...positions.map(p => p.row !== undefined ? p.row : p[0]));
+      // 性能：构造 "row,col" 字符串集合，O(1) 判断是否在替换范围内
+      // （原实现 positionList.find O(n) 嵌套在 row×col 循环里，复杂度 O(rows*cols*positions)）
+      positionSet = new Set();
+      // 先用首元素初始化边界，再做单遍 min/max
+      const p0 = positions[0];
+      let minC = p0.col !== undefined ? p0.col : p0[1];
+      let maxC = minC;
+      let minR = p0.row !== undefined ? p0.row : p0[0];
+      let maxR = minR;
+      for (const p of positions) {
+        const r = p.row !== undefined ? p.row : p[0];
+        const c = p.col !== undefined ? p.col : p[1];
+        positionSet.add(r + ',' + c);
+        if (c < minC) minC = c;
+        if (c > maxC) maxC = c;
+        if (r < minR) minR = r;
+        if (r > maxR) maxR = r;
+      }
+      startCol = minC;
+      endCol = maxC;
+      startRow = minR;
+      endRow = maxR;
     } else if (scope === 'visible') {
       const visibleRange = this.getVisibleRange();
       if (visibleRange) {
@@ -53,10 +70,7 @@ module.exports = {
         const cell = gridData[row] && gridData[row][col];
         if (!cell || !cell.markCode) continue;
 
-        if (positionList) {
-          const pos = positionList.find(p => (p.row !== undefined ? p.row : p[0]) === row && (p.col !== undefined ? p.col : p[1]) === col);
-          if (!pos) continue;
-        }
+        if (positionSet && !positionSet.has(row + ',' + col)) continue;
 
         if (cell.markCode === fromCode) {
           replacedPositions.push({
@@ -108,14 +122,29 @@ module.exports = {
     }
 
     let startCol = 0, endCol = cols - 1, startRow = 0, endRow = rows - 1;
-    let positionList = null;
+    let positionSet = null;
 
     if (positions && positions.length > 0) {
-      positionList = positions;
-      startCol = Math.min(...positions.map(p => p.col !== undefined ? p.col : p[1]));
-      endCol = Math.max(...positions.map(p => p.col !== undefined ? p.col : p[1]));
-      startRow = Math.min(...positions.map(p => p.row !== undefined ? p.row : p[0]));
-      endRow = Math.max(...positions.map(p => p.row !== undefined ? p.row : p[0]));
+      // 性能：构造 Set 用于 O(1) 判断（同 replaceColor）
+      positionSet = new Set();
+      const p0 = positions[0];
+      let minC = p0.col !== undefined ? p0.col : p0[1];
+      let maxC = minC;
+      let minR = p0.row !== undefined ? p0.row : p0[0];
+      let maxR = minR;
+      for (const p of positions) {
+        const r = p.row !== undefined ? p.row : p[0];
+        const c = p.col !== undefined ? p.col : p[1];
+        positionSet.add(r + ',' + c);
+        if (c < minC) minC = c;
+        if (c > maxC) maxC = c;
+        if (r < minR) minR = r;
+        if (r > maxR) maxR = r;
+      }
+      startCol = minC;
+      endCol = maxC;
+      startRow = minR;
+      endRow = maxR;
     }
 
     const replacedPositions = [];
@@ -126,10 +155,7 @@ module.exports = {
         const cell = gridData[row] && gridData[row][col];
         if (!cell || !cell.markCode) continue;
 
-        if (positionList) {
-          const pos = positionList.find(p => (p.row !== undefined ? p.row : p[0]) === row && (p.col !== undefined ? p.col : p[1]) === col);
-          if (!pos) continue;
-        }
+        if (positionSet && !positionSet.has(row + ',' + col)) continue;
 
         if (cell.markCode === fromCode) {
           replacedPositions.push({

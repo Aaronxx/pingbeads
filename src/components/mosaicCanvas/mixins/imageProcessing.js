@@ -3,6 +3,7 @@
  */
 const { processSimple, processWithSmartRegions, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData, processMosaicV2, cleanIsolatedColors, desaturateGrayColors } = require('../../../utils/imageProcessor');
 const { setExcludeSpecial } = require('../../../utils/colorMapper');
+const { formatMarkCode } = require('../../../utils/colorHelpers');
 
 module.exports = {
   _waitForData(callback, retryCount) {
@@ -93,7 +94,6 @@ module.exports = {
   },
 
   calculateStats(gridData, rows, cols) {
-    const { formatMarkCode } = require('../../../utils/colorHelpers');
     const shouldRemoveEdge = this.data.removeEdge !== false;
 
     const colorCounts = {};
