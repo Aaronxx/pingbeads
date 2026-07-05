@@ -178,9 +178,18 @@ function getMarkColorInfoByCode(code) {
 
 // 预计算 256×256×256 RGB 到 Mark 的映射表
 // 为平衡性能和内存，使用 8-bit 精度映射
-let colorLookupTable = null;
+let colorLookupTable = null;      // 仅含普通色（useSpecialColors=false 用）
+let specialLookupTable = null;    // 仅含特殊色（合并时用）
 // 延迟初始化查找表，避免阻塞小程序启动
 let lookupTableReady = false;
+
+// 普通色 / 特殊色分离（特殊色：P/Q/R/T/Y/ZG 系列）
+const normalPalette = markPalette.filter(c => !isSpecialColor(c.code));
+const specialPalette = markPalette.filter(c => isSpecialColor(c.code));
+
+// 模块级开关：是否排除特殊色（由组件层 setExcludeSpecial 控制）
+// true = 映射时只考虑普通色（useSpecialColors=false），不再事后替代
+let excludeSpecialGlobal = true;  // 默认 true（拼豆主流程 useSpecialColors=false）
 
 // RGB 颜色缓存（LRU），避免对相同 RGB 值的重复查找
 const rgbCache = new Map();
@@ -240,7 +249,20 @@ function setAntiGrayIntensity(intensity) {
   antiGrayIntensity = v;
   // 失效查找表与缓存，下次 fastFindClosestMarkColor 时惰性重建
   colorLookupTable = null;
+  specialLookupTable = null;
   lookupTableReady = false;
+  rgbCache.clear();
+  excludeSpecialCache.clear();
+}
+
+/**
+ * 设置是否排除特殊色（由组件层 useSpecialColors 控制）
+ * true = 映射时只查普通色表（不再事后替代特殊色）
+ * false = 合并普通色表和特殊色表，取最近（useSpecialColors=true 时用）
+ */
+function setExcludeSpecial(exclude) {
+  excludeSpecialGlobal = !!exclude;
+  // 切换模式失效缓存（表本身不变，但查找结果缓存要清）
   rgbCache.clear();
   excludeSpecialCache.clear();
 }
@@ -257,29 +279,29 @@ function getAntiGrayIntensity() {
  * 将 RGB 空间量化到 32×32×32 = 32768 个 bucket
  * 优化：避免函数调用，使用距离平方
  */
-function buildColorLookupTable() {
-  if (colorLookupTable) return;
-
+/**
+ * 构建查找表（内部通用函数）
+ * @param {Array} palette - 色板（normalPalette 或 specialPalette）
+ * @param {Array} grayness - 对应的浊度数组（可选，长度与 palette 一致）
+ */
+function buildLookupTableFor(palette, grayness) {
   const resolution = 32;
   const total = resolution * resolution * resolution;
-  colorLookupTable = new Array(total);
+  const table = new Array(total);
 
-  // 预计算量化值
   const quantValues = [];
   for (let i = 0; i < resolution; i++) {
     quantValues[i] = Math.round(i * 255 / (resolution - 1));
   }
 
-  // 预计算 markPalette 的 RGB 值，避免每次都访问
-  const paletteRgb = markPalette.map(c => c.rgb);
-  const paletteLen = paletteRgb.length;
+  const paletteRgb = palette.map(c => c.rgb);
+  const paletteLen = palette.length;
 
-  // 浊色规避：把惩罚项预计算成与距离平方同量级的加值
-  // penalty[i] = intensity² × grayness[i] × SCALE，intensity=0 时全为 0（回到纯欧氏）
+  // 浊色规避惩罚（仅对普通色表生效，特殊色表不加惩罚）
   const intensitySq = antiGrayIntensity * antiGrayIntensity;
   const penalty = new Array(paletteLen);
   for (let i = 0; i < paletteLen; i++) {
-    penalty[i] = intensitySq * paletteGrayness[i] * ANTI_GRAY_SCALE;
+    penalty[i] = (grayness && intensitySq > 0) ? intensitySq * grayness[i] * ANTI_GRAY_SCALE : 0;
   }
 
   for (let r = 0; r < resolution; r++) {
@@ -291,10 +313,8 @@ function buildColorLookupTable() {
       for (let b = 0; b < resolution; b++) {
         const bVal = quantValues[b];
 
-        // 加权最近邻：欧氏距离平方 + 浊度惩罚
-        // 浊色色号的等效距离被放大，让稍远但高饱和/高明度的色在阈值内反超
         let minDistance = Infinity;
-        let closestColor = markPalette[0];
+        let closestColor = palette[0];
 
         for (let i = 0; i < paletteLen; i++) {
           const pr = paletteRgb[i].r - rVal;
@@ -303,13 +323,27 @@ function buildColorLookupTable() {
           const dist = pr * pr + pg * pg + pb * pb + penalty[i];
           if (dist < minDistance) {
             minDistance = dist;
-            closestColor = markPalette[i];
+            closestColor = palette[i];
           }
         }
 
-        colorLookupTable[rIdxOffset + gIdxOffset + b] = closestColor;
+        table[rIdxOffset + gIdxOffset + b] = closestColor;
       }
     }
+  }
+  return table;
+}
+
+// 普通色浊度数组（按 normalPalette 顺序）
+const normalPaletteGrayness = normalPalette.map(c => computeGrayness(c.rgb));
+
+function buildColorLookupTable() {
+  if (colorLookupTable) return;
+  // 普通色表（含浊色惩罚）
+  colorLookupTable = buildLookupTableFor(normalPalette, normalPaletteGrayness);
+  // 特殊色表（不含浊色惩罚，特殊色少且不参与浊色规避）
+  if (specialPalette.length > 0) {
+    specialLookupTable = buildLookupTableFor(specialPalette, null);
   }
 }
 
@@ -383,7 +417,10 @@ function hexToRgb(hex) {
  * @param {boolean} excludeSpecial - 是否排除特殊色（使用替代色），默认 false
  * @returns {{code: string, hex: string, rgb: {r: number, g: number, b: number}}}
  */
-function fastFindClosestMarkColor(targetRgb, excludeSpecial = false) {
+function fastFindClosestMarkColor(targetRgb, excludeSpecial) {
+  // excludeSpecial 参数优先；未传则用模块全局状态
+  const exclude = (excludeSpecial !== undefined) ? excludeSpecial : excludeSpecialGlobal;
+
   // 确保查找表已初始化（延迟初始化）
   if (!lookupTableReady) {
     initColorLookupTable();
@@ -393,37 +430,45 @@ function fastFindClosestMarkColor(targetRgb, excludeSpecial = false) {
   const rq = Math.floor(targetRgb.r / 4);
   const gq = Math.floor(targetRgb.g / 4);
   const bq = Math.floor(targetRgb.b / 4);
-  const cacheKey = (rq << 12) | (gq << 6) | bq | (excludeSpecial ? 262144 : 0);
+  const cacheKey = (rq << 12) | (gq << 6) | bq | (exclude ? 262144 : 0);
 
-  // 根据 excludeSpecial 选择不同的缓存
-  const cache = excludeSpecial ? excludeSpecialCache : rgbCache;
-
+  const cache = exclude ? excludeSpecialCache : rgbCache;
   if (cache.has(cacheKey)) {
     return cache.get(cacheKey);
   }
 
   if (!colorLookupTable) {
-    return findClosestMarkColor(targetRgb, excludeSpecial);
+    return findClosestMarkColor(targetRgb, exclude);
   }
 
   const resolution = 32;
-  // 量化到 32 级（使用位移优化）
   const rIdx = Math.min(31, targetRgb.r >> 3);
   const gIdx = Math.min(31, targetRgb.g >> 3);
   const bIdx = Math.min(31, targetRgb.b >> 3);
+  const bucketIdx = rIdx * resolution * resolution + gIdx * resolution + bIdx;
 
-  let result = colorLookupTable[rIdx * resolution * resolution + gIdx * resolution + bIdx];
+  // 普通色表的结果
+  let result = colorLookupTable[bucketIdx];
 
-  // 如果需要排除特殊色，替换为替代色
-  if (excludeSpecial && isSpecialColor(result.code)) {
-    const altColor = getAlternativeColor(result.code);
-    if (altColor) {
-      result = altColor;
+  // 若不排除特殊色，比较普通色表和特殊色表，取距离更近的
+  if (!exclude && specialLookupTable) {
+    const specialResult = specialLookupTable[bucketIdx];
+    if (specialResult) {
+      const drN = specialResult.rgb.r - targetRgb.r;
+      const dgN = specialResult.rgb.g - targetRgb.g;
+      const dbN = specialResult.rgb.b - targetRgb.b;
+      const distSpecial = drN * drN + dgN * dgN + dbN * dbN;
+      const drR = result.rgb.r - targetRgb.r;
+      const dgR = result.rgb.g - targetRgb.g;
+      const dbR = result.rgb.b - targetRgb.b;
+      const distNormal = drR * drR + dgR * dgR + dbR * dbR;
+      if (distSpecial < distNormal) {
+        result = specialResult;
+      }
     }
   }
 
-  // 缓存结果
-  const cacheMax = excludeSpecial ? EXCLUDE_SPECIAL_CACHE_MAX : RGB_CACHE_MAX;
+  const cacheMax = exclude ? EXCLUDE_SPECIAL_CACHE_MAX : RGB_CACHE_MAX;
   if (cache.size < cacheMax) {
     cache.set(cacheKey, result);
   }
@@ -522,5 +567,6 @@ module.exports = {
   getMarkColorInfoByCode,
   computeGrayness,
   setAntiGrayIntensity,
+  setExcludeSpecial,
   getAntiGrayIntensity
 };

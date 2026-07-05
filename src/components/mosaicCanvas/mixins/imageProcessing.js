@@ -2,6 +2,7 @@
  * 图片处理 mixin：图片加载、像素处理、马赛克/卡通模式生成
  */
 const { processSimple, processWithSmartRegions, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData, processMosaicV2, cleanIsolatedColors, desaturateGrayColors } = require('../../../utils/imageProcessor');
+const { setExcludeSpecial } = require('../../../utils/colorMapper');
 
 module.exports = {
   _waitForData(callback, retryCount) {
@@ -57,6 +58,9 @@ module.exports = {
     const cachedWidth = this.cachedWidth;
     const cachedHeight = this.cachedHeight;
     if (!pixelData || cachedWidth === 0) return;
+
+    // 同步特殊色开关到 colorMapper：useSpecialColors=false 时映射直接排除特殊色
+    setExcludeSpecial(!this.data.useSpecialColors);
 
     const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
 
@@ -279,6 +283,7 @@ module.exports = {
 
   processWithSimpleAlgorithm(width, height, _gridSize) {
     this.setData({ isProcessing: false });
+    setExcludeSpecial(!this.data.useSpecialColors);
     const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
     let pixelData = this.getCachedPixelData();
 
@@ -293,6 +298,7 @@ module.exports = {
   },
 
   processPixelData(pixelData, width, height) {
+    setExcludeSpecial(!this.data.useSpecialColors);
     this.cachedPixelData = new Uint8ClampedArray(pixelData);
     this.cachedWidth = width;
     this.cachedHeight = height;
