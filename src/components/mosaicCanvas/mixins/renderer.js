@@ -17,6 +17,32 @@ module.exports = {
     return parseMarkCode(input);
   },
 
+  /**
+   * 获取设备基准性能等级（缓存，避免每次渲染都调用同步 IPC wx.getSystemInfoSync）
+   * benchmarkLevel 在会话内不会变化，首次调用后复用即可。
+   */
+  _getBenchmarkLevel() {
+    if (this._cachedBenchmarkLevel === undefined) {
+      try {
+        const sysInfo = wx.getSystemInfoSync();
+        this._cachedBenchmarkLevel = sysInfo.benchmarkLevel || 10;
+      } catch (e) {
+        this._cachedBenchmarkLevel = 10;
+      }
+    }
+    return this._cachedBenchmarkLevel;
+  },
+
+  /**
+   * 根据 benchmarkLevel 推导 Canvas 最大允许边长
+   */
+  _getMaxCanvasDimension() {
+    const benchmarkLevel = this._getBenchmarkLevel();
+    if (benchmarkLevel >= 30) return 16384;
+    if (benchmarkLevel >= 23) return 8192;
+    return 4096;
+  },
+
   renderToCanvasRetry(gridData, cols, rows, gridSize) {
     this.renderToCanvas(gridData, cols, rows, gridSize);
   },
@@ -66,16 +92,8 @@ module.exports = {
 
         const userScale = that.data.scale || 1;
 
-        const sysInfo = wx.getSystemInfoSync();
-        const benchmarkLevel = sysInfo.benchmarkLevel || 10;
-        let MAX_CANVAS_DIMENSION;
-        if (benchmarkLevel >= 30) {
-          MAX_CANVAS_DIMENSION = 16384;
-        } else if (benchmarkLevel >= 23) {
-          MAX_CANVAS_DIMENSION = 8192;
-        } else {
-          MAX_CANVAS_DIMENSION = 4096;
-        }
+        // 性能：benchmarkLevel 缓存到实例属性，避免每次渲染都同步 IPC 取系统信息
+        const MAX_CANVAS_DIMENSION = that._getMaxCanvasDimension();
 
         let scaledWidth = canvasWidth * userScale;
         let scaledHeight = canvasHeight * userScale;
@@ -279,16 +297,8 @@ module.exports = {
 
         const userScale = that.data.scale || 1;
 
-        const sysInfoSeg = wx.getSystemInfoSync();
-        const benchmarkLevelSeg = sysInfoSeg.benchmarkLevel || 10;
-        let MAX_CANVAS_DIMENSION;
-        if (benchmarkLevelSeg >= 30) {
-          MAX_CANVAS_DIMENSION = 16384;
-        } else if (benchmarkLevelSeg >= 23) {
-          MAX_CANVAS_DIMENSION = 8192;
-        } else {
-          MAX_CANVAS_DIMENSION = 4096;
-        }
+        // 性能：benchmarkLevel 缓存到实例属性
+        const MAX_CANVAS_DIMENSION = that._getMaxCanvasDimension();
         let scaledWidth = canvasWidth * userScale;
         let scaledHeight = canvasHeight * userScale;
         if (scaledWidth > MAX_CANVAS_DIMENSION || scaledHeight > MAX_CANVAS_DIMENSION) {
