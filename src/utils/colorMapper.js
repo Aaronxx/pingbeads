@@ -144,6 +144,8 @@ function getMarkColorInfoByCode(code) {
 // 预计算 256×256×256 RGB 到 Mark 的映射表
 // 为平衡性能和内存，使用 8-bit 精度映射
 let colorLookupTable = null;
+// 延迟初始化查找表，避免阻塞小程序启动
+let lookupTableReady = false;
 
 // RGB 颜色缓存（LRU），避免对相同 RGB 值的重复查找
 const rgbCache = new Map();
@@ -152,6 +154,68 @@ const RGB_CACHE_MAX = 4096;
 // 特殊色排除模式下的缓存
 const excludeSpecialCache = new Map();
 const EXCLUDE_SPECIAL_CACHE_MAX = 1024;
+
+/**
+ * RGB → HSV（用于浊度判定）
+ * @returns {{s: number, v: number}} 饱和度/明度，均归一化到 0-100
+ */
+function rgbToHsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b);
+  const mn = Math.min(r, g, b);
+  const d = mx - mn;
+  const s = mx === 0 ? 0 : d / mx;
+  return { s: s * 100, v: mx * 100 };
+}
+
+/**
+ * 浊度判定（仅"明显灰扑扑"色号 > 0）
+ * 判定条件：饱和度 s<35 且 明度 v∈[25,80]（既不亮也不暗的浊色）
+ * 浅色(高明度)和深色(低明度)不惩罚，只打击中间的灰浊色
+ * @param {{r,g,b}} rgb
+ * @returns {number} 0~1 浊度，s 越低且 v 越接近 50(中灰) 越大
+ */
+function computeGrayness(rgb) {
+  const { s, v } = rgbToHsv(rgb.r, rgb.g, rgb.b);
+  if (s >= 35) return 0;            // 够鲜艳，不惩罚
+  if (v < 25 || v > 80) return 0;   // 深色或浅色，保留（用户要保留）
+  const sFactor = (35 - s) / 35;            // 0..1，s 越低越大
+  const vFactor = 1 - Math.abs(v - 50) / 30; // 距中灰越近越大，clamp 到 [0,1]
+  return Math.max(0, Math.min(1, sFactor * vFactor));
+}
+
+// 预计算每个 Mark 色号的浊度（模块加载时一次性算好）
+const paletteGrayness = markPalette.map(c => computeGrayness(c.rgb));
+
+// 浊色规避强度（0=纯欧氏距离/关闭，1=最强惩罚），默认 0 关闭
+// 由 setAntiGrayIntensity 修改，修改后触发查找表重建
+let antiGrayIntensity = 0;
+
+// 距离惩罚缩放系数：把 grayness(0-1) 换算成与"距离平方"同量级
+// RGB 最大距离平方 ≈ 195075，SCALE 取其 ~5% 使中等强度下惩罚可见
+const ANTI_GRAY_SCALE = 10000;
+
+/**
+ * 设置浊色规避强度，触发查找表惰性重建
+ * @param {number} intensity 0~1，0=关闭（纯欧氏距离），1=最强
+ */
+function setAntiGrayIntensity(intensity) {
+  const v = Math.max(0, Math.min(1, intensity));
+  if (Math.abs(v - antiGrayIntensity) < 1e-6) return;
+  antiGrayIntensity = v;
+  // 失效查找表与缓存，下次 fastFindClosestMarkColor 时惰性重建
+  colorLookupTable = null;
+  lookupTableReady = false;
+  rgbCache.clear();
+  excludeSpecialCache.clear();
+}
+
+/**
+ * 获取当前浊色规避强度
+ */
+function getAntiGrayIntensity() {
+  return antiGrayIntensity;
+}
 
 /**
  * 构建快速颜色查找表
@@ -175,6 +239,14 @@ function buildColorLookupTable() {
   const paletteRgb = markPalette.map(c => c.rgb);
   const paletteLen = paletteRgb.length;
 
+  // 浊色规避：把惩罚项预计算成与距离平方同量级的加值
+  // penalty[i] = intensity² × grayness[i] × SCALE，intensity=0 时全为 0（回到纯欧氏）
+  const intensitySq = antiGrayIntensity * antiGrayIntensity;
+  const penalty = new Array(paletteLen);
+  for (let i = 0; i < paletteLen; i++) {
+    penalty[i] = intensitySq * paletteGrayness[i] * ANTI_GRAY_SCALE;
+  }
+
   for (let r = 0; r < resolution; r++) {
     const rVal = quantValues[r];
     const rIdxOffset = r * resolution * resolution;
@@ -184,7 +256,8 @@ function buildColorLookupTable() {
       for (let b = 0; b < resolution; b++) {
         const bVal = quantValues[b];
 
-        // 找到最接近的 Mark 颜色（使用距离平方避免 sqrt）
+        // 加权最近邻：欧氏距离平方 + 浊度惩罚
+        // 浊色色号的等效距离被放大，让稍远但高饱和/高明度的色在阈值内反超
         let minDistance = Infinity;
         let closestColor = markPalette[0];
 
@@ -192,7 +265,7 @@ function buildColorLookupTable() {
           const pr = paletteRgb[i].r - rVal;
           const pg = paletteRgb[i].g - gVal;
           const pb = paletteRgb[i].b - bVal;
-          const dist = pr * pr + pg * pg + pb * pb;
+          const dist = pr * pr + pg * pg + pb * pb + penalty[i];
           if (dist < minDistance) {
             minDistance = dist;
             closestColor = markPalette[i];
@@ -204,9 +277,6 @@ function buildColorLookupTable() {
     }
   }
 }
-
-// 延迟初始化查找表，避免阻塞小程序启动
-let lookupTableReady = false;
 
 /**
  * 初始化查找表
@@ -420,5 +490,8 @@ module.exports = {
   SPECIAL_ALTERNATIVES,
   getAlternativeColor,
   getAlternativeCode,
-  getMarkColorInfoByCode
+  getMarkColorInfoByCode,
+  computeGrayness,
+  setAntiGrayIntensity,
+  getAntiGrayIntensity
 };

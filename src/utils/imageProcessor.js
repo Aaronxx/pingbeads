@@ -7,7 +7,7 @@
  * 3. 边缘检测与裁剪
  */
 
-const { fastFindClosestMarkColor } = require('../utils/colorMapper');
+const { fastFindClosestMarkColor, computeGrayness } = require('../utils/colorMapper');
 const { MosaicProcessor } = require('./mosaicProcessor');
 
 /**
@@ -1758,6 +1758,104 @@ function enhanceVibrant(rgb, scale) {
   };
 }
 
+/**
+ * 浊色规避（后处理）：把浊色色号的格子替换为视觉最近的非浊色邻居
+ *
+ * 与 cleanIsolatedColors 互补：cleanIsolatedColors 处理"空间噪声"(小面积)，
+ * 本函数处理"色板偏好"(灰浊色号)。借鉴 cleanIsolatedColors 的邻居统计 + markLookup 缓存结构。
+ *
+ * 算法：
+ * 1. 预建 markCode → {grayness, markInfo} 查找表
+ * 2. 遍历浊色格子(grayness>0)，统计其 4 邻居中非浊色色号
+ * 3. 按邻居数量加权 + 视觉距离最近，选最佳替代色
+ * 4. 无非浊色邻居则保留(避免盲区：若整片都是浊色则无法替换)
+ *
+ * intensity 控制力度：0=不替换，1=对所有 grayness>0 的浊色格子都尝试替换
+ * 实际是否替换还取决于"是否有非浊色邻居"
+ *
+ * @param {Array} gridData - 2D 网格数据(原地修改)
+ * @param {number} rows
+ * @param {number} cols
+ * @param {number} intensity - 规避强度 0~1，0 关闭
+ * @returns {Array} gridData
+ */
+function desaturateGrayColors(gridData, rows, cols, intensity) {
+  if (!gridData || !intensity || intensity <= 0) return gridData;
+
+  // 1. 预建 markCode → {grayness, hex, rgb} 查找表
+  const markLookup = {};
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cell = gridData[r][c];
+      if (cell && cell.markCode && !markLookup[cell.markCode]) {
+        markLookup[cell.markCode] = {
+          grayness: computeGrayness(cell.markRgb),
+          markHex: cell.markHex,
+          markRgb: cell.markRgb
+        };
+      }
+    }
+  }
+
+  // grayness 阈值：intensity 越高，越多浊色被纳入处理
+  // intensity=1 时所有 grayness>0 的色号都处理；intensity=0.3 时只处理 grayness>0.3 的
+  const grayThreshold = 1 - intensity; // intensity 0.3 → 阈值 0.7；intensity 1 → 阈值 0
+
+  const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  const replacements = [];
+
+  // 2. 遍历浊色格子，找非浊色邻居
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cell = gridData[r][c];
+      if (!cell || !cell.markCode) continue;
+      const info = markLookup[cell.markCode];
+      if (!info || info.grayness <= grayThreshold) continue; // 非浊色或浊度不够，跳过
+
+      // 统计 4 邻居中非浊色色号
+      const neighborCounts = {};
+      for (let d = 0; d < 4; d++) {
+        const nr = r + dirs[d][0];
+        const nc = c + dirs[d][1];
+        if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+        const n = gridData[nr][nc];
+        if (!n || !n.markCode) continue;
+        const nInfo = markLookup[n.markCode];
+        if (!nInfo || nInfo.grayness > 0) continue; // 邻居也是浊色，跳过
+        if (!neighborCounts[n.markCode]) neighborCounts[n.markCode] = 0;
+        neighborCounts[n.markCode]++;
+      }
+
+      // 选邻居数量最多的非浊色色号
+      let bestCode = null, bestCount = 0;
+      for (const k in neighborCounts) {
+        if (neighborCounts[k] > bestCount) {
+          bestCount = neighborCounts[k];
+          bestCode = k;
+        }
+      }
+      if (bestCode) {
+        replacements.push({ r, c, bestCode });
+      }
+    }
+  }
+
+  if (replacements.length === 0) return gridData;
+
+  // 3. 应用替换
+  for (let i = 0; i < replacements.length; i++) {
+    const rep = replacements[i];
+    const info = markLookup[rep.bestCode];
+    if (!info) continue;
+    const cell = gridData[rep.r][rep.c];
+    cell.markCode = rep.bestCode;
+    cell.markHex = info.markHex;
+    cell.markRgb = info.markRgb;
+  }
+
+  return gridData;
+}
+
 // enhanceVibrant 缓存
 const enhanceCache = new Map();
 const ENHANCE_CACHE_MAX = 4096;
@@ -1905,5 +2003,6 @@ module.exports = {
   enhanceVibrant: cachedEnhanceVibrant,
   reduceVibrant: cachedReduceVibrant,
   processMosaicV2,
-  cleanIsolatedColors
+  cleanIsolatedColors,
+  desaturateGrayColors
 };

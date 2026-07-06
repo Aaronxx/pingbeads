@@ -1,5 +1,6 @@
 // pages/index/index.js
 const { isLightColor, formatMarkCode, parseMarkCode } = require('../../utils/colorHelpers');
+const { setAntiGrayIntensity } = require('../../utils/colorMapper');
 
 Page({
   data: {
@@ -21,7 +22,7 @@ Page({
     // 网格大小
     gridSize: 10,
     // 色彩阈值
-    mergeThreshold: 50,
+    mergeThreshold: 30,
     // 处理模式: 'cartoon' | 'mosaic' - cartoon=卡通(普通模式), mosaic=马赛克(智能模式)
     processMode: 'cartoon',
     // 预览质量: 1=低(快速), 2=中, 3=高(精细)
@@ -71,8 +72,8 @@ Page({
       { name: '5', value: 5 },
       { name: '10', value: 10 },
       { name: '15', value: 15 },
-      { name: '20', value: 20 },
-      { name: '30', value: 30 },
+      { name: '20 (推荐)', value: 20 },
+      { name: '30 (推荐)', value: 30 },
       { name: '50', value: 50 },
       { name: '100', value: 100 },
       { name: '150', value: 150 },
@@ -82,7 +83,7 @@ Page({
     ],
     // 当前选项索引（用于 picker 绑定）
     gridOptionIndex: 2,  // 默认 10 (gridOptions[2].value = 10)
-    thresholdOptionIndex: 6,  // 默认 50 (thresholdOptions[6].value = 50)
+    thresholdOptionIndex: 5,  // 默认 30 (thresholdOptions[5].value = 30，甜区推荐值)
 
     // 特殊色设置
     useSpecialColors: false,  // 是否使用特殊色（P、Q、R、T、ZG系列）
@@ -96,6 +97,10 @@ Page({
     // 鲜艳度增强
     vibrantScale: 0,  // 鲜艳度增强系数 (-10 到 10)
     vibrantBlockColor: '#9ca3af',  // 滑块颜色
+
+    // 浊色规避：偏向高饱和高明度或深色，避开灰扑扑的中间色（默认关闭）
+    antiGrayIntensity: 0,  // 滑块值 0-100（实际强度 = 值/100，传给组件）
+    antiGrayBlockColor: '#f59e0b',  // 滑块颜色（橙色，表示偏向鲜艳/深色）
 
     // 自定义网格大小
     useCustomGridSize: false,  // 是否启用自定义网格大小
@@ -465,6 +470,25 @@ Page({
     });
   },
 
+  // 浊色规避滑块变化（完成）：更新映射表强度 + 传给组件触发重渲染
+  onAntiGrayChange(e) {
+    if (this._checkExporting()) return;
+    const sliderVal = e.detail.value;  // 0-100
+    const intensity = sliderVal / 100;
+    setAntiGrayIntensity(intensity);  // 更新 colorMapper 查找表强度
+    this.setData({
+      antiGrayIntensity: sliderVal
+    });
+  },
+
+  // 浊色规避滑块拖动中（仅更新显示，不触发重渲染避免卡顿）
+  onAntiGrayChanging(e) {
+    const sliderVal = e.detail.value;
+    this.setData({
+      antiGrayIntensity: sliderVal
+    });
+  },
+
   // 自定义网格大小勾选
   onCustomGridToggle(e) {
     if (this._checkExporting()) return;
@@ -543,8 +567,8 @@ Page({
       // 豆豆数、色彩
       gridOptionIndex: 2,
       gridSize: 10,  // gridOptions[2].value = 10
-      thresholdOptionIndex: 6,
-      mergeThreshold: 50,  // thresholdOptions[6].value = 50
+      thresholdOptionIndex: 5,
+      mergeThreshold: 30,  // thresholdOptions[5].value = 30 (甜区推荐)
       // 自定义网格（默认为当前豆豆数，限制在滑块范围内）
       useCustomGridSize: false,
       customGridSize: Math.min(50, Math.max(3, this.data.gridSize)),
@@ -555,6 +579,8 @@ Page({
       // 鲜艳度
       vibrantScale: 0,
       vibrantBlockColor: defaultBlockColor,
+      // 浊色规避（默认关闭）
+      antiGrayIntensity: 0,
       // 替换面板
       showReplacePanel: false,
       replaceFromCode: '',
