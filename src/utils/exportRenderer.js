@@ -19,21 +19,21 @@ function drawExportGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize) {
   ctx.strokeStyle = lineColor;
   ctx.lineWidth = lineWidth;
 
+  // 性能：把所有辅助线合并到一个 path 里一次 stroke，
+  // 替代每条线单独 beginPath + stroke（GPU 提交次数从 O(cols/10 + rows/10) 降到 1）
+  ctx.beginPath();
   for (let col = 10; col < cols; col += 10) {
     const x = offsetX + col * gridSize;
-    ctx.beginPath();
     ctx.moveTo(x, offsetY);
     ctx.lineTo(x, offsetY + rows * gridSize);
-    ctx.stroke();
   }
 
   for (let row = 10; row < rows; row += 10) {
     const y = offsetY + row * gridSize;
-    ctx.beginPath();
     ctx.moveTo(offsetX, y);
     ctx.lineTo(offsetX + cols * gridSize, y);
-    ctx.stroke();
   }
+  ctx.stroke();
 }
 
 function drawWatermark(ctx, canvasWidth, canvasHeight, text) {

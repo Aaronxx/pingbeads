@@ -14,13 +14,13 @@ const { fastFindClosestMarkColor } = require('./colorMapper');
 
 // ========== 工具函数 ==========
 
-/** 快速中位数 */
+/** 快速中位数（就地排序，调用方传入的数组若需保留请先 copy） */
 function fastMedian(arr) {
   const len = arr.length;
   if (len === 0) return 0;
-  const sorted = arr.slice().sort((a, b) => a - b);
+  arr.sort((a, b) => a - b);
   const mid = len >> 1;
-  return len % 2 === 1 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+  return len % 2 === 1 ? arr[mid] : Math.round((arr[mid - 1] + arr[mid]) / 2);
 }
 
 /** 计算一组颜色的中位数颜色 */
@@ -83,12 +83,12 @@ function findMode(arr) {
   return mode;
 }
 
-/** 找中位数 */
+/** 找中位数（就地排序；调用方需保留原数组请先 copy） */
 function findMedian(arr) {
   if (!arr || arr.length === 0) return 0;
-  const sorted = [...arr].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+  arr.sort((a, b) => a - b);
+  const mid = Math.floor(arr.length / 2);
+  return arr.length % 2 === 0 ? (arr[mid - 1] + arr[mid]) / 2 : arr[mid];
 }
 
 // ========== 核心：多线扫描聚类检测网格 ==========
@@ -106,6 +106,8 @@ function findMedian(arr) {
  */
 function scanLineForGridLines(data, width, height, direction, pos, colorDistThreshold = 30, clusterGap = 5) {
   const changes = [];
+  // 性能：用平方阈值比较，避免每像素 Math.sqrt（扫描覆盖整行/整列像素）
+  const thresholdSq = colorDistThreshold * colorDistThreshold;
 
   if (direction === 'horizontal') {
     const y = pos;
@@ -113,12 +115,10 @@ function scanLineForGridLines(data, width, height, direction, pos, colorDistThre
     for (let x = 1; x < width; x++) {
       const i1 = (y * width + x - 1) * 4;
       const i2 = (y * width + x) * 4;
-      const dist = Math.sqrt(
-        (data[i1] - data[i2]) ** 2 +
-        (data[i1 + 1] - data[i2 + 1]) ** 2 +
-        (data[i1 + 2] - data[i2 + 2]) ** 2
-      );
-      if (dist > colorDistThreshold) changes.push(x);
+      const dr = data[i1] - data[i2];
+      const dg = data[i1 + 1] - data[i2 + 1];
+      const db = data[i1 + 2] - data[i2 + 2];
+      if (dr * dr + dg * dg + db * db > thresholdSq) changes.push(x);
     }
   } else {
     const x = pos;
@@ -126,12 +126,10 @@ function scanLineForGridLines(data, width, height, direction, pos, colorDistThre
     for (let y = 1; y < height; y++) {
       const i1 = ((y - 1) * width + x) * 4;
       const i2 = (y * width + x) * 4;
-      const dist = Math.sqrt(
-        (data[i1] - data[i2]) ** 2 +
-        (data[i1 + 1] - data[i2 + 1]) ** 2 +
-        (data[i1 + 2] - data[i2 + 2]) ** 2
-      );
-      if (dist > colorDistThreshold) changes.push(y);
+      const dr = data[i1] - data[i2];
+      const dg = data[i1 + 1] - data[i2 + 1];
+      const db = data[i1 + 2] - data[i2 + 2];
+      if (dr * dr + dg * dg + db * db > thresholdSq) changes.push(y);
     }
   }
 
@@ -580,6 +578,7 @@ class MosaicProcessor {
    */
   _detectGridOffset(pixelData, width, height, gridSize) {
     const colorDistThreshold = 30;
+    const thresholdSq = colorDistThreshold * colorDistThreshold;
     // 扫描多行找垂直边界
     const scanRowCount = Math.min(9, Math.max(3, Math.floor(height / 30)));
 
@@ -591,12 +590,10 @@ class MosaicProcessor {
       for (let x = 2; x < width - 2; x++) {
         const i1 = (y * width + x - 2) * 4;
         const i2 = (y * width + x + 2) * 4;
-        const dist = Math.sqrt(
-          (pixelData[i1] - pixelData[i2]) ** 2 +
-          (pixelData[i1 + 1] - pixelData[i2 + 1]) ** 2 +
-          (pixelData[i1 + 2] - pixelData[i2 + 2]) ** 2
-        );
-        if (dist > colorDistThreshold) {
+        const dr = pixelData[i1] - pixelData[i2];
+        const dg = pixelData[i1 + 1] - pixelData[i2 + 1];
+        const db = pixelData[i1 + 2] - pixelData[i2 + 2];
+        if (dr * dr + dg * dg + db * db > thresholdSq) {
           // 直接对 offset 投票
           offsetVotes[x % gridSize]++;
         }
@@ -624,6 +621,7 @@ class MosaicProcessor {
     const rows = Math.ceil(height / gridSize);
     const segments = [];
     let segId = 0;
+    const maxDistThresholdSq = 30 * 30;
 
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
@@ -632,17 +630,21 @@ class MosaicProcessor {
         const endX = Math.min(startX + gridSize, width);
         const endY = Math.min(startY + gridSize, height);
 
-        // 收集网格内所有像素的颜色
-        const colors = [];
+        // 性能：直接累加 RGB，避免每像素分配 {r,g,b} 对象
+        let sumR = 0, sumG = 0, sumB = 0, count = 0;
         for (let y = startY; y < endY; y++) {
+          const rowBase = y * width;
           for (let x = startX; x < endX; x++) {
-            const i = (y * width + x) * 4;
-            colors.push({ r: pixelData[i], g: pixelData[i + 1], b: pixelData[i + 2] });
+            const i = (rowBase + x) * 4;
+            sumR += pixelData[i];
+            sumG += pixelData[i + 1];
+            sumB += pixelData[i + 2];
+            count++;
           }
         }
 
         // 如果没有有效颜色，使用默认灰色（7ec2bc4 逻辑）
-        if (colors.length === 0) {
+        if (count === 0) {
           const markColor = fastFindClosestMarkColor({ r: 128, g: 128, b: 128 });
           segments.push({
             id: segId++,
@@ -656,40 +658,52 @@ class MosaicProcessor {
           continue;
         }
 
-        // 计算平均颜色（简单平均）
-        let sumR = 0, sumG = 0, sumB = 0;
-        for (const c of colors) {
-          sumR += c.r; sumG += c.g; sumB += c.b;
-        }
         const avgColor = {
-          r: Math.round(sumR / colors.length),
-          g: Math.round(sumG / colors.length),
-          b: Math.round(sumB / colors.length)
+          r: Math.round(sumR / count),
+          g: Math.round(sumG / count),
+          b: Math.round(sumB / count)
         };
 
-        // 判断是否为纯色区域（计算颜色方差）
-        let maxDist = 0;
-        for (const c of colors) {
-          const dist = Math.sqrt(
-            (c.r - avgColor.r) ** 2 + (c.g - avgColor.g) ** 2 + (c.b - avgColor.b) ** 2
-          );
-          if (dist > maxDist) maxDist = dist;
+        // 判断是否为纯色区域（计算最大颜色距离平方，避免 sqrt）
+        let maxDistSq = 0;
+        for (let y = startY; y < endY; y++) {
+          const rowBase = y * width;
+          for (let x = startX; x < endX; x++) {
+            const i = (rowBase + x) * 4;
+            const dr = pixelData[i] - avgColor.r;
+            const dg = pixelData[i + 1] - avgColor.g;
+            const db = pixelData[i + 2] - avgColor.b;
+            const dSq = dr * dr + dg * dg + db * db;
+            if (dSq > maxDistSq) maxDistSq = dSq;
+          }
         }
 
         // 如果颜色变化太大，使用主导色（16级量化众数）
         let finalColor = avgColor;
-        if (maxDist > 30) {
-          const colorCount = {};
-          for (const c of colors) {
-            const key = `${Math.round(c.r / 16) * 16},${Math.round(c.g / 16) * 16},${Math.round(c.b / 16) * 16}`;
-            colorCount[key] = (colorCount[key] || 0) + 1;
+        if (maxDistSq > maxDistThresholdSq) {
+          // 性能：用整数 key 替代字符串拼接 + split 解析（量化等价于 Math.round(v/16)*16）
+          // 用 Map 保留插入顺序，与原 {} + 字符串 key 在 count 平局时选中相同 bucket
+          const colorCount = new Map();
+          for (let y = startY; y < endY; y++) {
+            const rowBase = y * width;
+            for (let x = startX; x < endX; x++) {
+              const i = (rowBase + x) * 4;
+              const qr = (pixelData[i] + 8) >> 4;
+              const qg = (pixelData[i + 1] + 8) >> 4;
+              const qb = (pixelData[i + 2] + 8) >> 4;
+              const key = (qr << 10) | (qg << 5) | qb;
+              colorCount.set(key, (colorCount.get(key) || 0) + 1);
+            }
           }
           let maxCount = 0;
-          for (const key in colorCount) {
-            if (colorCount[key] > maxCount) {
-              maxCount = colorCount[key];
-              const [r, g, b] = key.split(',').map(Number);
-              finalColor = { r, g, b };
+          for (const [key, cnt] of colorCount) {
+            if (cnt > maxCount) {
+              maxCount = cnt;
+              finalColor = {
+                r: (key >> 10) << 4,
+                g: ((key >> 5) & 0x1F) << 4,
+                b: (key & 0x1F) << 4
+              };
             }
           }
         }
@@ -722,6 +736,7 @@ class MosaicProcessor {
    */
   _processWithDetectedBoundaries(pixelData, width, height, gridSize, minCellArea) {
     const colorDistThreshold = 30; // 降低阈值检测更多边界
+    const thresholdSq = colorDistThreshold * colorDistThreshold;
     const scanRowCount = Math.min(15, Math.max(5, Math.floor(height / 20)));
     const scanColCount = Math.min(15, Math.max(5, Math.floor(width / 20)));
 
@@ -734,12 +749,10 @@ class MosaicProcessor {
       for (let x = 2; x < width - 2; x++) {
         const i1 = (y * width + x - 2) * 4;
         const i2 = (y * width + x + 2) * 4;
-        const dist = Math.sqrt(
-          (pixelData[i1] - pixelData[i2]) ** 2 +
-          (pixelData[i1 + 1] - pixelData[i2 + 1]) ** 2 +
-          (pixelData[i1 + 2] - pixelData[i2 + 2]) ** 2
-        );
-        if (dist > colorDistThreshold && x - prevChangeX > halfGrid) {
+        const dr = pixelData[i1] - pixelData[i2];
+        const dg = pixelData[i1 + 1] - pixelData[i2 + 1];
+        const db = pixelData[i1 + 2] - pixelData[i2 + 2];
+        if (dr * dr + dg * dg + db * db > thresholdSq && x - prevChangeX > halfGrid) {
           const bucket = Math.round(x / halfGrid) * halfGrid;
           vBoundaryVotes[bucket] = (vBoundaryVotes[bucket] || 0) + 1;
           prevChangeX = x;
@@ -755,12 +768,10 @@ class MosaicProcessor {
       for (let y = 2; y < height - 2; y++) {
         const i1 = ((y - 2) * width + x) * 4;
         const i2 = ((y + 2) * width + x) * 4;
-        const dist = Math.sqrt(
-          (pixelData[i1] - pixelData[i2]) ** 2 +
-          (pixelData[i1 + 1] - pixelData[i2 + 1]) ** 2 +
-          (pixelData[i1 + 2] - pixelData[i2 + 2]) ** 2
-        );
-        if (dist > colorDistThreshold && y - prevChangeY > halfGrid) {
+        const dr = pixelData[i1] - pixelData[i2];
+        const dg = pixelData[i1 + 1] - pixelData[i2 + 1];
+        const db = pixelData[i1 + 2] - pixelData[i2 + 2];
+        if (dr * dr + dg * dg + db * db > thresholdSq && y - prevChangeY > halfGrid) {
           const bucket = Math.round(y / halfGrid) * halfGrid;
           hBoundaryVotes[bucket] = (hBoundaryVotes[bucket] || 0) + 1;
           prevChangeY = y;
@@ -860,20 +871,26 @@ class MosaicProcessor {
         }
 
         // 主导色（16级量化众数）
-        const colorCount = {};
+        // 性能：用整数 key 替代字符串拼接 + split 解析（量化等价于 Math.round(v/16)*16）
+        // 用 Map 保留插入顺序，与原 {} + 字符串 key 在 count 平局时选中相同 bucket
+        const colorCount = new Map();
         for (const c of colors) {
-          const key = `${Math.round(c.r / 16) * 16},${Math.round(c.g / 16) * 16},${Math.round(c.b / 16) * 16}`;
-          colorCount[key] = (colorCount[key] || 0) + 1;
+          const qr = (c.r + 8) >> 4;
+          const qg = (c.g + 8) >> 4;
+          const qb = (c.b + 8) >> 4;
+          const key = (qr << 10) | (qg << 5) | qb;
+          colorCount.set(key, (colorCount.get(key) || 0) + 1);
         }
-        let maxCount = 0, dominantKey = '208,208,208';
-        for (const key in colorCount) {
-          if (colorCount[key] > maxCount) {
-            maxCount = colorCount[key];
+        let maxCount = 0, dominantKey = -1;
+        for (const [key, cnt] of colorCount) {
+          if (cnt > maxCount) {
+            maxCount = cnt;
             dominantKey = key;
           }
         }
-        const [r, g, b] = dominantKey.split(',').map(Number);
-        const finalColor = { r, g, b };
+        const finalColor = dominantKey < 0
+          ? { r: 208, g: 208, b: 208 }
+          : { r: (dominantKey >> 10) << 4, g: ((dominantKey >> 5) & 0x1F) << 4, b: (dominantKey & 0x1F) << 4 };
         const markColor = fastFindClosestMarkColor(finalColor);
 
         segments.push({

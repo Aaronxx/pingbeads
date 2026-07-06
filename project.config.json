@@ -23,6 +23,26 @@
       {
         "type": "folder",
         "value": "skill"
+      },
+      {
+        "type": "folder",
+        "value": "tests"
+      },
+      {
+        "type": "folder",
+        "value": "minitest"
+      },
+      {
+        "type": "folder",
+        "value": "docs"
+      },
+      {
+        "type": "file",
+        "value": "test-automator.js"
+      },
+      {
+        "type": "file",
+        "value": "fix_colorstats2.js"
       }
     ],
     "include": []
