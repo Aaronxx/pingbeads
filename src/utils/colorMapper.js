@@ -6,6 +6,9 @@
 
 const { markPalette } = require('../data/colorPalettes');
 
+// 预构建 code → Mark 色信息 的 Map，O(1) 查找（替代每次 markPalette.find 线性扫描）
+const markColorByCode = new Map(markPalette.map(c => [c.code, c]));
+
 // 特殊色系列（不包括在普通色中）
 const SPECIAL_SERIES = ['P', 'Q', 'R', 'T', 'Y', 'ZG'];
 
@@ -102,10 +105,10 @@ const SPECIAL_ALTERNATIVES = {
   "Y5": "D18"
 };
 
-// 预计算替代色信息的缓存（避免每次都调用 markPalette.find）
+// 预计算替代色信息的缓存（用 markColorByCode Map O(1) 查找）
 const alternativeColorCache = new Map();
 for (const [specialCode, altCode] of Object.entries(SPECIAL_ALTERNATIVES)) {
-  const altColor = markPalette.find(c => c.code === altCode);
+  const altColor = markColorByCode.get(altCode);
   if (altColor) {
     alternativeColorCache.set(specialCode, altColor);
   }
@@ -135,7 +138,7 @@ function getAlternativeCode(specialCode) {
  * @returns {{code: string, hex: string, rgb: {r: number, g: number, b: number}}|null}
  */
 function getMarkColorInfoByCode(code) {
-  return markPalette.find(c => c.code === code) || null;
+  return markColorByCode.get(code) || null;
 }
 
 // 预计算 256×256×256 RGB 到 Mark 的映射表
@@ -333,17 +336,23 @@ function findClosestMarkColor(targetRgb, excludeSpecial = false) {
   let minDistance = Infinity;
   let closestColor = null;
 
+  // 性能：直接计算平方距离，避免每色 Math.sqrt + Math.pow
+  // findClosestMarkColor 是 fastFindClosestMarkColor 的精确回退路径（无 LUT 时走这里）
   for (const color of markPalette) {
-    const distance = euclideanDistance(targetRgb, color.rgb);
-    if (distance < minDistance) {
-      minDistance = distance;
+    const dr = targetRgb.r - color.rgb.r;
+    const dg = targetRgb.g - color.rgb.g;
+    const db = targetRgb.b - color.rgb.b;
+    const distSq = dr * dr + dg * dg + db * db;
+    if (distSq < minDistance) {
+      minDistance = distSq;
       closestColor = color;
     }
   }
 
   let result = {
     ...closestColor,
-    distance: minDistance
+    // 内部按平方距离比较（更快），对外仍返回线性欧氏距离以保留语义
+    distance: minDistance === Infinity ? Infinity : Math.sqrt(minDistance)
   };
 
   // 如果需要排除特殊色，替换为替代色
