@@ -94,7 +94,7 @@ module.exports = {
 
   calculateStats(gridData, rows, cols) {
     const { formatMarkCode } = require('../../../utils/colorHelpers');
-    const shouldRemoveEdge = this.data.removeEdge !== false;
+    const shouldRemoveEdge = this.data.removeEdge === true;
 
     const colorCounts = {};
     let totalCount = 0;

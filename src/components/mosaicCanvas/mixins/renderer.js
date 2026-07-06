@@ -144,7 +144,7 @@ module.exports = {
         const startRow = Math.max(0, Math.floor((visibleTop - offsetY) / cellSize));
         const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - offsetY) / cellSize));
 
-        const shouldRemoveEdge = that.data.removeEdge !== false;
+        const shouldRemoveEdge = that.data.removeEdge === true;
         for (let row = startRow; row <= endRow; row++) {
           for (let col = startCol; col <= endCol; col++) {
             const cell = gridData[row] && gridData[row][col];
@@ -369,7 +369,7 @@ module.exports = {
             continue;
           }
 
-          const shouldRemoveEdge = that.data.removeEdge !== false;
+          const shouldRemoveEdge = that.data.removeEdge === true;
           if (shouldRemoveEdge && segment.isEdge) continue;
 
           ctx.fillStyle = segment.markHex || '#cccccc';
@@ -450,7 +450,7 @@ module.exports = {
     const startRow = Math.max(0, Math.floor((visibleTop - finalOffsetY) / cellSize));
     const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - finalOffsetY) / cellSize));
 
-    const shouldRemoveEdge = this.data.removeEdge !== false;
+    const shouldRemoveEdge = this.data.removeEdge === true;
 
     for (let row = startRow; row <= endRow; row++) {
       for (let col = startCol; col <= endCol; col++) {

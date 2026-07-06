@@ -89,7 +89,7 @@ Page({
     useSpecialColors: false,  // 是否使用特殊色（P、Q、R、T、ZG系列）
 
     // 去除边缘设置
-    removeEdge: true,  // 是否去除边缘底色
+    removeEdge: false,  // 是否去除边缘底色（默认 false：不去除）
 
     // 镜像翻转
     mirrorImage: false,  // 是否镜像翻转
@@ -574,7 +574,7 @@ Page({
       customGridSize: Math.min(50, Math.max(3, this.data.gridSize)),
       // 特殊设置
       useSpecialColors: false,
-      removeEdge: true,
+      removeEdge: false,
       mirrorImage: false,
       // 鲜艳度
       vibrantScale: 0,
@@ -996,7 +996,7 @@ Page({
         if (isMosaicMode && gridData) {
         // 马赛克模式：基于 gridData 二维数组绘制固定大小色块
         // 根据 removeEdge 设置决定是否跳过边缘单元格
-        const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
+        const shouldRemoveEdge = that.data.removeEdge === true;  // 显式判断，默认不去除
         const shouldMirror = that.data.mirrorImage;  // 是否镜像
         // 固定格子大小，天然紧密排列无间隙
         const cellWidth = gridSize * exportScale;
@@ -1049,7 +1049,7 @@ Page({
 
         for (const segment of segments) {
           // 根据 removeEdge 设置决定是否跳过边缘色段
-          const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
+          const shouldRemoveEdge = that.data.removeEdge === true;  // 显式判断，默认不去除
           const shouldMirror = that.data.mirrorImage;  // 是否镜像
           if (shouldRemoveEdge && segment.isEdge) continue;
 
@@ -1088,7 +1088,7 @@ Page({
         // 普通模式：使用 gridData 绘制
         // 跳过 isRegionMember 的格子（它们会被根格子覆盖）
         // 根据 removeEdge 设置决定是否跳过边缘单元格
-        const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
+        const shouldRemoveEdge = that.data.removeEdge === true;  // 显式判断，默认不去除
         const shouldMirror = that.data.mirrorImage;  // 是否镜像
         const cellWidth = gridSize * exportScale;
         for (let row = 0; row < rows; row++) {
@@ -1316,7 +1316,7 @@ Page({
         const totalParts = parts.length;
         let currentIndex = 0;
         let failCount = 0;
-        const shouldRemoveEdge = that.data.removeEdge !== false;
+        const shouldRemoveEdge = that.data.removeEdge === true;
 
         // 渲染一张分块到 canvas
         const renderPart = (part, partName) => {
@@ -1690,7 +1690,7 @@ Page({
 
         // 绘制（基于二维数组固定格子大小）
         // 根据 removeEdge 设置决定是否跳过边缘单元格
-        const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
+        const shouldRemoveEdge = that.data.removeEdge === true;  // 显式判断，默认不去除
         const cellSizeX = width / cols;
         const cellSizeY = height / rows;
         for (let row = 0; row < rows; row++) {
@@ -1821,7 +1821,7 @@ Page({
           
           // 绘制马赛克（基于二维数组固定格子大小）
           // 根据 removeEdge 设置决定是否跳过边缘单元格
-          const shouldRemoveEdge = that.data.removeEdge !== false;  // 默认去除边缘
+          const shouldRemoveEdge = that.data.removeEdge === true;  // 显式判断，默认不去除
           const cellSizeX = width / cols;
           const cellSizeY = height / rows;
           for (let row = 0; row < rows; row++) {
