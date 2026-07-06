@@ -1,0 +1,537 @@
+/**
+ * Canvas 渲染 mixin：绘制网格、色段、参考线、大区水印、分割线
+ */
+const { isLightColor, formatMarkCode, parseMarkCode } = require('../../../utils/colorHelpers');
+const { REGION_SIZE, getColCode } = require('../../../utils/regionUtils');
+
+module.exports = {
+  isLightColor(hex) {
+    return isLightColor(hex);
+  },
+
+  formatMarkCode(code) {
+    return formatMarkCode(code);
+  },
+
+  parseMarkCode(input) {
+    return parseMarkCode(input);
+  },
+
+  renderToCanvasRetry(gridData, cols, rows, gridSize) {
+    this.renderToCanvas(gridData, cols, rows, gridSize);
+  },
+
+  renderToCanvas(gridData, cols, rows, gridSize) {
+    if (this.isRendering) return;
+    this.isRendering = true;
+    const that = this;
+
+    if (this._showTouchLoading) {
+      this._showTouchLoading = false;
+      this.triggerEvent('loadingChange', { show: true, text: '正在渲染...' });
+      this._loadingShown = true;
+    }
+
+    const query = this.createSelectorQuery();
+    query.select('#mosaic-render-canvas')
+      .fields({ node: true, size: true })
+      .exec((res) => {
+        if (!res[0]) {
+          setTimeout(() => {
+            that.renderToCanvas(gridData, cols, rows, gridSize);
+          }, 200);
+          return;
+        }
+        if (!res[0].node) {
+          setTimeout(() => {
+            that.renderToCanvas(gridData, cols, rows, gridSize);
+          }, 200);
+          return;
+        }
+
+        const canvas = res[0].node;
+        const ctx = canvas.getContext('2d');
+
+        let canvasWidth = that.data.canvasWidth || 300;
+        let canvasHeight = that.data.canvasHeight || 300;
+
+        const MAX_CANVAS_SIZE = 4096;
+        canvasWidth = Math.min(canvasWidth, MAX_CANVAS_SIZE);
+        canvasHeight = Math.min(canvasHeight, MAX_CANVAS_SIZE);
+
+        if (res[0].width > canvasWidth || res[0].height > canvasHeight) {
+          canvasWidth = Math.min(res[0].width, MAX_CANVAS_SIZE);
+          canvasHeight = Math.min(res[0].height, MAX_CANVAS_SIZE);
+        }
+
+        const userScale = that.data.scale || 1;
+
+        const sysInfo = wx.getSystemInfoSync();
+        const benchmarkLevel = sysInfo.benchmarkLevel || 10;
+        let MAX_CANVAS_DIMENSION;
+        if (benchmarkLevel >= 30) {
+          MAX_CANVAS_DIMENSION = 16384;
+        } else if (benchmarkLevel >= 23) {
+          MAX_CANVAS_DIMENSION = 8192;
+        } else {
+          MAX_CANVAS_DIMENSION = 4096;
+        }
+
+        let scaledWidth = canvasWidth * userScale;
+        let scaledHeight = canvasHeight * userScale;
+        if (scaledWidth > MAX_CANVAS_DIMENSION || scaledHeight > MAX_CANVAS_DIMENSION) {
+          const scaleRatio = MAX_CANVAS_DIMENSION / Math.max(scaledWidth, scaledHeight);
+          scaledWidth *= scaleRatio;
+          scaledHeight *= scaleRatio;
+        }
+        canvas.width = Math.floor(scaledWidth);
+        canvas.height = Math.floor(scaledHeight);
+
+        that.canvasNode = canvas;
+        that.canvasCtx = ctx;
+
+        ctx.fillStyle = '#f0f0f0';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const totalGridWidth = cols * gridSize;
+        const totalGridHeight = rows * gridSize;
+
+        const scaleX = totalGridWidth > 0 ? canvasWidth / totalGridWidth : 1;
+        const scaleY = totalGridHeight > 0 ? canvasHeight / totalGridHeight : 1;
+        const baseScale = Math.min(scaleX, scaleY, 1);
+        const scale = baseScale * userScale;
+
+        const actualCanvasWidth = canvas.width;
+        const actualCanvasHeight = canvas.height;
+        const baseOffsetX = (actualCanvasWidth - totalGridWidth * scale) / 2;
+        const baseOffsetY = (actualCanvasHeight - totalGridHeight * scale) / 2;
+        const offsetX = baseOffsetX + (this.data.offsetX || 0);
+        const offsetY = baseOffsetY + (this.data.offsetY || 0);
+
+        const cellSize = gridSize * scale;
+        const buffer = cellSize;
+        const visibleLeft = -buffer;
+        const visibleRight = actualCanvasWidth + buffer;
+        const visibleTop = -buffer;
+        const visibleBottom = actualCanvasHeight + buffer;
+
+        let startCol, endCol;
+        if (that.data.mirrorImage) {
+          startCol = Math.max(0, Math.ceil((actualCanvasWidth - offsetX - visibleRight - cellSize) / cellSize));
+          endCol = Math.min(cols - 1, Math.floor((actualCanvasWidth - offsetX - visibleLeft) / cellSize));
+        } else {
+          startCol = Math.max(0, Math.floor((visibleLeft - offsetX) / cellSize));
+          endCol = Math.min(cols - 1, Math.ceil((visibleRight - offsetX) / cellSize));
+        }
+        const startRow = Math.max(0, Math.floor((visibleTop - offsetY) / cellSize));
+        const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - offsetY) / cellSize));
+
+        const shouldRemoveEdge = that.data.removeEdge !== false;
+        for (let row = startRow; row <= endRow; row++) {
+          for (let col = startCol; col <= endCol; col++) {
+            const cell = gridData[row] && gridData[row][col];
+            if (!cell || (shouldRemoveEdge && cell.isEdge)) continue;
+
+            const cellWidth = cellSize;
+            const cellHeight = cellSize;
+
+            let x = offsetX + col * cellSize;
+            const y = offsetY + row * cellSize;
+
+            if (that.data.mirrorImage) {
+              x = actualCanvasWidth - x - cellWidth;
+            }
+
+            if (cell.isEmpty) {
+              ctx.fillStyle = '#F0F0F0';
+            } else {
+              ctx.fillStyle = cell.markHex;
+            }
+            ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(cellWidth), Math.ceil(cellHeight));
+
+            ctx.strokeStyle = cell.isEmpty ? 'rgba(0, 0, 0, 0.05)' : 'rgba(0, 0, 0, 0.1)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
+
+            const size = Math.min(cellWidth, cellHeight);
+            if (!cell.isEmpty && that.data.showCode && that.data.hasUserZoomed && size >= 8 && (!shouldRemoveEdge || !cell.isEdge)) {
+              const isLight = isLightColor(cell.markHex);
+              ctx.fillStyle = isLight ? '#333333' : '#ffffff';
+              ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
+            }
+          }
+        }
+
+        if (that.data.hasUserZoomed && cellSize >= 8) {
+          that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
+        }
+
+        if (that.data.hasUserZoomed && cellSize >= 8) {
+          that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
+        }
+
+        that.drawSplitLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale);
+
+        that.isRendering = false;
+        that.triggerEvent('loadingChange', { show: false, text: '' });
+        that._loadingShown = false;
+      });
+  },
+
+  drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, mirrorImage, canvasWidth) {
+    const lineColor = 'rgba(70, 130, 180, 0.8)';
+    const lineWidth = 1;
+    const cellSize = gridSize * scale;
+
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = lineWidth;
+
+    const firstLineCol = Math.ceil(startCol / 10) * 10;
+    for (let col = firstLineCol; col <= endCol; col += 10) {
+      let x = offsetX + col * cellSize;
+      if (mirrorImage) x = canvasWidth - x;
+      ctx.beginPath();
+      ctx.moveTo(x, offsetY + startRow * cellSize);
+      ctx.lineTo(x, offsetY + (endRow + 1) * cellSize);
+      ctx.stroke();
+    }
+
+    const firstLineRow = Math.ceil(startRow / 10) * 10;
+    for (let row = firstLineRow; row <= endRow; row += 10) {
+      const y = offsetY + row * cellSize;
+      ctx.beginPath();
+      let leftX = offsetX + startCol * cellSize;
+      let rightX = offsetX + (endCol + 1) * cellSize;
+      if (mirrorImage) {
+        leftX = canvasWidth - leftX;
+        rightX = canvasWidth - rightX;
+      }
+      ctx.moveTo(Math.min(leftX, rightX), y);
+      ctx.lineTo(Math.max(leftX, rightX), y);
+      ctx.stroke();
+    }
+  },
+
+  drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, mirrorImage, canvasWidth) {
+    const cellSize = gridSize * scale;
+    const regionPixelSize = REGION_SIZE * cellSize;
+
+    const regionStartCol = Math.floor(startCol / REGION_SIZE);
+    const regionEndCol = Math.ceil(endCol / REGION_SIZE);
+    const regionStartRow = Math.floor(startRow / REGION_SIZE);
+    const regionEndRow = Math.ceil(endRow / REGION_SIZE);
+
+    const totalRegionCols = Math.ceil(cols / REGION_SIZE);
+    const totalRegionRows = Math.ceil(rows / REGION_SIZE);
+
+    const fontSize = Math.max(8, regionPixelSize * 0.4);
+
+    ctx.save();
+    ctx.globalAlpha = 0.15;
+    ctx.font = `${fontSize}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#333333';
+
+    for (let regionRow = regionStartRow; regionRow < regionEndRow && regionRow < totalRegionRows; regionRow++) {
+      for (let regionCol = regionStartCol; regionCol < regionEndCol && regionCol < totalRegionCols; regionCol++) {
+        let regionCenterX = offsetX + (regionCol * REGION_SIZE + REGION_SIZE / 2) * cellSize;
+        if (mirrorImage) regionCenterX = canvasWidth - regionCenterX;
+        const regionCenterY = offsetY + (regionRow * REGION_SIZE + REGION_SIZE / 2) * cellSize;
+
+        const colCode = getColCode(regionCol);
+        const regionCode = colCode + (regionRow + 1);
+
+        ctx.fillText(regionCode, regionCenterX, regionCenterY);
+      }
+    }
+
+    ctx.restore();
+  },
+
+  renderSegmentsToCanvas(segments, imageWidth, imageHeight) {
+    const that = this;
+    this.isRendering = true;
+
+    const query = this.createSelectorQuery();
+    query.select('#mosaic-render-canvas')
+      .fields({ node: true, size: true })
+      .exec((res) => {
+        if (!res[0] || !res[0].node) {
+          setTimeout(() => {
+            that.renderSegmentsToCanvas(segments, imageWidth, imageHeight);
+          }, 200);
+          return;
+        }
+
+        const canvas = res[0].node;
+        const ctx = canvas.getContext('2d');
+
+        let canvasWidth = that.data.canvasWidth || 300;
+        let canvasHeight = that.data.canvasHeight || 300;
+
+        const MAX_CANVAS_SIZE = 4096;
+        canvasWidth = Math.min(canvasWidth, MAX_CANVAS_SIZE);
+        canvasHeight = Math.min(canvasHeight, MAX_CANVAS_SIZE);
+
+        const userScale = that.data.scale || 1;
+
+        const sysInfoSeg = wx.getSystemInfoSync();
+        const benchmarkLevelSeg = sysInfoSeg.benchmarkLevel || 10;
+        let MAX_CANVAS_DIMENSION;
+        if (benchmarkLevelSeg >= 30) {
+          MAX_CANVAS_DIMENSION = 16384;
+        } else if (benchmarkLevelSeg >= 23) {
+          MAX_CANVAS_DIMENSION = 8192;
+        } else {
+          MAX_CANVAS_DIMENSION = 4096;
+        }
+        let scaledWidth = canvasWidth * userScale;
+        let scaledHeight = canvasHeight * userScale;
+        if (scaledWidth > MAX_CANVAS_DIMENSION || scaledHeight > MAX_CANVAS_DIMENSION) {
+          const scaleRatio = MAX_CANVAS_DIMENSION / Math.max(scaledWidth, scaledHeight);
+          scaledWidth *= scaleRatio;
+          scaledHeight *= scaleRatio;
+        }
+        canvas.width = Math.floor(scaledWidth);
+        canvas.height = Math.floor(scaledHeight);
+
+        that.canvasNode = canvas;
+        that.canvasCtx = ctx;
+
+        ctx.fillStyle = '#f0f0f0';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const scaleX = imageWidth > 0 ? canvasWidth / imageWidth : 1;
+        const scaleY = imageHeight > 0 ? canvasHeight / imageHeight : 1;
+        const baseScale = Math.min(scaleX, scaleY, 1);
+        const scale = baseScale * userScale;
+
+        const actualCanvasWidth = canvas.width;
+        const actualCanvasHeight = canvas.height;
+        const totalSegmentWidth = imageWidth * scale;
+        const totalSegmentHeight = imageHeight * scale;
+        const baseOffsetX = (actualCanvasWidth - totalSegmentWidth) / 2;
+        const baseOffsetY = (actualCanvasHeight - totalSegmentHeight) / 2;
+        const offsetX = baseOffsetX + (this.data.offsetX || 0);
+        const offsetY = baseOffsetY + (this.data.offsetY || 0);
+
+        const buffer = 50;
+        const visibleLeft = -buffer;
+        const visibleRight = actualCanvasWidth + buffer;
+        const visibleTop = -buffer;
+        const visibleBottom = actualCanvasHeight + buffer;
+
+        let gridSize = 10;
+        let maxCol = 0, maxRow = 0;
+        if (segments.length > 0) {
+          let gridSizeW = 0, gridSizeH = 0;
+          let sizeCount = 0;
+          for (const seg of segments) {
+            if (seg.col !== undefined) {
+              maxCol = Math.max(maxCol, seg.col);
+              maxRow = Math.max(maxRow, seg.row);
+            }
+            if (seg.width > 0 && seg.height > 0) {
+              gridSizeW += seg.width;
+              gridSizeH += seg.height;
+              sizeCount++;
+            }
+          }
+          if (sizeCount > 0) {
+            gridSize = Math.round((gridSizeW / sizeCount + gridSizeH / sizeCount) / 2) || 10;
+          }
+        }
+        const cols = maxCol + 1;
+        const rows = maxRow + 1;
+
+        for (const segment of segments) {
+          const x = offsetX + segment.x * scale;
+          const y = offsetY + segment.y * scale;
+          const width = segment.width * scale;
+          const height = segment.height * scale;
+
+          if (x + width < visibleLeft || x > visibleRight ||
+              y + height < visibleTop || y > visibleBottom) {
+            continue;
+          }
+
+          const shouldRemoveEdge = that.data.removeEdge !== false;
+          if (shouldRemoveEdge && segment.isEdge) continue;
+
+          ctx.fillStyle = segment.markHex || '#cccccc';
+          ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(width), Math.ceil(height));
+
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(width) - 1, Math.ceil(height) - 1);
+
+          const cellSize = Math.min(width, height);
+          if (that.data.showCode && that.data.hasUserZoomed && cellSize >= 8 && (!shouldRemoveEdge || !segment.isEdge)) {
+            const isLight = isLightColor(segment.markHex);
+            ctx.fillStyle = isLight ? '#333333' : '#ffffff';
+            ctx.font = `${Math.max(6, cellSize * 0.25)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(formatMarkCode(segment.markCode), x + width / 2, y + height / 2);
+          }
+        }
+
+        if (segments.length > 0) {
+          const cellSize = gridSize * scale;
+
+          let startCol, endCol;
+          if (that.data.mirrorImage) {
+            startCol = Math.max(0, Math.ceil((actualCanvasWidth - offsetX - visibleRight - cellSize) / cellSize));
+            endCol = Math.min(cols - 1, Math.floor((actualCanvasWidth - offsetX - visibleLeft) / cellSize));
+          } else {
+            startCol = Math.max(0, Math.floor((visibleLeft - offsetX) / cellSize));
+            endCol = Math.min(cols - 1, Math.ceil((visibleRight - offsetX) / cellSize));
+          }
+          const startRow = Math.max(0, Math.floor((visibleTop - offsetY) / cellSize));
+          const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - offsetY) / cellSize));
+
+          if (that.data.hasUserZoomed && gridSize * scale >= 8) {
+            that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
+            that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
+          }
+        }
+
+        that.isRendering = false;
+      });
+  },
+
+  _drawGrid(ctx, canvas, gridData, cols, rows, gridSize) {
+    const scale = this.data.scale || 1;
+    const offsetX = this.data.offsetX || 0;
+    const offsetY = this.data.offsetY || 0;
+    const canvasWidth = this.data.canvasWidth || 300;
+    const canvasHeight = this.data.canvasHeight || 300;
+
+    const totalGridWidth = cols * gridSize;
+    const totalGridHeight = rows * gridSize;
+    const scaleX = totalGridWidth > 0 ? canvasWidth / totalGridWidth : 1;
+    const scaleY = totalGridHeight > 0 ? canvasHeight / totalGridHeight : 1;
+    const baseScale = Math.min(scaleX, scaleY, 1);
+    const finalScale = baseScale * scale;
+
+    const actualCanvasWidth = canvas.width;
+    const actualCanvasHeight = canvas.height;
+    const baseOffsetX = (actualCanvasWidth - totalGridWidth * finalScale) / 2;
+    const baseOffsetY = (actualCanvasHeight - totalGridHeight * finalScale) / 2;
+    const finalOffsetX = baseOffsetX + offsetX;
+    const finalOffsetY = baseOffsetY + offsetY;
+
+    ctx.fillStyle = '#f0f0f0';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const cellSize = gridSize * finalScale;
+    const buffer = cellSize;
+    const visibleLeft = -buffer;
+    const visibleRight = actualCanvasWidth + buffer;
+    const visibleTop = -buffer;
+    const visibleBottom = actualCanvasHeight + buffer;
+
+    const startCol = Math.max(0, Math.floor((visibleLeft - finalOffsetX) / cellSize));
+    const endCol = Math.min(cols - 1, Math.ceil((visibleRight - finalOffsetX) / cellSize));
+    const startRow = Math.max(0, Math.floor((visibleTop - finalOffsetY) / cellSize));
+    const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - finalOffsetY) / cellSize));
+
+    const shouldRemoveEdge = this.data.removeEdge !== false;
+
+    for (let row = startRow; row <= endRow; row++) {
+      for (let col = startCol; col <= endCol; col++) {
+        const cell = gridData[row] && gridData[row][col];
+        if (!cell || !cell.markCode || (shouldRemoveEdge && cell.isEdge)) continue;
+
+        const cellWidth = cellSize;
+        const cellHeight = cellSize;
+        const x = finalOffsetX + col * cellSize;
+        const y = finalOffsetY + row * cellSize;
+
+        ctx.fillStyle = cell.markHex;
+        ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(cellWidth), Math.ceil(cellHeight));
+
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
+
+        const size = Math.min(cellWidth, cellHeight);
+        if (this.data.showCode && this.data.hasUserZoomed && size >= 8 && (!shouldRemoveEdge || !cell.isEdge)) {
+          const isLight = isLightColor(cell.markHex);
+          ctx.fillStyle = isLight ? '#333333' : '#ffffff';
+          ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
+        }
+      }
+    }
+  },
+
+  drawSplitLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale) {
+    const splitMode = this.data.splitMode;
+    if (!splitMode) return;
+
+    const totalWidth = cols * gridSize * scale;
+    const totalHeight = rows * gridSize * scale;
+    const cellSize = gridSize * scale;
+
+    const drawGridLines = (lineWidth, strokeColor, dashOffset) => {
+      ctx.setLineDash([12, 8]);
+      ctx.lineWidth = lineWidth;
+      ctx.strokeStyle = strokeColor;
+      ctx.lineDashOffset = dashOffset || 0;
+
+      if (splitMode === 'grid52' || splitMode === 'grid104') {
+        const blockSize = splitMode === 'grid52' ? 52 : 104;
+
+        for (let c = blockSize; c < cols; c += blockSize) {
+          const x = offsetX + c * cellSize;
+          ctx.beginPath();
+          ctx.moveTo(x, offsetY);
+          ctx.lineTo(x, offsetY + totalHeight);
+          ctx.stroke();
+        }
+        for (let r = blockSize; r < rows; r += blockSize) {
+          const y = offsetY + r * cellSize;
+          ctx.beginPath();
+          ctx.moveTo(offsetX, y);
+          ctx.lineTo(offsetX + totalWidth, y);
+          ctx.stroke();
+        }
+      } else if (splitMode === 'horizontal') {
+        const midY = offsetY + totalHeight / 2;
+        ctx.beginPath();
+        ctx.moveTo(offsetX, midY);
+        ctx.lineTo(offsetX + totalWidth, midY);
+        ctx.stroke();
+      } else if (splitMode === 'vertical') {
+        const midX = offsetX + totalWidth / 2;
+        ctx.beginPath();
+        ctx.moveTo(midX, offsetY);
+        ctx.lineTo(midX, offsetY + totalHeight);
+        ctx.stroke();
+      } else if (splitMode === 'grid2x2') {
+        const midY = offsetY + totalHeight / 2;
+        const midX = offsetX + totalWidth / 2;
+        ctx.beginPath();
+        ctx.moveTo(offsetX, midY);
+        ctx.lineTo(offsetX + totalWidth, midY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(midX, offsetY);
+        ctx.lineTo(midX, offsetY + totalHeight);
+        ctx.stroke();
+      }
+    };
+
+    ctx.save();
+    drawGridLines(3, 'rgba(255, 255, 255, 0.7)', 0);
+    drawGridLines(1.5, 'rgba(0, 0, 0, 0.4)', 10);
+    ctx.restore();
+  }
+};
