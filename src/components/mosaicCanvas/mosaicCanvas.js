@@ -13,7 +13,7 @@ Component({
     mergeThreshold: { type: Number, value: 5 },
     // 处理模式: 'normal' | 'smart' - smart 模式会保留黑色边界并合并色块
     processMode: { type: String, value: 'normal' },
-    useSpecialColors: { type: Boolean, value: true },  // 是否使用特殊色
+    useSpecialColors: { type: Boolean, value: false },  // 是否使用特殊色（默认 false：不显示特殊色）
     removeEdge: { type: Boolean, value: true },  // 是否去除边缘底色
     highlightCode: { type: String, value: null },
     showCode: { type: Boolean, value: false },
