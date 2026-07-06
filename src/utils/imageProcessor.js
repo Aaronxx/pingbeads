@@ -15,11 +15,33 @@ const { MosaicProcessor } = require('./mosaicProcessor');
  */
 function colorDistance(c1, c2) {
   if (!c1 || !c2) return Infinity;
-  return Math.sqrt(
-    Math.pow(c1.r - c2.r, 2) +
-    Math.pow(c1.g - c2.g, 2) +
-    Math.pow(c1.b - c2.b, 2)
-  );
+  const dr = c1.r - c2.r;
+  const dg = c1.g - c2.g;
+  const db = c1.b - c2.b;
+  return Math.sqrt(dr * dr + dg * dg + db * db);
+}
+
+/**
+ * 颜色距离平方 —— 用于阈值比较，避免 Math.sqrt。
+ * 由于平方是单调的，(dSq <= tSq) 与 (d <= t) 等价。
+ */
+function colorDistanceSq(c1, c2) {
+  if (!c1 || !c2) return Infinity;
+  const dr = c1.r - c2.r;
+  const dg = c1.g - c2.g;
+  const db = c1.b - c2.b;
+  return dr * dr + dg * dg + db * db;
+}
+
+/**
+ * 创建 rows×cols 的二维访问标记数组（BFS 用）
+ */
+function createVisitedArray(rows, cols) {
+  const visited = new Array(rows);
+  for (let r = 0; r < rows; r++) {
+    visited[r] = new Array(cols).fill(false);
+  }
+  return visited;
 }
 
 /** 快速中位数 */
@@ -930,44 +952,38 @@ function filterEdgeSegments(segments, cols, rows, edgeColor, diffThreshold = 25)
   }
 
   // 使用连通性判断：只有通过边缘颜色连接到图片边缘的 segments 才标记为 isEdge
-  // 1. 找出所有在边缘上且与边缘颜色相同的 segments 作为起点
-  // 2. 使用 BFS 找到所有连通的与边缘颜色相同的 segments
-  // 3. 只有这些连通的 segments 才标记为 isEdge
-
-  // 创建访问标记数组
-  const visited = [];
-  for (let r = 0; r < rows; r++) {
-    visited[r] = [];
-    for (let c = 0; c < cols; c++) {
-      visited[r][c] = false;
-    }
-  }
-
-  // BFS 队列
+  const visited = createVisitedArray(rows, cols);
   const queue = [];
+  const diffThresholdSq = diffThreshold * diffThreshold;
 
-  // 将所有边缘上与边缘颜色相同的 segments 加入队列
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      // 只检查边缘行和列
-      if (row !== 0 && row !== rows - 1 && col !== 0 && col !== cols - 1) continue;
-
-      const seg = segGrid[row] && segGrid[row][col];
-      if (!seg || !seg.avgColor) continue;
-
-      const isSameAsEdge = colorDistance(seg.avgColor, edgeColor) <= diffThreshold;
-
-      if (isSameAsEdge && !visited[row][col]) {
-        visited[row][col] = true;
-        queue.push({ row, col });
-      }
+  // 性能：只扫描周长（4 条边），而非整个 rows×cols 网格
+  const checkEdgeCell = (row, col) => {
+    const seg = segGrid[row] && segGrid[row][col];
+    if (!seg || !seg.avgColor) return;
+    if (visited[row][col]) return;
+    if (colorDistanceSq(seg.avgColor, edgeColor) <= diffThresholdSq) {
+      visited[row][col] = true;
+      queue.push({ row, col });
     }
+  };
+  // 顶/底两行
+  for (let col = 0; col < cols; col++) {
+    checkEdgeCell(0, col);
+    if (rows > 1) checkEdgeCell(rows - 1, col);
+  }
+  // 左/右两列（跳过已处理过的顶/底角）
+  for (let row = 1; row < rows - 1; row++) {
+    checkEdgeCell(row, 0);
+    if (cols > 1) checkEdgeCell(row, cols - 1);
   }
 
   // BFS 遍历所有连通的与边缘颜色相同的 segments
+  // 性能：用索引游标代替 queue.shift()（shift 是 O(n)，BFS 会退化为 O(n²)）
   const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-  while (queue.length > 0) {
-    const { row, col } = queue.shift();
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    const row = cur.row, col = cur.col;
 
     for (const [dr, dc] of directions) {
       const newRow = row + dr;
@@ -979,9 +995,7 @@ function filterEdgeSegments(segments, cols, rows, edgeColor, diffThreshold = 25)
       const seg = segGrid[newRow] && segGrid[newRow][newCol];
       if (!seg || !seg.avgColor) continue;
 
-      const isSameAsEdge = colorDistance(seg.avgColor, edgeColor) <= diffThreshold;
-
-      if (isSameAsEdge) {
+      if (colorDistanceSq(seg.avgColor, edgeColor) <= diffThresholdSq) {
         visited[newRow][newCol] = true;
         queue.push({ row: newRow, col: newCol });
       }
@@ -1055,41 +1069,36 @@ function filterEdgeBlocks(gridData, rows, cols, gridSize, edgeColor, boundary, d
 
     // 不裁剪，只标记边缘格子
     // 使用连通性判断：只有通过边缘颜色连接到图片边缘的格子才不显示色号
-    // 创建访问标记数组
-    const visited = [];
-    for (let r = 0; r < rows; r++) {
-      visited[r] = [];
-      for (let c = 0; c < cols; c++) {
-        visited[r][c] = false;
-      }
-    }
-
-    // BFS 队列
+    const visited = createVisitedArray(rows, cols);
     const queue = [];
+    const diffThresholdSq = diffThreshold * diffThreshold;
 
-    // 将所有边缘上与边缘颜色相同的格子加入队列
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        // 只检查边缘行和列
-        if (row !== 0 && row !== rows - 1 && col !== 0 && col !== cols - 1) continue;
-
-        const cell = gridData[row] && gridData[row][col];
-        if (!cell || !cell.originalRgb) continue;
-
-        const color = cell.originalRgb;
-        const isSameAsEdge = colorDistance(color, edgeColor) <= diffThreshold;
-
-        if (isSameAsEdge && !visited[row][col]) {
-          visited[row][col] = true;
-          queue.push({ row, col });
-        }
+    // 性能：只扫描周长（4 条边），而非整个 rows×cols 网格
+    const enqueueEdgeCell = (row, col) => {
+      const cell = gridData[row] && gridData[row][col];
+      if (!cell || !cell.originalRgb) return;
+      if (visited[row][col]) return;
+      if (colorDistanceSq(cell.originalRgb, edgeColor) <= diffThresholdSq) {
+        visited[row][col] = true;
+        queue.push({ row, col });
       }
+    };
+    for (let col = 0; col < cols; col++) {
+      enqueueEdgeCell(0, col);
+      if (rows > 1) enqueueEdgeCell(rows - 1, col);
+    }
+    for (let row = 1; row < rows - 1; row++) {
+      enqueueEdgeCell(row, 0);
+      if (cols > 1) enqueueEdgeCell(row, cols - 1);
     }
 
     // BFS 遍历所有连通的与边缘颜色相同的格子
+    // 性能：用索引游标代替 queue.shift()（shift 是 O(n)，BFS 会退化为 O(n²)）
     const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-    while (queue.length > 0) {
-      const { row, col } = queue.shift();
+    let head = 0;
+    while (head < queue.length) {
+      const cur = queue[head++];
+      const row = cur.row, col = cur.col;
 
       for (const [dr, dc] of directions) {
         const newRow = row + dr;
@@ -1101,10 +1110,7 @@ function filterEdgeBlocks(gridData, rows, cols, gridSize, edgeColor, boundary, d
         const cell = gridData[newRow] && gridData[newRow][newCol];
         if (!cell || !cell.originalRgb) continue;
 
-        const color = cell.originalRgb;
-        const isSameAsEdge = colorDistance(color, edgeColor) <= diffThreshold;
-
-        if (isSameAsEdge) {
+        if (colorDistanceSq(cell.originalRgb, edgeColor) <= diffThresholdSq) {
           visited[newRow][newCol] = true;
           queue.push({ row: newRow, col: newCol });
         }
@@ -1131,41 +1137,36 @@ function filterEdgeBlocks(gridData, rows, cols, gridSize, edgeColor, boundary, d
   // 2. 使用 BFS 找到所有连通的与边缘颜色相同的格子
   // 3. 只有这些连通的格子才标记为 isEdge
 
-  // 创建访问标记数组
-  const visited = [];
-  for (let r = 0; r < rows; r++) {
-    visited[r] = [];
-    for (let c = 0; c < cols; c++) {
-      visited[r][c] = false;
-    }
-  }
-
-  // BFS 队列
+  const visited = createVisitedArray(rows, cols);
   const queue = [];
+  const diffThresholdSq = diffThreshold * diffThreshold;
 
-  // 2. 将所有边缘上与边缘颜色相同的格子加入队列
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      // 只检查边缘行和列
-      if (row !== 0 && row !== rows - 1 && col !== 0 && col !== cols - 1) continue;
-
-      const cell = gridData[row] && gridData[row][col];
-      if (!cell || !cell.originalRgb) continue;
-
-      const color = cell.originalRgb;
-      const isSameAsEdge = colorDistance(color, edgeColor) <= diffThreshold;
-
-      if (isSameAsEdge && !visited[row][col]) {
-        visited[row][col] = true;
-        queue.push({ row, col });
-      }
+  // 2. 性能：只扫描周长（4 条边），而非整个 rows×cols 网格
+  const enqueueEdgeCell = (row, col) => {
+    const cell = gridData[row] && gridData[row][col];
+    if (!cell || !cell.originalRgb) return;
+    if (visited[row][col]) return;
+    if (colorDistanceSq(cell.originalRgb, edgeColor) <= diffThresholdSq) {
+      visited[row][col] = true;
+      queue.push({ row, col });
     }
+  };
+  for (let col = 0; col < cols; col++) {
+    enqueueEdgeCell(0, col);
+    if (rows > 1) enqueueEdgeCell(rows - 1, col);
+  }
+  for (let row = 1; row < rows - 1; row++) {
+    enqueueEdgeCell(row, 0);
+    if (cols > 1) enqueueEdgeCell(row, cols - 1);
   }
 
   // 3. BFS 遍历所有连通的与边缘颜色相同的格子
+  // 性能：用索引游标代替 queue.shift()（shift 是 O(n)，BFS 会退化为 O(n²)）
   const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]]; // 上下左右
-  while (queue.length > 0) {
-    const { row, col } = queue.shift();
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    const row = cur.row, col = cur.col;
 
     for (const [dr, dc] of directions) {
       const newRow = row + dr;
@@ -1178,10 +1179,7 @@ function filterEdgeBlocks(gridData, rows, cols, gridSize, edgeColor, boundary, d
       const cell = gridData[newRow] && gridData[newRow][newCol];
       if (!cell || !cell.originalRgb) continue;
 
-      const color = cell.originalRgb;
-      const isSameAsEdge = colorDistance(color, edgeColor) <= diffThreshold;
-
-      if (isSameAsEdge) {
+      if (colorDistanceSq(cell.originalRgb, edgeColor) <= diffThresholdSq) {
         visited[newRow][newCol] = true;
         queue.push({ row: newRow, col: newCol });
       }
