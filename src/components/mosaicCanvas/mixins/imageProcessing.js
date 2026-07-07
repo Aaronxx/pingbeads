@@ -391,8 +391,10 @@ module.exports = {
     // 孤立区域过滤（去杂色）：按 spotCleanLevel 预设强度合并空间孤立的小色块
     if (this.data.spotCleanLevel > 0) {
       const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
+      console.log('[spotClean] level=', this.data.spotCleanLevel, 'params=', spotParams, 'rows=', finalRows, 'cols=', finalCols);
       if (spotParams) {
-        filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.minSize, spotParams.colorThreshold);
+        const modified = filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.minSize, spotParams.colorThreshold);
+        console.log('[spotClean] modified=', modified);
       }
     }
 
@@ -474,8 +476,10 @@ module.exports = {
     // 孤立区域过滤（去杂色）：按 spotCleanLevel 预设强度合并空间孤立的小色块
     if (this.data.spotCleanLevel > 0) {
       const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
+      console.log('[spotClean] level=', this.data.spotCleanLevel, 'params=', spotParams, 'rows=', finalRows, 'cols=', finalCols);
       if (spotParams) {
-        filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.minSize, spotParams.colorThreshold);
+        const modified = filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.minSize, spotParams.colorThreshold);
+        console.log('[spotClean] modified=', modified);
       }
     }
 

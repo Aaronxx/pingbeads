@@ -27,11 +27,17 @@ function filterIsolatedRegions(gridData, rows, cols, minSize, colorThreshold) {
   const directions = [-cols, cols, -1, 1]; // 上下左右偏移量
   const colorThresholdSq = colorThreshold * colorThreshold; // 用平方距离比较，避免 sqrt
   let modifiedCount = 0;
+  let skippedLarge = 0;
+  let skippedSmall = 0;
+  let skippedNoNeighbor = 0;
+  let skippedSimilarColor = 0;
 
   // 预分配队列和区域缓冲区
   const maxQueueSize = minSize + 1;
   const queue = new Int32Array(maxQueueSize);
   const regionCellsBuf = new Int32Array(maxQueueSize);
+
+  console.log('[filterIsolated] start, rows=', rows, 'cols=', cols, 'minSize=', minSize, 'colorThreshold=', colorThreshold, 'colorThresholdSq=', colorThresholdSq, 'totalCells=', totalCells);
 
   for (let idx = 0; idx < totalCells; idx++) {
     if (visited[idx]) continue;
@@ -111,7 +117,10 @@ function filterIsolatedRegions(gridData, rows, cols, minSize, colorThreshold) {
     }
 
     // 判定是否孤立：连通块 ≤ minSize 才考虑合并
-    if (regionOverflow) continue;
+    if (regionOverflow) {
+      skippedLarge++;
+      continue;
+    }
 
     // 找邻居中出现次数最多的主色
     let bestColor = null;
@@ -123,7 +132,10 @@ function filterIsolatedRegions(gridData, rows, cols, minSize, colorThreshold) {
       }
     }
 
-    if (!bestColor) continue; // 无邻居（不应出现）
+    if (!bestColor) {
+      skippedNoNeighbor++;
+      continue; // 无邻居（不应出现）
+    }
 
     // 找到主色的 hex/rgb 信息（从第一个该颜色的邻居格获取）
     let replacementHex = null;
@@ -149,7 +161,10 @@ function filterIsolatedRegions(gridData, rows, cols, minSize, colorThreshold) {
       if (replacementHex) break;
     }
 
-    if (!replacementHex) continue;
+    if (!replacementHex) {
+      skippedNoNeighbor++;
+      continue;
+    }
 
     // 条件 B：和邻居主色的差异 > colorThreshold 才改写
     //（差异小说明可能是细节，不应改写）
@@ -159,7 +174,10 @@ function filterIsolatedRegions(gridData, rows, cols, minSize, colorThreshold) {
     const repDb = regionRepRgb.b - replacementRgb.b;
     const repDistSq = repDr * repDr + repDg * repDg + repDb * repDb;
 
-    if (repDistSq <= colorThresholdSq) continue; // 和邻居颜色相近，不改写
+    if (repDistSq <= colorThresholdSq) {
+      skippedSimilarColor++;
+      continue; // 和邻居颜色相近，不改写
+    }
 
     // 统一改写整块
     for (let i = 0; i < regionSize; i++) {
@@ -173,6 +191,8 @@ function filterIsolatedRegions(gridData, rows, cols, minSize, colorThreshold) {
     }
     modifiedCount++;
   }
+
+  console.log('[filterIsolated] done, modified=', modifiedCount, 'skippedLarge=', skippedLarge, 'skippedSmall=', skippedSmall, 'skippedNoNeighbor=', skippedNoNeighbor, 'skippedSimilarColor=', skippedSimilarColor);
 
   return modifiedCount;
 }

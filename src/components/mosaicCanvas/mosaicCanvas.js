@@ -146,14 +146,17 @@ Component({
     },
     // 孤立区域过滤强度变化：需重新从快照应用颜色 + 过滤
     'spotCleanLevel': function() {
+      console.log('[spotClean] observer triggered, level=', this.data.spotCleanLevel);
       this._waitForData((rows, cols, gridSize) => {
         this.setData({ isProcessing: true });
         this.resetToOriginalColors(this.cachedGridData, rows, cols);
         this.reapplyVibrantScale(this.cachedGridData, rows, cols);
         if (this.data.spotCleanLevel > 0) {
           const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
+          console.log('[spotClean] observer params=', spotParams);
           if (spotParams) {
-            filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.minSize, spotParams.colorThreshold);
+            const modified = filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.minSize, spotParams.colorThreshold);
+            console.log('[spotClean] observer modified=', modified);
           }
         }
         const stats = this.calculateStats(this.cachedGridData, rows, cols);
