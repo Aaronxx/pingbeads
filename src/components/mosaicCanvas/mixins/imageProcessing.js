@@ -3,7 +3,7 @@
  */
 const { processSimple, processWithSmartRegions, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData, processMosaicV2, desaturateGrayColors } = require('../../../utils/imageProcessor');
 const { setExcludeSpecial } = require('../../../utils/colorMapper');
-const { filterIsolatedRegions, getSpotCleanParams } = require('../../../utils/spotCleaner');
+const { filterIsolatedRegions, preserveEdgeQuantization, getSpotCleanParams } = require('../../../utils/spotCleaner');
 
 module.exports = {
   _waitForData(callback, retryCount) {
@@ -393,7 +393,7 @@ module.exports = {
       const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
       console.log('[spotClean] level=', this.data.spotCleanLevel, 'params=', spotParams, 'rows=', finalRows, 'cols=', finalCols);
       if (spotParams) {
-        const modified = filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.colorThreshold);
+        const modified = filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.spotThreshold);
         console.log('[spotClean] modified=', modified);
       }
     }
@@ -468,6 +468,16 @@ module.exports = {
       desaturateGrayColors(result.gridData, result.rows, result.cols, this.data.antiGrayIntensity);
     }
 
+    // 保边量化：在 markCode 映射之后，用原始颜色做连通区域扫描，
+    // 让空间相邻、颜色相近的格子统一为同一个 markCode，避免连续色块被切成碎片
+    if (this.data.spotCleanLevel > 0) {
+      const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
+      if (spotParams) {
+        const edgeModified = preserveEdgeQuantization(result.gridData, result.rows, result.cols, spotParams.edgeThreshold);
+        console.log('[edgeQuantization] level=', this.data.spotCleanLevel, 'threshold=', spotParams.edgeThreshold, 'modified=', edgeModified);
+      }
+    }
+
     const presetResult = this._applyColorAndPreset(result.gridData, result.rows, result.cols, qualityGridSize);
     const finalGridData = presetResult.gridData;
     const finalCols = presetResult.cols;
@@ -478,7 +488,7 @@ module.exports = {
       const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
       console.log('[spotClean] level=', this.data.spotCleanLevel, 'params=', spotParams, 'rows=', finalRows, 'cols=', finalCols);
       if (spotParams) {
-        const modified = filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.colorThreshold);
+        const modified = filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.spotThreshold);
         console.log('[spotClean] modified=', modified);
       }
     }

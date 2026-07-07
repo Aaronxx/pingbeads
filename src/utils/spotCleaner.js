@@ -119,20 +119,163 @@ function filterIsolatedRegions(gridData, rows, cols, colorThreshold) {
 }
 
 /**
+ * 保边量化（连通区域合并）
+ *
+ * 在 markCode 映射之后，用原始颜色（rawRgb）做连通区域扫描，
+ * 对于连通区域内的格子，统一为出现次数最多的 markCode。
+ *
+ * 这样空间相邻、颜色相近的格子会被强制映射到同一个 markCode，
+ * 避免连续的色块被切成不连续的碎片。
+ *
+ * @param {Array} gridData - 二维网格数据
+ * @param {number} rows - 行数
+ * @param {number} cols - 列数
+ * @param {number} colorThreshold - 颜色差异阈值（rawRgb 欧氏距离 < 此值的视为同色）
+ * @returns {number} 被修改的格子数量（0 表示无修改）
+ */
+function preserveEdgeQuantization(gridData, rows, cols, colorThreshold) {
+  if (!gridData || rows <= 0 || cols <= 0 || colorThreshold <= 0) return 0;
+
+  const totalCells = rows * cols;
+  const visited = new Uint8Array(totalCells);
+  const directions = [-cols, cols, -1, 1]; // 上下左右偏移量
+  const colorThresholdSq = colorThreshold * colorThreshold;
+  let modifiedCount = 0;
+
+  for (let idx = 0; idx < totalCells; idx++) {
+    if (visited[idx]) continue;
+
+    const row = (idx / cols) | 0;
+    const col = idx % cols;
+
+    const cell = gridData[row] && gridData[row][col];
+    // 跳过空格、无 rawRgb 的格
+    if (!cell || !cell.rawRgb) {
+      visited[idx] = 1;
+      continue;
+    }
+
+    // BFS 收集颜色相似的连通块（用 rawRgb 距离判定）
+    const regionRawRgb = cell.rawRgb;
+    const regionCells = [];
+    const markCodeCounts = {}; // { markCode: count }
+
+    const queue = [idx];
+    visited[idx] = 1;
+    let head = 0;
+
+    while (head < queue.length) {
+      const curIdx = queue[head++];
+      regionCells.push(curIdx);
+
+      const curRow = (curIdx / cols) | 0;
+      const curCol = curIdx % cols;
+
+      // 统计当前格子的 markCode
+      const curCell = gridData[curRow][curCol];
+      if (curCell && curCell.markCode) {
+        const code = curCell.markCode;
+        markCodeCounts[code] = (markCodeCounts[code] || 0) + 1;
+      }
+
+      // 扩展邻居
+      for (let d = 0; d < 4; d++) {
+        const nIdx = curIdx + directions[d];
+        if (nIdx < 0 || nIdx >= totalCells) continue;
+        if (d === 2 && curCol === 0) continue; // 左
+        if (d === 3 && curCol === cols - 1) continue; // 右
+
+        if (visited[nIdx]) continue;
+
+        const nRow = (nIdx / cols) | 0;
+        const nCol = nIdx % cols;
+        const neighbor = gridData[nRow] && gridData[nRow][nCol];
+        if (!neighbor || !neighbor.rawRgb) {
+          visited[nIdx] = 1;
+          continue;
+        }
+
+        // 颜色相似度判定：rawRgb 欧氏距离平方 < colorThresholdSq
+        const nRawRgb = neighbor.rawRgb;
+        const dr = regionRawRgb.r - nRawRgb.r;
+        const dg = regionRawRgb.g - nRawRgb.g;
+        const db = regionRawRgb.b - nRawRgb.b;
+        const distSq = dr * dr + dg * dg + db * db;
+
+        if (distSq < colorThresholdSq) {
+          visited[nIdx] = 1;
+          queue.push(nIdx);
+        }
+      }
+    }
+
+    // 如果连通块只有 1 个格子，不需要合并
+    if (regionCells.length <= 1) continue;
+
+    // 找连通块中出现次数最多的 markCode
+    let bestCode = null;
+    let bestCount = 0;
+    for (const code in markCodeCounts) {
+      if (markCodeCounts[code] > bestCount) {
+        bestCount = markCodeCounts[code];
+        bestCode = code;
+      }
+    }
+
+    if (!bestCode) continue;
+
+    // 找到 bestCode 的 hex/rgb 信息
+    let bestHex = null;
+    let bestRgb = null;
+    for (const cellIdx of regionCells) {
+      const r = (cellIdx / cols) | 0;
+      const c = cellIdx % cols;
+      const cell = gridData[r][c];
+      if (cell && cell.markCode === bestCode) {
+        bestHex = cell.markHex;
+        bestRgb = cell.markRgb;
+        break;
+      }
+    }
+
+    if (!bestHex) continue;
+
+    // 统一改写连通块内所有格子的 markCode
+    let changed = false;
+    for (const cellIdx of regionCells) {
+      const r = (cellIdx / cols) | 0;
+      const c = cellIdx % cols;
+      const cell = gridData[r][c];
+      if (cell && cell.markCode !== bestCode) {
+        cell.markCode = bestCode;
+        cell.markHex = bestHex;
+        cell.markRgb = bestRgb ? { ...bestRgb } : null;
+        changed = true;
+      }
+    }
+
+    if (changed) modifiedCount++;
+  }
+
+  return modifiedCount;
+}
+
+/**
  * 根据 spotCleanLevel 获取过滤参数
  * @param {number} level - 0=关, 1=轻度, 2=中度, 3=强度
- * @returns {{ colorThreshold: number } | null}
+ * @returns {{ edgeThreshold: number, spotThreshold: number } | null}
  */
 function getSpotCleanParams(level) {
   switch (level) {
-    case 1: return { colorThreshold: 80 };   // 轻度：只去最明显的杂色点
-    case 2: return { colorThreshold: 50 };   // 中度：去更多杂色点
-    case 3: return { colorThreshold: 30 };   // 强度：去大部分杂色点
+    case 1: return { edgeThreshold: 30, spotThreshold: 80 };   // 轻度：保边30，去杂色80
+    case 2: return { edgeThreshold: 50, spotThreshold: 50 };   // 中度：保边50，去杂色50
+    case 3: return { edgeThreshold: 80, spotThreshold: 30 };   // 强度：保边80，去杂色30
     default: return null;
   }
 }
 
 module.exports = {
   filterIsolatedRegions,
+  preserveEdgeQuantization,
   getSpotCleanParams
 };

@@ -5,7 +5,7 @@ const interaction = require('./mixins/interaction');
 const colorReplace = require('./mixins/colorReplace');
 const imageProcessing = require('./mixins/imageProcessing');
 const exportPreset = require('./mixins/exportPreset');
-const { filterIsolatedRegions, getSpotCleanParams } = require('../../utils/spotCleaner');
+const { filterIsolatedRegions, preserveEdgeQuantization, getSpotCleanParams } = require('../../utils/spotCleaner');
 
 Component({
   properties: {
@@ -135,7 +135,7 @@ Component({
         if (this.data.spotCleanLevel > 0) {
           const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
           if (spotParams) {
-            filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.colorThreshold);
+            filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.spotThreshold);
           }
         }
         const stats = this.calculateStats(this.cachedGridData, rows, cols);
@@ -155,7 +155,7 @@ Component({
           const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
           console.log('[spotClean] observer params=', spotParams);
           if (spotParams) {
-            const modified = filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.colorThreshold);
+            const modified = filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.spotThreshold);
             console.log('[spotClean] observer modified=', modified);
           }
         }
@@ -227,7 +227,7 @@ Component({
         if (this.data.spotCleanLevel > 0) {
           const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
           if (spotParams) {
-            filterIsolatedRegions(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols, spotParams.colorThreshold);
+            filterIsolatedRegions(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols, spotParams.spotThreshold);
           }
         }
 
