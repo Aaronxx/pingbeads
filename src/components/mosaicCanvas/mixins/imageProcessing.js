@@ -485,9 +485,10 @@ module.exports = {
 
     // 保边量化：在鲜艳度调节之后执行，修复鲜艳度造成的连续色块碎片
     // 用原始颜色（rawRgb）做连通区域扫描，让空间相邻、颜色相近的格子统一为同一个 markCode
+    // edgeThreshold = 0 时跳过保边量化（轻度模式只做去杂色）
     if (this.data.spotCleanLevel > 0) {
       const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
-      if (spotParams) {
+      if (spotParams && spotParams.edgeThreshold > 0) {
         const edgeModified = preserveEdgeQuantization(finalGridData, finalRows, finalCols, spotParams.edgeThreshold);
         console.log('[edgeQuantization] level=', this.data.spotCleanLevel, 'threshold=', spotParams.edgeThreshold, 'modified=', edgeModified);
       }

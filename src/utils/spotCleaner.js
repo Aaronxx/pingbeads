@@ -281,7 +281,7 @@ function preserveEdgeQuantization(gridData, rows, cols, colorThreshold) {
  */
 function getSpotCleanParams(level) {
   switch (level) {
-    case 1: return { edgeThreshold: 30, spotThreshold: 80 };   // 轻度：保边30，去杂色80
+    case 1: return { edgeThreshold: 0, spotThreshold: 80 };   // 轻度：只去杂色，不做保边量化
     case 2: return { edgeThreshold: 50, spotThreshold: 50 };   // 中度：保边50，去杂色50
     case 3: return { edgeThreshold: 80, spotThreshold: 30 };   // 强度：保边80，去杂色30
     default: return null;
