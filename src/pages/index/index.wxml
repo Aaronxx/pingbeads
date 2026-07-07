@@ -132,6 +132,7 @@
         antiGrayIntensity="{{antiGrayIntensity / 100}}"
         gridPreset="{{[gridPresetIndex, availableGridPresets[gridPresetIndex].cols, availableGridPresets[gridPresetIndex].rows]}}"
         splitMode="{{splitMode}}"
+        spotCleanLevel="{{spotCleanLevel}}"
         bind:cellClick="onCodeClick"
         bind:mosaicGenerated="onMosaicGenerated"
         bind:statsUpdate="onStatsUpdate"
