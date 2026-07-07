@@ -1,23 +1,20 @@
 /**
- * 孤立区域过滤（去杂色）
+ * 孤立区域过滤（去杂色）- 军队对抗模型
  *
- * 消除空间孤立的杂色点：格子的 markCode 和周围邻居都不同，且颜色差异大的点，并入周围主色。
- *
- * 算法思路：
- * - 不做连通区域扫描（markRgb 量化导致连通性差）
- * - 直接检查每个格子的"孤立性"：和周围8个邻居比较
- * - 如果格子的 markCode 和所有邻居都不同，且颜色差异 > threshold，就改写为主色
+ * 颜色越多的吞噬能力越强：
+ * - 对于每个格子，统计周围8个邻居的 markCode 分布
+ * - 如果邻居中某个颜色的格子数 > threshold，就改写为该颜色
+ * - 这样大片颜色会吞噬小片颜色
  *
  * @param {Array} gridData - 二维网格数据
  * @param {number} rows - 行数
  * @param {number} cols - 列数
- * @param {number} colorThreshold - 颜色差异阈值（markRgb 欧氏距离 > 此值才认为是孤立）
+ * @param {number} spotThreshold - 邻居数量阈值（邻居中某个颜色的格子数 > 此值才改写）
  * @returns {number} 被修改的格子数量（0 表示无修改）
  */
-function filterIsolatedRegions(gridData, rows, cols, colorThreshold) {
-  if (!gridData || rows <= 0 || cols <= 0 || colorThreshold <= 0) return 0;
+function filterIsolatedRegions(gridData, rows, cols, spotThreshold) {
+  if (!gridData || rows <= 0 || cols <= 0 || spotThreshold <= 0) return 0;
 
-  const colorThresholdSq = colorThreshold * colorThreshold;
   let modifiedCount = 0;
 
   // 8 个方向的偏移量
@@ -36,12 +33,9 @@ function filterIsolatedRegions(gridData, rows, cols, colorThreshold) {
       // 跳过空格、isEdge 格、无 markCode 或无 markRgb 的格
       if (!cell || !cell.markCode || !cell.markRgb || cell.isEdge || cell.isEmpty) continue;
 
-      const cellMarkRgb = cell.markRgb;
-
-      // 统计周围 8 个邻居的 markCode 和颜色距离
+      // 统计周围 8 个邻居的 markCode 分布
       const neighborColors = {}; // { markCode: count }
-      let sameCodeNeighborCount = 0;
-      let maxColorDistSq = 0;
+      let totalNeighbors = 0;
 
       for (const [dr, dc] of offsets) {
         const nr = row + dr;
@@ -49,65 +43,44 @@ function filterIsolatedRegions(gridData, rows, cols, colorThreshold) {
         if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
 
         const neighbor = gridData[nr] && gridData[nr][nc];
-        if (!neighbor || !neighbor.markCode || !neighbor.markRgb) continue;
+        if (!neighbor || !neighbor.markCode || !neighbor.markRgb || neighbor.isEdge || neighbor.isEmpty) continue;
 
-        // 统计邻居 markCode
         const ncode = neighbor.markCode;
         neighborColors[ncode] = (neighborColors[ncode] || 0) + 1;
-
-        // 如果有邻居和自己 markCode 相同，就不算孤立
-        if (ncode === cell.markCode) {
-          sameCodeNeighborCount++;
-        }
-
-        // 计算颜色距离
-        const nMarkRgb = neighbor.markRgb;
-        const dr2 = cellMarkRgb.r - nMarkRgb.r;
-        const dg2 = cellMarkRgb.g - nMarkRgb.g;
-        const db2 = cellMarkRgb.b - nMarkRgb.b;
-        const distSq = dr2 * dr2 + dg2 * dg2 + db2 * db2;
-        maxColorDistSq = Math.max(maxColorDistSq, distSq);
+        totalNeighbors++;
       }
 
-      // 判定是否孤立：
-      // 1. 没有任何邻居和自己 markCode 相同
-      // 2. 和邻居的最大颜色差异 > colorThreshold
-      if (sameCodeNeighborCount === 0 && maxColorDistSq > colorThresholdSq) {
-        // 找邻居中出现次数最多的 markCode 作为主色
-        let bestColor = null;
-        let bestCount = 0;
-        for (const code in neighborColors) {
-          if (neighborColors[code] > bestCount) {
-            bestCount = neighborColors[code];
-            bestColor = code;
+      // 如果没有邻居，跳过
+      if (totalNeighbors === 0) continue;
+
+      // 找邻居中出现次数最多的 markCode
+      let bestColor = null;
+      let bestCount = 0;
+      for (const code in neighborColors) {
+        if (neighborColors[code] > bestCount) {
+          bestCount = neighborColors[code];
+          bestColor = code;
+        }
+      }
+
+      // 如果邻居中某个颜色的格子数 > spotThreshold，且和自己不同，就改写
+      if (bestColor && bestColor !== cell.markCode && bestCount > spotThreshold) {
+        // 找到主色的 hex/rgb 信息
+        let replacementHex = null;
+        let replacementRgb = null;
+        for (const [dr, dc] of offsets) {
+          const nr = row + dr;
+          const nc = col + dc;
+          const n = gridData[nr] && gridData[nr][nc];
+          if (n && n.markCode === bestColor) {
+            replacementHex = n.markHex;
+            replacementRgb = n.markRgb;
+            break;
           }
         }
 
-        if (bestColor) {
-          // 找到主色的 hex/rgb 信息
-          let replacementHex = null;
-          let replacementRgb = null;
-          for (const [dr, dc] of offsets) {
-            const nr = row + dr;
-            const nc = col + dc;
-            const n = gridData[nr] && gridData[nr][nc];
-            if (n && n.markCode === bestColor) {
-              replacementHex = n.markHex;
-              replacementRgb = n.markRgb;
-              break;
-            }
-          }
-
-          if (replacementHex) {
-            toModify.push({ row, col, bestColor, replacementHex, replacementRgb });
-          }
-        }
-      } else if (sameCodeNeighborCount > 0) {
-        // 有邻居和自己 markCode 相同，可能是保边量化导致的
-        // 检查是否是杂色点（和邻居颜色差异大）
-        const avgNeighborDistSq = maxColorDistSq; // 简化：用最大距离
-        if (avgNeighborDistSq > colorThresholdSq * 4) {
-          // 颜色差异很大，可能是杂色点被保边量化保护了
+        if (replacementHex) {
+          toModify.push({ row, col, bestColor, replacementHex, replacementRgb });
         }
       }
     }
@@ -283,9 +256,9 @@ function preserveEdgeQuantization(gridData, rows, cols, colorThreshold) {
  */
 function getSpotCleanParams(level) {
   switch (level) {
-    case 1: return { edgeThreshold: 0, spotThreshold: 80 };   // 轻度：只去杂色，不做保边量化
-    case 2: return { edgeThreshold: 40, spotThreshold: 40 };   // 中度：保边40，去杂色40
-    case 3: return { edgeThreshold: 50, spotThreshold: 25 };   // 强度：保边50，去杂色25
+    case 1: return { edgeThreshold: 0, spotThreshold: 4 };   // 轻度：只去杂色，邻居中某个颜色 > 4 才改写
+    case 2: return { edgeThreshold: 40, spotThreshold: 3 };   // 中度：保边量化 + 去杂色，邻居 > 3 才改写
+    case 3: return { edgeThreshold: 50, spotThreshold: 2 };   // 强度：保边量化 + 去杂色，邻居 > 2 才改写
     default: return null;
   }
 }
