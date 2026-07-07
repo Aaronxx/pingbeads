@@ -476,7 +476,6 @@ Page({
 
     // 计算滑块颜色：正数变红，负数变灰
     const vibrantScale = e.detail.value;
-    console.log('[鲜艳度] 调节值:', vibrantScale);
     const blockColor = this.calculateVibrantBlockColor(vibrantScale);
     this.setData({
       vibrantScale: vibrantScale,
@@ -509,7 +508,6 @@ Page({
     if (this._checkExporting()) return;
     const sliderVal = e.detail.value;  // 0-100
     const intensity = sliderVal / 100;
-    console.log('[浊色规避] 调节值:', sliderVal, '强度:', intensity);
     setAntiGrayIntensity(intensity);  // 更新 colorMapper 查找表强度
     this.setData({
       antiGrayIntensity: sliderVal
