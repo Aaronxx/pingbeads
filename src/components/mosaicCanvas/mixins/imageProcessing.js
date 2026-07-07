@@ -468,22 +468,23 @@ module.exports = {
       desaturateGrayColors(result.gridData, result.rows, result.cols, this.data.antiGrayIntensity);
     }
 
-    // 保边量化：在 markCode 映射之后，用原始颜色做连通区域扫描，
-    // 让空间相邻、颜色相近的格子统一为同一个 markCode，避免连续色块被切成碎片
-    if (this.data.spotCleanLevel > 0) {
-      const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
-      if (spotParams) {
-        const edgeModified = preserveEdgeQuantization(result.gridData, result.rows, result.cols, spotParams.edgeThreshold);
-        console.log('[edgeQuantization] level=', this.data.spotCleanLevel, 'threshold=', spotParams.edgeThreshold, 'modified=', edgeModified);
-      }
-    }
-
+    // 先应用颜色预设（含鲜艳度调节），因为鲜艳度会改变 markCode
     const presetResult = this._applyColorAndPreset(result.gridData, result.rows, result.cols, qualityGridSize);
     const finalGridData = presetResult.gridData;
     const finalCols = presetResult.cols;
     const finalRows = presetResult.rows;
 
-    // 孤立区域过滤（去杂色）：按 spotCleanLevel 预设强度合并空间孤立的小色块
+    // 保边量化：在鲜艳度调节之后执行，修复鲜艳度造成的连续色块碎片
+    // 用原始颜色（rawRgb）做连通区域扫描，让空间相邻、颜色相近的格子统一为同一个 markCode
+    if (this.data.spotCleanLevel > 0) {
+      const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
+      if (spotParams) {
+        const edgeModified = preserveEdgeQuantization(finalGridData, finalRows, finalCols, spotParams.edgeThreshold);
+        console.log('[edgeQuantization] level=', this.data.spotCleanLevel, 'threshold=', spotParams.edgeThreshold, 'modified=', edgeModified);
+      }
+    }
+
+    // 去杂色：在保边量化之后执行，去掉真正的孤立杂色点
     if (this.data.spotCleanLevel > 0) {
       const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
       console.log('[spotClean] level=', this.data.spotCleanLevel, 'params=', spotParams, 'rows=', finalRows, 'cols=', finalCols);

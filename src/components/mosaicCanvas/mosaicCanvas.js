@@ -131,10 +131,11 @@ Component({
         this.setData({ isProcessing: true });
         this.resetToOriginalColors(this.cachedGridData, rows, cols);
         this.reapplyVibrantScale(this.cachedGridData, rows, cols);
-        // 补调孤立区域过滤（鲜艳度变化会改变 markCode，需重新过滤）
+        // 鲜艳度调节后，先做保边量化修复碎片，再做去杂色
         if (this.data.spotCleanLevel > 0) {
           const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
           if (spotParams) {
+            preserveEdgeQuantization(this.cachedGridData, rows, cols, spotParams.edgeThreshold);
             filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.spotThreshold);
           }
         }
@@ -155,6 +156,7 @@ Component({
           const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
           console.log('[spotClean] observer params=', spotParams);
           if (spotParams) {
+            preserveEdgeQuantization(this.cachedGridData, rows, cols, spotParams.edgeThreshold);
             const modified = filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.spotThreshold);
             console.log('[spotClean] observer modified=', modified);
           }
@@ -224,9 +226,11 @@ Component({
         }
 
         // 补调孤立区域过滤（gridPreset 裁剪后颜色重应用完成）
+        // 顺序：先保边量化修复碎片，再做去杂色
         if (this.data.spotCleanLevel > 0) {
           const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
           if (spotParams) {
+            preserveEdgeQuantization(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols, spotParams.edgeThreshold);
             filterIsolatedRegions(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols, spotParams.spotThreshold);
           }
         }
