@@ -1,35 +1,37 @@
 /**
  * 孤立区域过滤（去杂色）
  *
- * 消除空间孤立的杂色点：连通区域 ≤ minSize 个豆的小色块，并入周围主色。
- * 与 aggregateSimilarColors 互补——后者按颜色相似度全局合并，本函数按空间连通性合并。
+ * 消除空间孤立的杂色点：连通区域 ≤ minSize 个豆、且和邻居主色差异大的小色块，并入周围主色。
+ *
+ * 与 aggregateSimilarColors 互补：
+ * - aggregateSimilarColors：按颜色相似度全局合并（K-means 聚类）
+ * - filterIsolatedRegions：按空间连通性 + 颜色差异合并（连通区域扫描）
  *
  * 性能优化：
  * - 整数编码（row*cols+col）替代对象，减少内存分配
  * - Uint8Array 替代二维数组，减少 GC 压力
  * - 大区域 BFS 提前终止（超过 minSize 即停止收集）
- */
-
-/**
- * 过滤孤立的小色块
+ *
  * @param {Array} gridData - 二维网格数据
  * @param {number} rows - 行数
  * @param {number} cols - 列数
- * @param {number} minSize - 最小保留面积（连通块 ≤ 此值的会被合并）
+ * @param {number} minSize - 最小保留面积（连通块 ≤ 此值的才会被考虑合并）
+ * @param {number} colorThreshold - 颜色差异阈值（连通判定用，markRgb 欧氏距离 < 此值的视为同色）
  * @returns {number} 被修改的色块数量（0 表示无修改）
  */
-function filterIsolatedRegions(gridData, rows, cols, minSize) {
-  if (!gridData || rows <= 0 || cols <= 0 || minSize <= 0) return 0;
+function filterIsolatedRegions(gridData, rows, cols, minSize, colorThreshold) {
+  if (!gridData || rows <= 0 || cols <= 0 || minSize <= 0 || colorThreshold <= 0) return 0;
 
   const totalCells = rows * cols;
-  // Uint8Array 比二维数组快得多，内存占用也更小
   const visited = new Uint8Array(totalCells);
-  const directions = [-cols, cols, -1, 1]; // 上下左右的偏移量
+  const directions = [-cols, cols, -1, 1]; // 上下左右偏移量
+  const colorThresholdSq = colorThreshold * colorThreshold; // 用平方距离比较，避免 sqrt
   let modifiedCount = 0;
 
-  // 预分配队列（避免动态扩容），最大容量 = minSize + 1（超过即停止）
+  // 预分配队列和区域缓冲区
   const maxQueueSize = minSize + 1;
   const queue = new Int32Array(maxQueueSize);
+  const regionCellsBuf = new Int32Array(maxQueueSize);
 
   for (let idx = 0; idx < totalCells; idx++) {
     if (visited[idx]) continue;
@@ -44,13 +46,11 @@ function filterIsolatedRegions(gridData, rows, cols, minSize) {
       continue;
     }
 
-    const regionColor = cell.markCode;
-
-    // BFS 收集同色连通块（使用整数编码）
+    // BFS 收集颜色相似的连通块（用 markRgb 距离判定）
+    const regionMarkRgb = cell.markRgb;
     let regionSize = 0;
-    let regionOverflow = false; // 是否超过 minSize
-    const regionCellsBuf = new Int32Array(maxQueueSize); // 存储区域内的格子索引
-    const neighborColors = {}; // { markCode: count }
+    let regionOverflow = false;
+    const neighborColors = {}; // { markCode: count } 邻居主色统计
 
     let qHead = 0;
     let qTail = 0;
@@ -64,11 +64,12 @@ function filterIsolatedRegions(gridData, rows, cols, minSize) {
       // 如果已经收集够了，标记溢出但继续扫描邻居（用于统计邻居颜色）
       if (regionSize > minSize) {
         regionOverflow = true;
-        // 不 break，继续扫描剩余邻居以统计邻居颜色（后面不再改写，但需要 visited 标记）
       }
 
       const curRow = (curIdx / cols) | 0;
       const curCol = curIdx % cols;
+      const curCell = gridData[curRow][curCol];
+      const curMarkRgb = curCell.markRgb;
 
       for (let d = 0; d < 4; d++) {
         const nIdx = curIdx + directions[d];
@@ -88,20 +89,28 @@ function filterIsolatedRegions(gridData, rows, cols, minSize) {
           continue;
         }
 
-        if (neighbor.markCode === regionColor) {
+        // 颜色相似度判定：markRgb 欧氏距离平方 < colorThresholdSq
+        const nMarkRgb = neighbor.markRgb;
+        const dr = curMarkRgb.r - nMarkRgb.r;
+        const dg = curMarkRgb.g - nMarkRgb.g;
+        const db = curMarkRgb.b - nMarkRgb.b;
+        const distSq = dr * dr + dg * dg + db * db;
+
+        if (distSq < colorThresholdSq) {
+          // 颜色相似，加入连通块
           visited[nIdx] = 1;
           if (!regionOverflow) {
             queue[qTail++] = nIdx;
           }
         } else {
-          // 不同色邻居，统计为主色候选
+          // 颜色不同，统计为邻居主色候选
           const ncode = neighbor.markCode;
           neighborColors[ncode] = (neighborColors[ncode] || 0) + 1;
         }
       }
     }
 
-    // 判定是否孤立
+    // 判定是否孤立：连通块 ≤ minSize 才考虑合并
     if (regionOverflow) continue;
 
     // 找邻居中出现次数最多的主色
@@ -142,6 +151,16 @@ function filterIsolatedRegions(gridData, rows, cols, minSize) {
 
     if (!replacementHex) continue;
 
+    // 条件 B：和邻居主色的差异 > colorThreshold 才改写
+    //（差异小说明可能是细节，不应改写）
+    const regionRepRgb = regionMarkRgb; // 连通块代表色（第一个格子的 markRgb）
+    const repDr = regionRepRgb.r - replacementRgb.r;
+    const repDg = regionRepRgb.g - replacementRgb.g;
+    const repDb = regionRepRgb.b - replacementRgb.b;
+    const repDistSq = repDr * repDr + repDg * repDg + repDb * repDb;
+
+    if (repDistSq <= colorThresholdSq) continue; // 和邻居颜色相近，不改写
+
     // 统一改写整块
     for (let i = 0; i < regionSize; i++) {
       const rIdx = regionCellsBuf[i];
@@ -158,6 +177,21 @@ function filterIsolatedRegions(gridData, rows, cols, minSize) {
   return modifiedCount;
 }
 
+/**
+ * 根据 spotCleanLevel 获取过滤参数
+ * @param {number} level - 0=关, 1=轻度, 2=中度, 3=强度
+ * @returns {{ minSize: number, colorThreshold: number } | null}
+ */
+function getSpotCleanParams(level) {
+  switch (level) {
+    case 1: return { minSize: 2, colorThreshold: 80 };   // 轻度：≤2豆、色差>80
+    case 2: return { minSize: 5, colorThreshold: 40 };   // 中度：≤5豆、色差>40
+    case 3: return { minSize: 15, colorThreshold: 30 };  // 强度：≤15豆、色差>30
+    default: return null;
+  }
+}
+
 module.exports = {
-  filterIsolatedRegions
+  filterIsolatedRegions,
+  getSpotCleanParams
 };

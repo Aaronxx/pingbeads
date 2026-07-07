@@ -5,7 +5,7 @@ const interaction = require('./mixins/interaction');
 const colorReplace = require('./mixins/colorReplace');
 const imageProcessing = require('./mixins/imageProcessing');
 const exportPreset = require('./mixins/exportPreset');
-const { filterIsolatedRegions } = require('../../utils/spotCleaner');
+const { filterIsolatedRegions, getSpotCleanParams } = require('../../utils/spotCleaner');
 
 Component({
   properties: {
@@ -133,7 +133,10 @@ Component({
         this.reapplyVibrantScale(this.cachedGridData, rows, cols);
         // 补调孤立区域过滤（鲜艳度变化会改变 markCode，需重新过滤）
         if (this.data.spotCleanLevel > 0) {
-          filterIsolatedRegions(this.cachedGridData, rows, cols, this.data.spotCleanLevel);
+          const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
+          if (spotParams) {
+            filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.minSize, spotParams.colorThreshold);
+          }
         }
         const stats = this.calculateStats(this.cachedGridData, rows, cols);
         this.triggerEvent('statsUpdate', { stats: stats });
@@ -148,7 +151,10 @@ Component({
         this.resetToOriginalColors(this.cachedGridData, rows, cols);
         this.reapplyVibrantScale(this.cachedGridData, rows, cols);
         if (this.data.spotCleanLevel > 0) {
-          filterIsolatedRegions(this.cachedGridData, rows, cols, this.data.spotCleanLevel);
+          const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
+          if (spotParams) {
+            filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.minSize, spotParams.colorThreshold);
+          }
         }
         const stats = this.calculateStats(this.cachedGridData, rows, cols);
         this.triggerEvent('statsUpdate', { stats: stats });
@@ -216,7 +222,10 @@ Component({
 
         // 补调孤立区域过滤（gridPreset 裁剪后颜色重应用完成）
         if (this.data.spotCleanLevel > 0) {
-          filterIsolatedRegions(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols, this.data.spotCleanLevel);
+          const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
+          if (spotParams) {
+            filterIsolatedRegions(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols, spotParams.minSize, spotParams.colorThreshold);
+          }
         }
 
         const stats = this.calculateStats(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
