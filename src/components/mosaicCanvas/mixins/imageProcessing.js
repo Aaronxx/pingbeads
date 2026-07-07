@@ -489,18 +489,15 @@ module.exports = {
     if (this.data.spotCleanLevel > 0) {
       const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
       if (spotParams && spotParams.edgeThreshold > 0) {
-        const edgeModified = preserveEdgeQuantization(finalGridData, finalRows, finalCols, spotParams.edgeThreshold);
-        console.log('[edgeQuantization] level=', this.data.spotCleanLevel, 'threshold=', spotParams.edgeThreshold, 'modified=', edgeModified);
+        preserveEdgeQuantization(finalGridData, finalRows, finalCols, spotParams.edgeThreshold);
       }
     }
 
     // 去杂色：在保边量化之后执行，去掉真正的孤立杂色点
     if (this.data.spotCleanLevel > 0) {
       const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
-      console.log('[spotClean] level=', this.data.spotCleanLevel, 'params=', spotParams, 'rows=', finalRows, 'cols=', finalCols);
       if (spotParams) {
-        const modified = filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.spotThreshold);
-        console.log('[spotClean] modified=', modified);
+        filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.spotThreshold);
       }
     }
 

@@ -108,13 +108,6 @@ function filterIsolatedRegions(gridData, rows, cols, colorThreshold) {
         const avgNeighborDistSq = maxColorDistSq; // 简化：用最大距离
         if (avgNeighborDistSq > colorThresholdSq * 4) {
           // 颜色差异很大，可能是杂色点被保边量化保护了
-          console.log('[spotClean] protected by edge quantization:', {
-            row, col,
-            markCode: cell.markCode,
-            sameCodeNeighborCount,
-            maxColorDist: Math.sqrt(maxColorDistSq),
-            threshold: colorThreshold
-          });
         }
       }
     }
@@ -163,8 +156,8 @@ function preserveEdgeQuantization(gridData, rows, cols, colorThreshold) {
     const col = idx % cols;
 
     const cell = gridData[row] && gridData[row][col];
-    // 跳过空格、无 rawRgb 的格
-    if (!cell || !cell.rawRgb) {
+    // 跳过空格、isEdge 格、无 rawRgb 的格
+    if (!cell || !cell.rawRgb || cell.isEdge || cell.isEmpty) {
       visited[idx] = 1;
       continue;
     }
@@ -274,6 +267,11 @@ function preserveEdgeQuantization(gridData, rows, cols, colorThreshold) {
   return modifiedCount;
 }
 
+/**
+ * 根据 spotCleanLevel 获取过滤参数
+ * @param {number} level - 0=关, 1=轻度, 2=中度, 3=强度
+ * @returns {{ edgeThreshold: number, spotThreshold: number } | null}
+ */
 /**
  * 根据 spotCleanLevel 获取过滤参数
  * @param {number} level - 0=关, 1=轻度, 2=中度, 3=强度
