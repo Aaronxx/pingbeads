@@ -113,6 +113,9 @@ Page({
     replaceToCode: '',  // 替换的色号
     replaceScope: 'all',  // 替换范围：region=大区，all=全图
 
+    // 孤立区域过滤强度：0=关, 1=轻度(≤1豆), 2=中度(≤2豆), 3=强度(≤3豆)
+    spotCleanLevel: 0,
+
     // 帮助面板
     showHelpPanel: false,  // 是否显示帮助面板
 
@@ -472,6 +475,13 @@ Page({
     });
   },
 
+  // 孤立区域过滤强度切换（循环切换：0→1→2→3→0）
+  onSpotCleanChange(e) {
+    if (this._checkExporting()) return;
+    const level = parseInt(e.currentTarget.dataset.level) || 0;
+    this.setData({ spotCleanLevel: level });
+  },
+
   // 鲜艳度滑块变化
   onVibrantChange(e) {
     // 导出中禁止调整
@@ -635,7 +645,8 @@ Page({
       useSpecialColors: this.data.useSpecialColors,
       removeEdge: this.data.removeEdge,
       mirrorImage: this.data.mirrorImage,
-      splitMode: this.data.splitMode
+      splitMode: this.data.splitMode,
+      spotCleanLevel: this.data.spotCleanLevel
     };
   },
 
@@ -709,6 +720,8 @@ Page({
       useSpecialColors: false,
       removeEdge: false,
       mirrorImage: false,
+      // 孤立区域过滤
+      spotCleanLevel: 0,
       // 鲜艳度
       vibrantScale: 2,
       vibrantBlockColor: defaultBlockColor,

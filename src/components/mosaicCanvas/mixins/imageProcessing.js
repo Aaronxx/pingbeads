@@ -3,6 +3,7 @@
  */
 const { processSimple, processWithSmartRegions, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData, processMosaicV2, desaturateGrayColors } = require('../../../utils/imageProcessor');
 const { setExcludeSpecial } = require('../../../utils/colorMapper');
+const { filterIsolatedRegions } = require('../../../utils/spotCleaner');
 
 module.exports = {
   _waitForData(callback, retryCount) {
@@ -387,6 +388,11 @@ module.exports = {
     const finalCols = presetResult.cols;
     const finalRows = presetResult.rows;
 
+    // 孤立区域过滤（去杂色）：按 spotCleanLevel 预设强度合并空间孤立的小色块
+    if (this.data.spotCleanLevel > 0) {
+      filterIsolatedRegions(finalGridData, finalRows, finalCols, this.data.spotCleanLevel);
+    }
+
     this.cachedSegments = result.segments;
     this.cachedSegmentsWidth = srcWidth;
     this.cachedSegmentsHeight = srcHeight;
@@ -461,6 +467,11 @@ module.exports = {
     const finalGridData = presetResult.gridData;
     const finalCols = presetResult.cols;
     const finalRows = presetResult.rows;
+
+    // 孤立区域过滤（去杂色）：按 spotCleanLevel 预设强度合并空间孤立的小色块
+    if (this.data.spotCleanLevel > 0) {
+      filterIsolatedRegions(finalGridData, finalRows, finalCols, this.data.spotCleanLevel);
+    }
 
     const stats = this.calculateStats(finalGridData, finalRows, finalCols);
     this.setData({
