@@ -135,7 +135,7 @@ Component({
         if (this.data.spotCleanLevel > 0) {
           const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
           if (spotParams) {
-            filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.minSize, spotParams.colorThreshold);
+            filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.colorThreshold);
           }
         }
         const stats = this.calculateStats(this.cachedGridData, rows, cols);
@@ -155,7 +155,7 @@ Component({
           const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
           console.log('[spotClean] observer params=', spotParams);
           if (spotParams) {
-            const modified = filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.minSize, spotParams.colorThreshold);
+            const modified = filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.colorThreshold);
             console.log('[spotClean] observer modified=', modified);
           }
         }
@@ -227,7 +227,7 @@ Component({
         if (this.data.spotCleanLevel > 0) {
           const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
           if (spotParams) {
-            filterIsolatedRegions(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols, spotParams.minSize, spotParams.colorThreshold);
+            filterIsolatedRegions(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols, spotParams.colorThreshold);
           }
         }
 

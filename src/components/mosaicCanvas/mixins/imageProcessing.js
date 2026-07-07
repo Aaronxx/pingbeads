@@ -393,7 +393,7 @@ module.exports = {
       const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
       console.log('[spotClean] level=', this.data.spotCleanLevel, 'params=', spotParams, 'rows=', finalRows, 'cols=', finalCols);
       if (spotParams) {
-        const modified = filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.minSize, spotParams.colorThreshold);
+        const modified = filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.colorThreshold);
         console.log('[spotClean] modified=', modified);
       }
     }
@@ -478,7 +478,7 @@ module.exports = {
       const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
       console.log('[spotClean] level=', this.data.spotCleanLevel, 'params=', spotParams, 'rows=', finalRows, 'cols=', finalCols);
       if (spotParams) {
-        const modified = filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.minSize, spotParams.colorThreshold);
+        const modified = filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.colorThreshold);
         console.log('[spotClean] modified=', modified);
       }
     }
