@@ -281,7 +281,7 @@ function getSpotCleanParams(level) {
   switch (level) {
     case 1: return { edgeThreshold: 0, spotThreshold: 80 };   // 轻度：只去杂色，不做保边量化
     case 2: return { edgeThreshold: 50, spotThreshold: 50 };   // 中度：保边50，去杂色50
-    case 3: return { edgeThreshold: 80, spotThreshold: 30 };   // 强度：保边80，去杂色30
+    case 3: return { edgeThreshold: 60, spotThreshold: 30 };   // 强度：保边60，去杂色30
     default: return null;
   }
 }
