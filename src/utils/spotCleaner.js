@@ -74,7 +74,11 @@ function filterIsolatedRegions(gridData, rows, cols, minSize, colorThreshold) {
 
       const curRow = (curIdx / cols) | 0;
       const curCol = curIdx % cols;
-      const curCell = gridData[curRow][curCol];
+      const curCell = gridData[curRow] && gridData[curRow][curCol];
+      if (!curCell || !curCell.markRgb) {
+        // 格子无效，跳过
+        continue;
+      }
       const curMarkRgb = curCell.markRgb;
 
       for (let d = 0; d < 4; d++) {
