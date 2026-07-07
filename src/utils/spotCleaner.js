@@ -102,14 +102,20 @@ function filterIsolatedRegions(gridData, rows, cols, colorThreshold) {
             toModify.push({ row, col, bestColor, replacementHex, replacementRgb });
           }
         }
-      } else if (sameCodeNeighborCount === 0) {
-        // 孤立但颜色差异不够大，记录日志
-        console.log('[spotClean] isolated but color diff too small:', {
-          row, col,
-          markCode: cell.markCode,
-          maxColorDist: Math.sqrt(maxColorDistSq),
-          threshold: colorThreshold
-        });
+      } else if (sameCodeNeighborCount > 0) {
+        // 有邻居和自己 markCode 相同，可能是保边量化导致的
+        // 检查是否是杂色点（和邻居颜色差异大）
+        const avgNeighborDistSq = maxColorDistSq; // 简化：用最大距离
+        if (avgNeighborDistSq > colorThresholdSq * 4) {
+          // 颜色差异很大，可能是杂色点被保边量化保护了
+          console.log('[spotClean] protected by edge quantization:', {
+            row, col,
+            markCode: cell.markCode,
+            sameCodeNeighborCount,
+            maxColorDist: Math.sqrt(maxColorDistSq),
+            threshold: colorThreshold
+          });
+        }
       }
     }
   }
