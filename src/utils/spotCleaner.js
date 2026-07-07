@@ -219,6 +219,10 @@ function preserveEdgeQuantization(gridData, rows, cols, colorThreshold) {
     // 如果连通块只有 1 个格子，不需要合并
     if (regionCells.length <= 1) continue;
 
+    // 只对小区域执行合并（≤5个格子），大区域保持不变
+    // 避免大区域内的颜色被强制统一
+    if (regionCells.length > 5) continue;
+
     // 找连通块中出现次数最多的 markCode
     let bestCode = null;
     let bestCount = 0;
