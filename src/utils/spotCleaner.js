@@ -102,6 +102,14 @@ function filterIsolatedRegions(gridData, rows, cols, colorThreshold) {
             toModify.push({ row, col, bestColor, replacementHex, replacementRgb });
           }
         }
+      } else if (sameCodeNeighborCount === 0) {
+        // 孤立但颜色差异不够大，记录日志
+        console.log('[spotClean] isolated but color diff too small:', {
+          row, col,
+          markCode: cell.markCode,
+          maxColorDist: Math.sqrt(maxColorDistSq),
+          threshold: colorThreshold
+        });
       }
     }
   }
