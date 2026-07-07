@@ -17,6 +17,38 @@
             <text class="mode-text">{{processMode === 'mosaic' ? '马赛克' : '卡通'}}</text>
           </view>
         </view>
+
+        <!-- 帮助按钮（双开书+星星） -->
+        <view class="help-btn help-book-btn" bindtap="onHelpTap">
+          <!-- 星星装饰（错落分布） -->
+          <view class="book-stars">
+            <view class="star star-1">✦</view>
+            <view class="star star-2">✧</view>
+            <view class="star star-3">✦</view>
+            <view class="star star-4">✧</view>
+            <view class="star star-5">✦</view>
+          </view>
+          <!-- 双开书容器 -->
+          <view class="book-open-wrapper">
+            <!-- 书本阴影 -->
+            <view class="book-open-shadow"></view>
+            <!-- 左侧页面 -->
+            <view class="book-left-page">
+              <view class="page-content left-content"></view>
+            </view>
+            <!-- 书脊 -->
+            <view class="book-spine-open"></view>
+            <!-- 右侧页面 -->
+            <view class="book-right-page">
+              <view class="page-content right-content"></view>
+            </view>
+            <!-- 翻动的书页（从右到左） -->
+            <view class="flipping-page-open">
+              <view class="flip-page-front"></view>
+              <view class="flip-page-back"></view>
+            </view>
+          </view>
+        </view>
       </view>
 
       <!-- 右侧：豆豆数和色彩下拉 -->
@@ -405,4 +437,148 @@
 
   <!-- 隐藏的导出用 canvas -->
   <canvas type="2d" id="export-canvas" style="width: 1px; height: 1px; position: fixed; left: -100px; top: -100px;" />
+
+  <!-- 帮助面板遮罩层 -->
+  <view class="help-overlay {{showHelpPanel ? 'show' : ''}}" bindtap="onHelpClose"></view>
+
+  <!-- 帮助面板 -->
+  <view class="help-panel {{showHelpPanel ? 'show' : ''}}">
+    <!-- 面板标题栏 -->
+    <view class="panel-header">
+      <view class="panel-title">
+        <text class="panel-title-icon">📖</text>
+        <text class="panel-title-text">功能说明</text>
+      </view>
+      <view class="panel-close" bindtap="onHelpClose">
+        <text>✕</text>
+      </view>
+    </view>
+
+    <!-- 面板内容 -->
+    <scroll-view class="panel-content" scroll-y="true">
+      <!-- 顶部栏功能 -->
+      <view class="help-section">
+        <view class="help-section-title">顶部工具栏</view>
+        <view class="help-item">
+          <text class="help-item-icon">🖼️</text>
+          <view class="help-item-content">
+            <text class="help-item-name">选择图片</text>
+            <text class="help-item-desc">从相册或拍照选择图片，生成拼豆图纸</text>
+          </view>
+        </view>
+        <view class="help-item">
+          <text class="help-item-icon">🎨</text>
+          <view class="help-item-content">
+            <text class="help-item-name">卡通/马赛克</text>
+            <text class="help-item-desc">切换处理模式，卡通模式保持原图风格（适合普通卡通图），马赛克模式智能识别网格（适合有或者没有色块边界的马赛克图）</text>
+          </view>
+        </view>
+        <view class="help-item">
+          <text class="help-item-icon">🔢</text>
+          <view class="help-item-content">
+            <text class="help-item-name">豆豆数</text>
+            <text class="help-item-desc">设置每行/列的拼豆数量，数值越大细节越丰富</text>
+          </view>
+        </view>
+        <view class="help-item">
+          <text class="help-item-icon">🌈</text>
+          <view class="help-item-content">
+            <text class="help-item-name">色彩</text>
+            <text class="help-item-desc">设置拼豆颜色最大数量</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 设置面板功能 -->
+      <view class="help-section">
+        <view class="help-section-title">设置面板</view>
+        <view class="help-item">
+          <text class="help-item-icon">⚡</text>
+          <view class="help-item-content">
+            <text class="help-item-name">快捷设置</text>
+            <view class="help-sub-items">
+              <view class="help-sub-item">
+                <text class="help-sub-icon">✨</text>
+                <view class="help-sub-content">
+                  <text class="help-sub-name">特殊色</text>
+                  <text class="help-sub-desc">启用P/Q/R/T/ZG系列特殊色号，增加颜色选择范围</text>
+                </view>
+              </view>
+              <view class="help-sub-item">
+                <text class="help-sub-icon">🪄</text>
+                <view class="help-sub-content">
+                  <text class="help-sub-name">去边缘</text>
+                  <text class="help-sub-desc">去除图片边缘的背景色，只保留主体内容</text>
+                </view>
+              </view>
+              <view class="help-sub-item">
+                <text class="help-sub-icon">🔄</text>
+                <view class="help-sub-content">
+                  <text class="help-sub-name">镜像</text>
+                  <text class="help-sub-desc">水平翻转图纸，适合需要镜像效果的图案</text>
+                </view>
+              </view>
+            </view>
+          </view>
+        </view>
+        <view class="help-item">
+          <text class="help-item-icon">🎨</text>
+          <view class="help-item-content">
+            <text class="help-item-name">鲜艳度</text>
+            <text class="help-item-desc">调节颜色鲜艳程度，正值更鲜艳，负值更柔和</text>
+          </view>
+        </view>
+        <view class="help-item">
+          <text class="help-item-icon">📐</text>
+          <view class="help-item-content">
+            <text class="help-item-name">网格大小</text>
+            <text class="help-item-desc">自定义网格像素大小，控制细节程度</text>
+          </view>
+        </view>
+        <view class="help-item">
+          <text class="help-item-icon">📏</text>
+          <view class="help-item-content">
+            <text class="help-item-name">网格预设</text>
+            <text class="help-item-desc">选择固定尺寸从中心截取，适配不同拼豆板</text>
+          </view>
+        </view>
+        <view class="help-item">
+          <text class="help-item-icon">✨</text>
+          <view class="help-item-content">
+            <text class="help-item-name">浊色规避</text>
+            <text class="help-item-desc">避免使用灰浊的中间色，提升颜色纯净度</text>
+          </view>
+        </view>
+        <view class="help-item">
+          <text class="help-item-icon">🔄</text>
+          <view class="help-item-content">
+            <text class="help-item-name">颜色替换</text>
+            <view class="help-sub-items">
+              <view class="help-sub-item">
+                <text class="help-sub-icon">🌐</text>
+                <view class="help-sub-content">
+                  <text class="help-sub-name">全图替换</text>
+                  <text class="help-sub-desc">将整个图纸中的指定色号替换为新色号</text>
+                </view>
+              </view>
+              <view class="help-sub-item">
+                <text class="help-sub-icon">📍</text>
+                <view class="help-sub-content">
+                  <text class="help-sub-name">大区替换</text>
+                  <text class="help-sub-desc">只替换指定大区（如A1、B2等）内的色号，不影响其他区域</text>
+                </view>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 底部按钮 -->
+      <view class="help-footer">
+        <view class="help-confirm-btn" bindtap="onHelpClose">
+          <text>知道了</text>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
 </view>

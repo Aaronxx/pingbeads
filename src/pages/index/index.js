@@ -113,6 +113,9 @@ Page({
     replaceToCode: '',  // 替换的色号
     replaceScope: 'all',  // 替换范围：region=大区，all=全图
 
+    // 帮助面板
+    showHelpPanel: false,  // 是否显示帮助面板
+
     // 撤销功能
     undoStack: [],  // 撤销栈，最多20步
     canUndo: false,  // 是否可以撤销
@@ -1853,6 +1856,16 @@ Page({
           }, that);
         }, 3000); // 3秒等待
       });
+  },
+
+  // 打开帮助面板
+  onHelpTap() {
+    this.setData({ showHelpPanel: true });
+  },
+
+  // 关闭帮助面板
+  onHelpClose() {
+    this.setData({ showHelpPanel: false });
   },
 
   // 分享给好友
