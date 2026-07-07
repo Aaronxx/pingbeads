@@ -46,8 +46,8 @@ function filterIsolatedRegions(gridData, rows, cols, minSize, colorThreshold) {
     const col = idx % cols;
 
     const cell = gridData[row] && gridData[row][col];
-    // 跳过空格、isEdge 格、无 markCode 的格
-    if (!cell || !cell.markCode || cell.isEdge || cell.isEmpty) {
+    // 跳过空格、isEdge 格、无 markCode 或无 markRgb 的格
+    if (!cell || !cell.markCode || !cell.markRgb || cell.isEdge || cell.isEmpty) {
       visited[idx] = 1;
       continue;
     }
@@ -90,7 +90,7 @@ function filterIsolatedRegions(gridData, rows, cols, minSize, colorThreshold) {
         const nRow = (nIdx / cols) | 0;
         const nCol = nIdx % cols;
         const neighbor = gridData[nRow] && gridData[nRow][nCol];
-        if (!neighbor || !neighbor.markCode) {
+        if (!neighbor || !neighbor.markCode || !neighbor.markRgb) {
           visited[nIdx] = 1;
           continue;
         }
