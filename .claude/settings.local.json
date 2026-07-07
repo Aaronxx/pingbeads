@@ -1,7 +1,32 @@
 {
   "permissions": {
     "allow": [
-      "mcp__wechat-parser__parse_wechat_article"
+      "mcp__wechat-parser__parse_wechat_article",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(node *)",
+      "Bash(git commit *)",
+      "Bash(grep *)",
+      "Bash(git push *)",
+      "Bash(cd D:\\\\workspace\\\\pingbeads *)",
+      "Bash(python3 -m json.tool)",
+      "Bash(docker cp *)",
+      "Bash(docker exec *)",
+      "Bash(git *)",
+      "Bash(go build *)",
+      "Bash(docker compose *)",
+      "Bash(COMPOSE_PROFILES=dev docker compose build --no-cache dev)",
+      "Bash(COMPOSE_PROFILES=dev docker compose up -d dev)",
+      "Bash(docker restart yw-manager *)",
+      "Bash(mysql *)",
+      "Bash(python -m json.tool)",
+      "Bash(COMPOSE_PROFILES=dev docker-compose up -d --build)",
+      "Bash(kill %1)",
+      "Bash(curl *)",
+      "Bash(python -c \"import sys,json; [print\\(f\\\\\"{r['default_code']}: {r['x_ams_first_inbound_at']}\\\\\"\\) for r in json.load\\(sys.stdin\\)['result']]\")",
+      "Bash(python -c ' *)",
+      "WebSearch"
     ]
   }
 }

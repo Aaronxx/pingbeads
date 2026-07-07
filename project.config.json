@@ -13,7 +13,16 @@
     },
     "useCompilerPlugins": false,
     "minifyWXML": true,
-    "lazyCodeLoading": "requiredComponents"
+    "lazyCodeLoading": "requiredComponents",
+    "compileWorklet": false,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "minifyWXSS": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true
   },
   "cloudfunctionRoot": "cloudfunctions/",
   "compileType": "miniprogram",
@@ -21,28 +30,28 @@
   "packOptions": {
     "ignore": [
       {
-        "type": "folder",
-        "value": "skill"
+        "value": "skill",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": "tests"
+        "value": "tests",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": "minitest"
+        "value": "minitest",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": "docs"
+        "value": "docs",
+        "type": "folder"
       },
       {
-        "type": "file",
-        "value": "test-automator.js"
+        "value": "test-automator.js",
+        "type": "file"
       },
       {
-        "type": "file",
-        "value": "fix_colorstats2.js"
+        "value": "fix_colorstats2.js",
+        "type": "file"
       }
     ],
     "include": []
