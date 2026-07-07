@@ -197,7 +197,7 @@ function preserveEdgeQuantization(gridData, rows, cols, colorThreshold) {
         const nRow = (nIdx / cols) | 0;
         const nCol = nIdx % cols;
         const neighbor = gridData[nRow] && gridData[nRow][nCol];
-        if (!neighbor || !neighbor.rawRgb) {
+        if (!neighbor || !neighbor.rawRgb || neighbor.isEdge || neighbor.isEmpty) {
           visited[nIdx] = 1;
           continue;
         }
