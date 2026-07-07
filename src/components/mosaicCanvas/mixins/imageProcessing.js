@@ -37,6 +37,18 @@ module.exports = {
     return this.cachedPixelData;
   },
 
+  // 获取原图（未应用 gridPreset 裁剪）网格尺寸。
+  // cachedOriginalGridData 在 _applyColorAndPreset 入口处保存裁剪前的完整网格，
+  // 其行列数即原图网格尺寸，作为预设列表过滤的稳定基准。
+  _getOriginalGridSize() {
+    if (this.cachedOriginalGridData && this.cachedOriginalGridData.length > 0) {
+      const rows = this.cachedOriginalGridData.length;
+      const cols = this.cachedOriginalGridData[0] ? this.cachedOriginalGridData[0].length : 0;
+      return { cols, rows };
+    }
+    return null;
+  },
+
   setCachedPixelData(pixelData, width, height) {
     this.cachedPixelData = new Uint8ClampedArray(pixelData);
     this.cachedWidth = width;
@@ -391,6 +403,8 @@ module.exports = {
 
     this.triggerEvent('mosaicGenerated', {
       gridInfo: { cols: finalCols, rows: finalRows, gridSize: result.gridSize },
+      // 原图（未应用 gridPreset 裁剪）网格尺寸，供页面层过滤预设列表
+      originalGridSize: this._getOriginalGridSize(),
       hasGridLines: result.hasGridLines || false
     });
   },
@@ -459,6 +473,8 @@ module.exports = {
 
     this.triggerEvent('mosaicGenerated', {
       gridInfo: { cols: finalCols, rows: finalRows, gridSize: qualityGridSize },
+      // 原图（未应用 gridPreset 裁剪）网格尺寸，供页面层过滤预设列表
+      originalGridSize: this._getOriginalGridSize(),
       hasGridLines: false
     });
   }

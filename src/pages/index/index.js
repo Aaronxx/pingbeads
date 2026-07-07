@@ -95,11 +95,11 @@ Page({
     mirrorImage: false,  // 是否镜像翻转
 
     // 鲜艳度增强
-    vibrantScale: 0,  // 鲜艳度增强系数 (-10 到 10)
+    vibrantScale: 2,  // 鲜艳度增强系数 (-10 到 10)
     vibrantBlockColor: '#9ca3af',  // 滑块颜色
 
     // 浊色规避：偏向高饱和高明度或深色，避开灰扑扑的中间色（默认关闭）
-    antiGrayIntensity: 0,  // 滑块值 0-100（实际强度 = 值/100，传给组件）
+    antiGrayIntensity: 50,  // 滑块值 0-100（实际强度 = 值/100，传给组件）
     antiGrayBlockColor: '#f59e0b',  // 滑块颜色（橙色，表示偏向鲜艳/深色）
 
     // 自定义网格大小
@@ -139,8 +139,12 @@ Page({
   },
 
   onLoad() {
+    // 同步浊色规避默认强度到 colorMapper（默认 50 → 0.5）
+    setAntiGrayIntensity(this.data.antiGrayIntensity / 100);
+    // 按图片+模式缓存参数：{ "<tempFilePath>": { cartoon: {...}, mosaic: {...} } }
+    this._modeParamCache = {};
     this.setData({
-      vibrantBlockColor: this.calculateVibrantBlockColor(0),
+      vibrantBlockColor: this.calculateVibrantBlockColor(this.data.vibrantScale),
       availableGridPresets: this.data.gridPresets.slice()
     });
   },
@@ -249,6 +253,12 @@ Page({
     const { path } = e.detail;
     // 保存原始图片路径，用于参数变化时重新生成
     this._originalImagePath = path;
+    // 清理上一张图的参数缓存（重选图片 → 所有参数重置为初始状态）
+    if (this.data.imagePath && this.data.imagePath !== path) {
+      delete this._modeParamCache[this.data.imagePath];
+    }
+    // 重置原图网格尺寸记录（换图后由 onMosaicGenerated 重新记录）
+    this._originalGridSize = null;
     // 重置所有设置项为默认值
     this._resetSettings();
     this.setData({
@@ -262,6 +272,12 @@ Page({
   // 图片清除回调
   onImageCleared() {
     this._originalImagePath = '';
+    // 清理当前图的参数缓存
+    if (this.data.imagePath) {
+      delete this._modeParamCache[this.data.imagePath];
+    }
+    // 清理原图网格尺寸记录
+    this._originalGridSize = null;
     this.setData({
       imagePath: '',
       currentStep: 1,
@@ -277,15 +293,32 @@ Page({
       return;
     }
 
-    const { gridInfo } = e.detail;
+    const { gridInfo, originalGridSize } = e.detail;
     const actualCols = gridInfo.cols;
     const actualRows = gridInfo.rows;
 
-    // 过滤可用的网格预设
-    const available = this.data.gridPresets.filter(p => p.cols === 0 || p.rows === 0 || (actualCols >= p.cols && actualRows >= p.rows));
-    // 确保当前选中的 preset 在可用列表中，否则重置为原图比例
-    let newPresetIndex = this.data.gridPresetIndex;
-    if (newPresetIndex >= available.length) newPresetIndex = 0;
+    // 预设列表按原图（未裁剪）网格尺寸过滤，而非裁剪后的 gridInfo 尺寸。
+    // 组件通过 mosaicGenerated 事件携带 originalGridSize（来自 cachedOriginalGridData，
+    // 它在 _applyColorAndPreset 入口保存了裁剪前的完整网格）。
+    // 若事件未携带（旧逻辑兼容），则缓存首次拿到的原图尺寸。
+    if (originalGridSize) {
+      this._originalGridSize = originalGridSize;
+    } else if (!this._originalGridSize) {
+      this._originalGridSize = { cols: actualCols, rows: actualRows };
+    }
+    const filterCols = this._originalGridSize.cols;
+    const filterRows = this._originalGridSize.rows;
+
+    // 过滤可用的网格预设（基于原图尺寸，而非裁剪后尺寸）
+    const available = this.data.gridPresets.filter(p => p.cols === 0 || p.rows === 0 || (filterCols >= p.cols && filterRows >= p.rows));
+    // 按当前选中预设的 cols/rows 在新列表中重新定位；找不到则回退原图比例。
+    // availableGridPresets 会随尺寸动态过滤，同一 index 可能指向不同预设。
+    const prevPreset = this.data.availableGridPresets[this.data.gridPresetIndex];
+    let newPresetIndex = 0;
+    if (prevPreset) {
+      const matchedIdx = available.findIndex(p => p.cols === prevPreset.cols && p.rows === prevPreset.rows);
+      newPresetIndex = matchedIdx >= 0 ? matchedIdx : 0;
+    }
 
     this.setData({
       mosaicData: gridInfo,
@@ -443,6 +476,7 @@ Page({
 
     // 计算滑块颜色：正数变红，负数变灰
     const vibrantScale = e.detail.value;
+    console.log('[鲜艳度] 调节值:', vibrantScale);
     const blockColor = this.calculateVibrantBlockColor(vibrantScale);
     this.setData({
       vibrantScale: vibrantScale,
@@ -475,6 +509,7 @@ Page({
     if (this._checkExporting()) return;
     const sliderVal = e.detail.value;  // 0-100
     const intensity = sliderVal / 100;
+    console.log('[浊色规避] 调节值:', sliderVal, '强度:', intensity);
     setAntiGrayIntensity(intensity);  // 更新 colorMapper 查找表强度
     this.setData({
       antiGrayIntensity: sliderVal
@@ -544,13 +579,34 @@ Page({
   },
 
   // 切换处理模式：卡通/马赛克
+  // 同一张图在同一会话内反复切换时，各自恢复上次在该模式设置的参数；重选图片则重置
   toggleProcessMode() {
     // 导出中禁止调整
     if (this._checkExporting()) return;
 
-    const newMode = this.data.processMode === 'cartoon' ? 'mosaic' : 'cartoon';
-    // 重置所有设置项为默认值
-    this._resetSettings();
+    const currentMode = this.data.processMode;
+    const newMode = currentMode === 'cartoon' ? 'mosaic' : 'cartoon';
+    const cacheKey = this.data.imagePath;
+
+    // 1. 保存当前模式的参数快照（仅在已有图片时缓存）
+    if (cacheKey) {
+      this._saveModeParams(cacheKey, currentMode);
+    }
+
+    // 2. 恢复目标模式参数：命中缓存用缓存，否则用初始默认值
+    //    必须在切换 processMode 之前完成——否则参数 setData 与 processMode 触发的
+    //    组件 observer（异步 regenerateFromCache）交叉，会导致渲染使用不一致的
+    //    canvasWidth/offset 组合，出现预览缩在角落、拖动反向等问题
+    const cached = cacheKey && this._modeParamCache[cacheKey]
+      ? this._modeParamCache[cacheKey][newMode]
+      : null;
+    if (cached) {
+      this._applyModeParams(cached);
+    } else {
+      this._resetSettings();
+    }
+
+    // 3. 最后切换模式标志（触发组件 observer 重新处理图片）
     this.setData({
       processMode: newMode,
       mosaicData: null,
@@ -558,10 +614,86 @@ Page({
     });
   },
 
+  // 保存当前模式的处理参数快照（仅缓存用户可调参数，不含操作/UI状态）
+  _saveModeParams(cacheKey, mode) {
+    if (!this._modeParamCache[cacheKey]) this._modeParamCache[cacheKey] = {};
+    // 网格预设存稳定标识(cols,rows)而非过滤后列表的 index——
+    // availableGridPresets 会随图片实际尺寸/模式动态过滤，index 不稳定，
+    // 直接缓存 index 会在切模式后指向不同的预设（如 104→200）
+    const preset = this.data.availableGridPresets[this.data.gridPresetIndex];
+    this._modeParamCache[cacheKey][mode] = {
+      gridOptionIndex: this.data.gridOptionIndex,
+      gridSize: this.data.gridSize,
+      useCustomGridSize: this.data.useCustomGridSize,
+      customGridSize: this.data.customGridSize,
+      gridPresetKey: preset ? `${preset.cols}_${preset.rows}` : '0_0',
+      thresholdOptionIndex: this.data.thresholdOptionIndex,
+      mergeThreshold: this.data.mergeThreshold,
+      vibrantScale: this.data.vibrantScale,
+      antiGrayIntensity: this.data.antiGrayIntensity,
+      useSpecialColors: this.data.useSpecialColors,
+      removeEdge: this.data.removeEdge,
+      mirrorImage: this.data.mirrorImage,
+      splitMode: this.data.splitMode
+    };
+  },
+
+  // 应用某个模式的处理参数（含派生项重算 + antiGray 同步 + 操作类字段复位）
+  _applyModeParams(params) {
+    // 派生项
+    const blockColor = this.calculateVibrantBlockColor(params.vibrantScale);
+    const textMap = { horizontal: '上下', vertical: '左右', grid2x2: '2×2', grid52: '52×52', grid104: '104×104' };
+    // 同步浊色规避强度到 colorMapper 查找表
+    setAntiGrayIntensity(params.antiGrayIntensity / 100);
+
+    // 把缓存的稳定标识 gridPresetKey 还原为当前 availableGridPresets 里的 index。
+    // availableGridPresets 会随图片尺寸/模式动态过滤，index 不稳定，故缓存用 cols_rows 标识。
+    // 此刻列表可能还是上一模式残留；若标识不在列表中则回退 0（原图比例），
+    // 等 onMosaicGenerated 重建列表后再次按内容匹配修正。
+    const { gridPresetKey, ...restParams } = params;
+    const [keyCols, keyRows] = (gridPresetKey || '0_0').split('_').map(Number);
+    let gridPresetIndex = 0;
+    const list = this.data.availableGridPresets && this.data.availableGridPresets.length
+      ? this.data.availableGridPresets
+      : this.data.gridPresets;
+    const matchedIdx = list.findIndex(p => p.cols === keyCols && p.rows === keyRows);
+    if (matchedIdx >= 0) gridPresetIndex = matchedIdx;
+
+    this.setData({
+      // 缓存的处理参数（已剔除 gridPresetKey，它不是 data 字段）
+      ...restParams,
+      gridPresetIndex,
+      // 派生项重算
+      vibrantBlockColor: blockColor,
+      splitModeText: textMap[params.splitMode] || '',
+      // 非缓存字段复位（操作类、瞬时态）
+      showReplacePanel: false,
+      replaceFromCode: '',
+      replaceToCode: '',
+      replaceScope: 'all',
+      undoStack: [],
+      canUndo: false,
+      hasGridLinesDetected: false,
+      // 不覆盖 availableGridPresets：它是按图片实际尺寸过滤的派生列表，
+      // 由 onMosaicGenerated 在图片处理完成后重建；这里若覆盖成未过滤的全列表，
+      // 会与当前图片尺寸不符。保持现状，让后续 onMosaicGenerated 自然修正。
+      showSplitPopup: false,
+      exportProgress: 0
+    });
+
+    // 重置预览缩放和平移
+    const canvas = this.selectComponent('#mosaic-canvas');
+    if (canvas) {
+      canvas.resetPreviewState();
+    }
+  },
+
   // 重置所有设置项为默认值
   _resetSettings() {
     // 计算默认鲜艳度滑块颜色
-    const defaultBlockColor = this.calculateVibrantBlockColor(0);
+    const defaultBlockColor = this.calculateVibrantBlockColor(2);
+    // 同步浊色规避默认强度到 colorMapper
+    setAntiGrayIntensity(0.5);
 
     this.setData({
       // 豆豆数、色彩
@@ -577,10 +709,10 @@ Page({
       removeEdge: false,
       mirrorImage: false,
       // 鲜艳度
-      vibrantScale: 0,
+      vibrantScale: 2,
       vibrantBlockColor: defaultBlockColor,
-      // 浊色规避（默认关闭）
-      antiGrayIntensity: 0,
+      // 浊色规避
+      antiGrayIntensity: 50,
       // 替换面板
       showReplacePanel: false,
       replaceFromCode: '',

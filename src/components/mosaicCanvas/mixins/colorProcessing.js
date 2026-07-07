@@ -2,7 +2,7 @@
  * 颜色处理 mixin：特殊色替换、鲜艳度增强/降低、原始颜色恢复
  */
 const { isSpecialColor, getAlternativeColor, batchMapColors, setExcludeSpecial } = require('../../../utils/colorMapper');
-const { aggregateSimilarColors, enhanceVibrant } = require('../../../utils/imageProcessor');
+const { aggregateSimilarColors, enhanceVibrant, reduceVibrant } = require('../../../utils/imageProcessor');
 const { deepCloneGridData } = require('../../../utils/gridHelpers');
 
 module.exports = {
@@ -49,7 +49,7 @@ module.exports = {
         if (vibrantScale > 0) {
           processedColor = enhanceVibrant(cell.rawRgb, vibrantScale / 10);
         } else {
-          processedColor = this.reduceVibrant(cell.rawRgb, Math.abs(vibrantScale) / 10);
+          processedColor = reduceVibrant(cell.rawRgb, Math.abs(vibrantScale) / 10);
         }
 
         cellsToProcess.push({ row, col });
@@ -105,50 +105,6 @@ module.exports = {
 
   deepCloneGridData(gridData, rows, cols) {
     return deepCloneGridData(gridData, rows, cols);
-  },
-
-  reduceVibrant(rgb, scale) {
-    if (!rgb) return rgb;
-
-    const r = rgb.r / 255;
-    const g = rgb.g / 255;
-    const b = rgb.b / 255;
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const d = max - min;
-
-    let h = 0, s = max === 0 ? 0 : d / max, v = max;
-    if (d !== 0) {
-      if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-      else if (max === g) h = ((b - r) / d + 2) / 6;
-      else h = ((r - g) / d + 4) / 6;
-    }
-
-    s = Math.max(0, s * (1 - scale * 0.5));
-    v = Math.max(0, v * (1 - scale * 0.2));
-
-    const i = Math.floor(h * 6);
-    const f = h * 6 - i;
-    const p = v * (1 - s);
-    const q = v * (1 - f * s);
-    const t = v * (1 - (1 - f) * s);
-    let rn, gn, bn;
-
-    switch (i % 6) {
-      case 0: rn = v; gn = t; bn = p; break;
-      case 1: rn = q; gn = v; bn = p; break;
-      case 2: rn = p; gn = v; bn = t; break;
-      case 3: rn = p; gn = q; bn = v; break;
-      case 4: rn = t; gn = p; bn = v; break;
-      case 5: rn = v; gn = p; bn = q; break;
-    }
-
-    const contrast = 1.0 - scale * 0.3;
-    return {
-      r: Math.max(0, Math.min(255, Math.round(128 + (rn * 255 - 128) * contrast))),
-      g: Math.max(0, Math.min(255, Math.round(128 + (gn * 255 - 128) * contrast))),
-      b: Math.max(0, Math.min(255, Math.round(128 + (bn * 255 - 128) * contrast)))
-    };
   },
 
   _applyColorAndPreset(gridData, rows, cols, gridSize) {

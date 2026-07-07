@@ -20,8 +20,8 @@ Component({
     scale: { type: Number, value: 1 },
     previewQuality: { type: Number, value: 2 },
     regenerateTrigger: { type: Number, value: 0 },
-    vibrantScale: { type: Number, value: 0 },  // 鲜艳度增强系数 (0-1)
-    antiGrayIntensity: { type: Number, value: 0 },  // 浊色规避强度 (0-1，默认关闭)
+    vibrantScale: { type: Number, value: 2 },  // 鲜艳度增强系数 (-10 到 10)
+    antiGrayIntensity: { type: Number, value: 0.5 },  // 浊色规避强度 (0-1)
     mirrorImage: { type: Boolean, value: false },  // 是否镜像翻转
     forceGridSize: { type: Number, value: null },  // 强制使用的网格大小（跳过检测）
     // 网格预设：[预设索引, 目标列数, 目标行数]
@@ -44,7 +44,7 @@ Component({
     flatCells: [],
     cachedWidth: 0,
     cachedHeight: 0,
-    vibrantScale: 0
+    vibrantScale: 2
   },
 
   // 使用普通属性存储大数组，避免通过 setData 传输
@@ -167,6 +167,9 @@ Component({
           this._cropOffsetRow = 0;
           this.cachedGridData = this.deepCloneGridData(this.cachedOriginalGridData, origRows, origCols);
           this.cachedGridInfo = { cols: origCols, rows: origRows, gridSize };
+          // cachedOriginalGridData 是未应用鲜艳度的原始数据，恢复后需要重新应用鲜艳度和特殊色
+          this.replaceSpecialColors(this.cachedGridData, origRows, origCols);
+          this.reapplyVibrantScale(this.cachedGridData, origRows, origCols);
         } else {
           const presetResult = this._applyGridPreset(this.cachedOriginalGridData, origCols, origRows, newVal);
           this.cachedGridData = presetResult.gridData;
