@@ -408,7 +408,7 @@ module.exports = {
     if (this.data.spotCleanLevel > 0) {
       const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
       if (spotParams) {
-        filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.spotThreshold, spotParams.protectThreshold);
+        filterIsolatedRegions(finalGridData, finalRows, finalCols);
       }
     }
 
@@ -509,7 +509,7 @@ module.exports = {
     if (this.data.spotCleanLevel > 0) {
       const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
       if (spotParams) {
-        filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.spotThreshold, spotParams.protectThreshold);
+        filterIsolatedRegions(finalGridData, finalRows, finalCols);
       }
     }
 

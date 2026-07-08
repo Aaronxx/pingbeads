@@ -13,11 +13,8 @@
  * @param {number} protectThreshold - 色差保护阈值（当前格子和主色的 markRgb 欧氏距离 < 此值则不吞噬，保护细节）
  * @returns {number} 被修改的格子数量（0 表示无修改）
  */
-function filterIsolatedRegions(gridData, rows, cols, spotThreshold, protectThreshold) {
-  if (!gridData || rows <= 0 || cols <= 0 || spotThreshold <= 0) return 0;
-
-  const protectThresholdSq = protectThreshold * protectThreshold;
-  const strongThresholdSq = protectThresholdSq * 2.25; // 1.5^2，色差大阈值
+function filterIsolatedRegions(gridData, rows, cols) {
+  if (!gridData || rows <= 0 || cols <= 0) return 0;
 
   let modifiedCount = 0;
 
@@ -67,11 +64,15 @@ function filterIsolatedRegions(gridData, rows, cols, spotThreshold, protectThres
         }
       }
 
-      // 混合策略：
-      // 1. 遍历所有邻居，找色差最小的邻居颜色
-      // 2. 只有一种邻居颜色 → 直接吞噬
-      // 3. 多种邻居颜色 → 看最小色差决定
-      if (bestColor !== cell.markCode && totalNeighbors > 0) {
+      // 新逻辑：
+      // 1. 有同色邻居 → 保护（主体细节）
+      // 2. 没有同色邻居 + 邻居只有1种颜色 → 保护（高光等）
+      // 3. 没有同色邻居 + 邻居有2种以上颜色 → 吞噬为色差最小的邻居（杂色点）
+      const hasSameCodeNeighbor = (neighborColors[cell.markCode] || 0) > 0;
+      const distinctNeighborColors = Object.keys(neighborColors);
+      const hasOnlyOneNeighborColor = distinctNeighborColors.length <= 1;
+
+      if (!hasSameCodeNeighbor && !hasOnlyOneNeighborColor && totalNeighbors > 0) {
         const cellRgb = cell.markRgb;
 
         // 遍历所有邻居，找色差最小的那个
@@ -79,8 +80,6 @@ function filterIsolatedRegions(gridData, rows, cols, spotThreshold, protectThres
         let minDistSq = Infinity;
         let minDistHex = null;
         let minDistRgb = null;
-        const distinctNeighborColors = Object.keys(neighborColors);
-        const hasOnlyOneNeighborColor = distinctNeighborColors.length === 1;
 
         for (const [dr, dc] of offsets) {
           const nr = row + dr;
@@ -88,7 +87,7 @@ function filterIsolatedRegions(gridData, rows, cols, spotThreshold, protectThres
           if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
           const n = gridData[nr] && gridData[nr][nc];
           if (!n || !n.markCode || !n.markRgb) continue;
-          if (n.markCode === cell.markCode) continue; // 跳过同色
+          if (n.markCode === cell.markCode) continue;
 
           const dr2 = cellRgb.r - n.markRgb.r;
           const dg2 = cellRgb.g - n.markRgb.g;
@@ -103,19 +102,7 @@ function filterIsolatedRegions(gridData, rows, cols, spotThreshold, protectThres
         }
 
         if (minDistColor) {
-          const strongThresholdSq = protectThresholdSq * 2.25; // 1.5^2
-
-          if (hasOnlyOneNeighborColor) {
-            // 只有一种邻居颜色 → 直接吞噬
-            toModify.push({ row, col, bestColor: minDistColor, replacementHex: minDistHex, replacementRgb: minDistRgb });
-          } else if (minDistSq >= strongThresholdSq) {
-            // 色差大：直接吞噬为色差最小的邻居
-            toModify.push({ row, col, bestColor: minDistColor, replacementHex: minDistHex, replacementRgb: minDistRgb });
-          } else if (minDistSq >= protectThresholdSq && bestCount > spotThreshold) {
-            // 色差中等：军队对抗（需要足够邻居支持才吞噬）
-            toModify.push({ row, col, bestColor: minDistColor, replacementHex: minDistHex, replacementRgb: minDistRgb });
-          }
-          // 色差小（< protectThreshold）：不吞噬（可能是主体细节）
+          toModify.push({ row, col, bestColor: minDistColor, replacementHex: minDistHex, replacementRgb: minDistRgb });
         }
       }
     }
@@ -420,9 +407,9 @@ function morphologicalLineRepair(gridData, rows, cols, colorThreshold, maxGap) {
  */
 function getSpotCleanParams(level) {
   switch (level) {
-    case 1: return { edgeThreshold: 0, spotThreshold: 3, morphColorThreshold: 30, morphMaxGap: 2, protectThreshold: 50 };   // 轻度
-    case 2: return { edgeThreshold: 40, spotThreshold: 2, morphColorThreshold: 30, morphMaxGap: 3, protectThreshold: 40 };  // 中度
-    case 3: return { edgeThreshold: 50, spotThreshold: 2, morphColorThreshold: 30, morphMaxGap: 5, protectThreshold: 30 };  // 强度
+    case 1: return { edgeThreshold: 0, morphColorThreshold: 30, morphMaxGap: 2 };
+    case 2: return { edgeThreshold: 40, morphColorThreshold: 30, morphMaxGap: 3 };
+    case 3: return { edgeThreshold: 50, morphColorThreshold: 30, morphMaxGap: 5 };
     default: return null;
   }
 }
