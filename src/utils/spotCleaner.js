@@ -17,20 +17,6 @@ function filterIsolatedRegions(gridData, rows, cols, spotThreshold, protectThres
   if (!gridData || rows <= 0 || cols <= 0 || spotThreshold <= 0) return 0;
 
   const protectThresholdSq = protectThreshold * protectThreshold;
-  const totalCells = rows * cols;
-
-  // 预统计全局颜色数量
-  const globalColorCounts = {};
-  let totalValidCells = 0;
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      const cell = gridData[row] && gridData[row][col];
-      if (!cell || !cell.markCode || !cell.markRgb || cell.isEdge || cell.isEmpty) continue;
-      globalColorCounts[cell.markCode] = (globalColorCounts[cell.markCode] || 0) + 1;
-      totalValidCells++;
-    }
-  }
-  const rareThreshold = Math.max(3, Math.floor(totalValidCells * 0.02)); // 全局罕见颜色阈值（<2%）
 
   let modifiedCount = 0;
 
@@ -110,33 +96,40 @@ function filterIsolatedRegions(gridData, rows, cols, spotThreshold, protectThres
         }
       }
 
-      // 兜底：全局罕见的颜色（<2%）且色差大 → 强制清除
-      if (bestCount <= spotThreshold && globalColorCounts[cell.markCode] < rareThreshold) {
-        // 找邻居中色差最大的颜色
-        let maxDistColor = null;
-        let maxDistSq = 0;
-        let maxDistHex = null, maxDistRgb = null;
-        for (const [dr, dc] of offsets) {
-          const nr = row + dr;
-          const nc = col + dc;
-          if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
-          const n = gridData[nr] && gridData[nr][nc];
-          if (!n || !n.markCode || !n.markRgb) continue;
-          const nRgb = n.markRgb;
-          const dr2 = cellRgb.r - nRgb.r;
-          const dg2 = cellRgb.g - nRgb.g;
-          const db2 = cellRgb.b - nRgb.b;
-          const distSq = dr2 * dr2 + dg2 * dg2 + db2 * db2;
-          if (distSq > maxDistSq) {
-            maxDistSq = distSq;
-            maxDistColor = n.markCode;
-            maxDistHex = n.markHex;
-            maxDistRgb = n.markRgb;
-          }
+      // 兜底：该格子和周围所有邻居色差都很大 → 强制清除
+      // 找到色差最小的邻居，如果最小色差都 > protectThreshold * 1.5
+      // 说明该格子和周围格格不入，直接吞噬
+      const cellRgb = cell.markRgb;
+      let minDistColor = null;
+      let minDistSq = Infinity;
+      let minDistHex = null, minDistRgb = null;
+      for (const [dr, dc] of offsets) {
+        const nr = row + dr;
+        const nc = col + dc;
+        if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+        const n = gridData[nr] && gridData[nr][nc];
+        if (!n || !n.markCode || !n.markRgb) continue;
+        if (n.markCode === cell.markCode) {
+          minDistSq = 0; // 有同色邻居，不是孤立的
+          break;
         }
-        // 色差足够大才吞噬（用 1.5 倍保护阈值，更严格）
-        if (maxDistColor && maxDistSq > protectThresholdSq * 1.5) {
-          toModify.push({ row, col, bestColor: maxDistColor, replacementHex: maxDistHex, replacementRgb: maxDistRgb });
+        const nRgb = n.markRgb;
+        const dr2 = cellRgb.r - nRgb.r;
+        const dg2 = cellRgb.g - nRgb.g;
+        const db2 = cellRgb.b - nRgb.b;
+        const distSq = dr2 * dr2 + dg2 * dg2 + db2 * db2;
+        if (distSq < minDistSq) {
+          minDistSq = distSq;
+          minDistColor = n.markCode;
+          minDistHex = n.markHex;
+          minDistRgb = n.markRgb;
+        }
+      }
+      // 没有任何同色邻居，且最小色差都很大 → 强制吞噬
+      if (minDistSq > 0 && minDistColor && minDistSq > protectThresholdSq * 1.5) {
+        const exists = toModify.some(m => m.row === row && m.col === col);
+        if (!exists) {
+          toModify.push({ row, col, bestColor: minDistColor, replacementHex: minDistHex, replacementRgb: minDistRgb });
         }
       }
     }
