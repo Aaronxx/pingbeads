@@ -69,6 +69,19 @@ function filterIsolatedRegions(gridData, rows, cols) {
       // 2. 没有同色邻居 → 吞噬为色差最小的邻居（杂色点）
       const hasSameCodeNeighbor = (neighborColors[cell.markCode] || 0) > 0;
 
+      // DEBUG: 打印所有 H5/E16 的状态
+      if (cell.markCode === 'H5' || cell.markCode === 'E16') {
+        console.log('[spotClean] cell status:', {
+          row, col,
+          markCode: cell.markCode,
+          hasSameCode: hasSameCodeNeighbor,
+          totalNeighbors,
+          neighborCounts: neighborColors,
+          isEdge: cell.isEdge,
+          isEmpty: cell.isEmpty
+        });
+      }
+
       if (!hasSameCodeNeighbor && totalNeighbors > 0) {
         const cellRgb = cell.markRgb;
 
