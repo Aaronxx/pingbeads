@@ -397,9 +397,9 @@ function morphologicalLineRepair(gridData, rows, cols, colorThreshold, maxGap) {
  */
 function getSpotCleanParams(level) {
   switch (level) {
-    case 1: return { edgeThreshold: 0, spotThreshold: 4, morphColorThreshold: 30, morphMaxGap: 2, protectThreshold: 50 };   // 轻度
-    case 2: return { edgeThreshold: 40, spotThreshold: 3, morphColorThreshold: 30, morphMaxGap: 3, protectThreshold: 40 };  // 中度
-    case 3: return { edgeThreshold: 50, spotThreshold: 2, morphColorThreshold: 30, morphMaxGap: 5, protectThreshold: 30 };  // 强度
+    case 1: return { edgeThreshold: 0, spotThreshold: 3, morphColorThreshold: 30, morphMaxGap: 2, protectThreshold: 40 };   // 轻度
+    case 2: return { edgeThreshold: 40, spotThreshold: 2, morphColorThreshold: 30, morphMaxGap: 3, protectThreshold: 30 };  // 中度
+    case 3: return { edgeThreshold: 50, spotThreshold: 2, morphColorThreshold: 30, morphMaxGap: 5, protectThreshold: 20 };  // 强度
     default: return null;
   }
 }
