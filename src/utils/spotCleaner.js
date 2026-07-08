@@ -67,37 +67,53 @@ function filterIsolatedRegions(gridData, rows, cols, spotThreshold, protectThres
         }
       }
 
-      // 混合策略：色差大 → 色差优先（直接吞噬）；色差中等 → 军队对抗（需邻居支持）
-      if (bestColor && bestColor !== cell.markCode) {
-        // 找到主色的 markRgb
-        let replacementHex = null;
-        let replacementRgb = null;
+      // 混合策略：
+      // 1. 遍历所有邻居，找色差最小的邻居颜色
+      // 2. 只有一种邻居颜色 → 直接吞噬
+      // 3. 多种邻居颜色 → 看最小色差决定
+      if (bestColor !== cell.markCode && totalNeighbors > 0) {
+        const cellRgb = cell.markRgb;
+
+        // 遍历所有邻居，找色差最小的那个
+        let minDistColor = null;
+        let minDistSq = Infinity;
+        let minDistHex = null;
+        let minDistRgb = null;
+        const distinctNeighborColors = Object.keys(neighborColors);
+        const hasOnlyOneNeighborColor = distinctNeighborColors.length === 1;
+
         for (const [dr, dc] of offsets) {
           const nr = row + dr;
           const nc = col + dc;
+          if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
           const n = gridData[nr] && gridData[nr][nc];
-          if (n && n.markCode === bestColor) {
-            replacementHex = n.markHex;
-            replacementRgb = n.markRgb;
-            break;
+          if (!n || !n.markCode || !n.markRgb) continue;
+          if (n.markCode === cell.markCode) continue; // 跳过同色
+
+          const dr2 = cellRgb.r - n.markRgb.r;
+          const dg2 = cellRgb.g - n.markRgb.g;
+          const db2 = cellRgb.b - n.markRgb.b;
+          const distSq = dr2 * dr2 + dg2 * dg2 + db2 * db2;
+          if (distSq < minDistSq) {
+            minDistSq = distSq;
+            minDistColor = n.markCode;
+            minDistHex = n.markHex;
+            minDistRgb = n.markRgb;
           }
         }
 
-        if (replacementHex && replacementRgb) {
-          const cellRgb = cell.markRgb;
-          const cdr = cellRgb.r - replacementRgb.r;
-          const cdg = cellRgb.g - replacementRgb.g;
-          const cdb = cellRgb.b - replacementRgb.b;
-          const colorDistSq = cdr * cdr + cdg * cdg + cdb * cdb;
+        if (minDistColor) {
+          const strongThresholdSq = protectThresholdSq * 2.25; // 1.5^2
 
-          const strongThresholdSq = protectThresholdSq * 2.25; // 1.5^2 = 2.25
-
-          if (colorDistSq >= strongThresholdSq) {
-            // 色差大：直接吞噬（明显是杂色，不管邻居数量）
-            toModify.push({ row, col, bestColor, replacementHex, replacementRgb });
-          } else if (colorDistSq >= protectThresholdSq && bestCount > spotThreshold) {
+          if (hasOnlyOneNeighborColor) {
+            // 只有一种邻居颜色 → 直接吞噬
+            toModify.push({ row, col, bestColor: minDistColor, replacementHex: minDistHex, replacementRgb: minDistRgb });
+          } else if (minDistSq >= strongThresholdSq) {
+            // 色差大：直接吞噬为色差最小的邻居
+            toModify.push({ row, col, bestColor: minDistColor, replacementHex: minDistHex, replacementRgb: minDistRgb });
+          } else if (minDistSq >= protectThresholdSq && bestCount > spotThreshold) {
             // 色差中等：军队对抗（需要足够邻居支持才吞噬）
-            toModify.push({ row, col, bestColor, replacementHex, replacementRgb });
+            toModify.push({ row, col, bestColor: minDistColor, replacementHex: minDistHex, replacementRgb: minDistRgb });
           }
           // 色差小（< protectThreshold）：不吞噬（可能是主体细节）
         }
