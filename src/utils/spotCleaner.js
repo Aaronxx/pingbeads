@@ -100,14 +100,14 @@ function filterIsolatedRegions(gridData, rows, cols) {
 
         if (minDistColor) {
           // DEBUG 日志：只打前5条
-          if (modifiedCount < 5) {
-            console.log('[spotClean] modify H5-like:', {
+          if (toModify.length < 5) {
+            console.log('[spotClean] modify:', {
               row, col,
-              fromCode: cell.markCode,
-              toCode: minDistColor,
-              minDistSq: minDistSq,
-              neighborCodes: Object.keys(neighborColors),
-              cellRgb: cellRgb,
+              from: cell.markCode,
+              to: minDistColor,
+              minDistSq: Math.round(minDistSq),
+              neighbors: Object.keys(neighborColors),
+              fromRgb: cellRgb,
               toRgb: minDistRgb
             });
           }
