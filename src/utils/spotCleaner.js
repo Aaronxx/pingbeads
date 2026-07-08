@@ -114,6 +114,8 @@ function filterIsolatedRegions(gridData, rows, cols) {
     modifiedCount++;
   }
 
+  console.log('[spotClean] done, modified=', modifiedCount, 'totalCells=', rows * cols);
+
   return modifiedCount;
 }
 
