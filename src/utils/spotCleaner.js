@@ -99,6 +99,18 @@ function filterIsolatedRegions(gridData, rows, cols) {
         }
 
         if (minDistColor) {
+          // DEBUG 日志：只打前5条
+          if (modifiedCount < 5) {
+            console.log('[spotClean] modify H5-like:', {
+              row, col,
+              fromCode: cell.markCode,
+              toCode: minDistColor,
+              minDistSq: minDistSq,
+              neighborCodes: Object.keys(neighborColors),
+              cellRgb: cellRgb,
+              toRgb: minDistRgb
+            });
+          }
           toModify.push({ row, col, bestColor: minDistColor, replacementHex: minDistHex, replacementRgb: minDistRgb });
         }
       }
