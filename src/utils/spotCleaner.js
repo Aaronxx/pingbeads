@@ -66,13 +66,10 @@ function filterIsolatedRegions(gridData, rows, cols) {
 
       // 新逻辑：
       // 1. 有同色邻居 → 保护（主体细节）
-      // 2. 没有同色邻居 + 邻居只有1种颜色 → 保护（高光等）
-      // 3. 没有同色邻居 + 邻居有2种以上颜色 → 吞噬为色差最小的邻居（杂色点）
+      // 2. 没有同色邻居 → 吞噬为色差最小的邻居（杂色点）
       const hasSameCodeNeighbor = (neighborColors[cell.markCode] || 0) > 0;
-      const distinctNeighborColors = Object.keys(neighborColors);
-      const hasOnlyOneNeighborColor = distinctNeighborColors.length <= 1;
 
-      if (!hasSameCodeNeighbor && !hasOnlyOneNeighborColor && totalNeighbors > 0) {
+      if (!hasSameCodeNeighbor && totalNeighbors > 0) {
         const cellRgb = cell.markRgb;
 
         // 遍历所有邻居，找色差最小的那个
