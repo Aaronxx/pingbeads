@@ -5,7 +5,7 @@ const interaction = require('./mixins/interaction');
 const colorReplace = require('./mixins/colorReplace');
 const imageProcessing = require('./mixins/imageProcessing');
 const exportPreset = require('./mixins/exportPreset');
-const { filterIsolatedRegions, preserveEdgeQuantization, getSpotCleanParams } = require('../../utils/spotCleaner');
+const { filterIsolatedRegions, preserveEdgeQuantization, morphologicalLineRepair, getSpotCleanParams } = require('../../utils/spotCleaner');
 
 Component({
   properties: {
@@ -131,11 +131,11 @@ Component({
         this.setData({ isProcessing: true });
         this.resetToOriginalColors(this.cachedGridData, rows, cols);
         this.reapplyVibrantScale(this.cachedGridData, rows, cols);
-        // 鲜艳度调节后，先做保边量化修复碎片，再做去杂色
-        // edgeThreshold = 0 时跳过保边量化（轻度模式只做去杂色）
+        // 鲜艳度调节后，先做形态学线条重建，再保边量化，最后去杂色
         if (this.data.spotCleanLevel > 0) {
           const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
           if (spotParams) {
+            morphologicalLineRepair(this.cachedGridData, rows, cols, spotParams.morphColorThreshold, spotParams.morphMaxGap);
             if (spotParams.edgeThreshold > 0) {
               preserveEdgeQuantization(this.cachedGridData, rows, cols, spotParams.edgeThreshold);
             }
@@ -157,6 +157,7 @@ Component({
         if (this.data.spotCleanLevel > 0) {
           const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
           if (spotParams) {
+            morphologicalLineRepair(this.cachedGridData, rows, cols, spotParams.morphColorThreshold, spotParams.morphMaxGap);
             if (spotParams.edgeThreshold > 0) {
               preserveEdgeQuantization(this.cachedGridData, rows, cols, spotParams.edgeThreshold);
             }
@@ -227,12 +228,11 @@ Component({
           }
         }
 
-        // 补调孤立区域过滤（gridPreset 裁剪后颜色重应用完成）
-        // 顺序：先保边量化修复碎片，再做去杂色
-        // edgeThreshold = 0 时跳过保边量化（轻度模式只做去杂色）
+        // 补调形态学线条重建 + 保边量化 + 去杂色
         if (this.data.spotCleanLevel > 0) {
           const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
           if (spotParams) {
+            morphologicalLineRepair(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols, spotParams.morphColorThreshold, spotParams.morphMaxGap);
             if (spotParams.edgeThreshold > 0) {
               preserveEdgeQuantization(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols, spotParams.edgeThreshold);
             }

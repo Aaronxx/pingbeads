@@ -245,20 +245,167 @@ function preserveEdgeQuantization(gridData, rows, cols, colorThreshold) {
 }
 
 /**
- * 根据 spotCleanLevel 获取过滤参数
- * @param {number} level - 0=关, 1=轻度, 2=中度, 3=强度
- * @returns {{ edgeThreshold: number, spotThreshold: number } | null}
+ * 形态学线条重建：少数派颜色膨胀
+ *
+ * 对数量偏少的颜色（被切碎的线条）做8方向断裂检测，填充断裂，保持线条连续性。
+ *
+ * 算法流程：
+ * 1. 统计所有 markCode 的数量（排除 isEdge/isEmpty 格子）
+ * 2. 找出数量偏少的颜色（< 总格子数的 5%）
+ * 3. 对这些少数派颜色的格子，沿8个方向各走 1~maxGap 格
+ * 4. 如果找到同类格子（markRgb 距离 < colorThreshold），填充中间断裂
+ * 5. 两遍式改写：先收集所有改写，再统一应用
+ *
+ * @param {Array} gridData - 二维网格数据
+ * @param {number} rows - 行数
+ * @param {number} cols - 列数
+ * @param {number} colorThreshold - 颜色距离阈值（markRgb 欧氏距离 < 此值的视为同类）
+ * @param {number} maxGap - 最大断裂宽度（1~5格）
+ * @returns {number} 被修改的格子数量（0 表示无修改）
  */
+function morphologicalLineRepair(gridData, rows, cols, colorThreshold, maxGap) {
+  if (!gridData || rows <= 0 || cols <= 0 || colorThreshold <= 0 || maxGap <= 0) return 0;
+
+  const colorThresholdSq = colorThreshold * colorThreshold;
+  const totalCells = rows * cols;
+  const minorityThreshold = Math.max(5, Math.floor(totalCells * 0.05)); // 少数派阈值
+
+  // 8个方向：上、下、左、右、左上、右上、左下、右下
+  const directions = [
+    [-1, 0], [1, 0], [0, -1], [0, 1],
+    [-1, -1], [-1, 1], [1, -1], [1, 1]
+  ];
+
+  // 第1步：统计 markCode 数量（排除 isEdge/isEmpty）
+  const markCodeCounts = {};
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const cell = gridData[row] && gridData[row][col];
+      if (!cell || !cell.markCode || !cell.markRgb || cell.isEdge || cell.isEmpty) continue;
+      markCodeCounts[cell.markCode] = (markCodeCounts[cell.markCode] || 0) + 1;
+    }
+  }
+
+  // 第2步：找出少数派颜色的格子
+  const minorityCells = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const cell = gridData[row] && gridData[row][col];
+      if (!cell || !cell.markCode || !cell.markRgb || cell.isEdge || cell.isEmpty) continue;
+      if (markCodeCounts[cell.markCode] < minorityThreshold) {
+        minorityCells.push({ row, col });
+      }
+    }
+  }
+
+  // 第3步：对少数派格子做8方向断裂检测，收集需要改写的格子
+  const toModify = []; // { row, col, markCode, markHex, markRgb }
+
+  for (const { row, col } of minorityCells) {
+    const cell = gridData[row][col];
+    const cellMarkRgb = cell.markRgb;
+
+    // 对8个方向分别检查
+    for (const [dr, dc] of directions) {
+      // 沿方向走 1~maxGap 格，找第一个同类格子
+      let foundRow = -1, foundCol = -1;
+      let foundHex = null, foundRgb = null;
+
+      for (let step = 1; step <= maxGap; step++) {
+        const nr = row + dr * step;
+        const nc = col + dc * step;
+        if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) break;
+
+        const neighbor = gridData[nr] && gridData[nr][nc];
+        if (!neighbor || !neighbor.markCode || !neighbor.markRgb || neighbor.isEdge || neighbor.isEmpty) continue;
+
+        // 检查是否同类（markRgb 距离 < colorThreshold）
+        const nMarkRgb = neighbor.markRgb;
+        const dr2 = cellMarkRgb.r - nMarkRgb.r;
+        const dg2 = cellMarkRgb.g - nMarkRgb.g;
+        const db2 = cellMarkRgb.b - nMarkRgb.b;
+        const distSq = dr2 * dr2 + dg2 * dg2 + db2 * db2;
+
+        if (distSq < colorThresholdSq) {
+          // 找到同类格子
+          foundRow = nr;
+          foundCol = nc;
+          foundHex = neighbor.markHex;
+          foundRgb = neighbor.markRgb;
+          break;
+        }
+      }
+
+      if (foundRow >= 0) {
+        // 填充 cell 和同类格子之间的所有断裂格子
+        // 选用的颜色：用同类格子的 markCode（更"权威"，因为它是已有的大块）
+        for (let step = 1; step < Math.abs(foundRow - row) + Math.abs(foundCol - col); step++) {
+          // 计算中间格子的位置（沿方向逐步走）
+          const fillRow = row + dr * step;
+          const fillCol = col + dc * step;
+          if (fillRow === foundRow && fillCol === foundCol) break;
+          if (fillRow < 0 || fillRow >= rows || fillCol < 0 || fillCol >= cols) continue;
+
+          const fillCell = gridData[fillRow] && gridData[fillRow][fillCol];
+          if (!fillCell || fillCell.isEdge || fillCell.isEmpty) continue;
+
+          // 如果中间格子的 markCode 和目标不同，需要改写
+          if (fillCell.markCode !== foundHex) {
+            // 检查是否已经在 toModify 列表中（避免重复）
+            const exists = toModify.some(m => m.row === fillRow && m.col === fillCol);
+            if (!exists) {
+              toModify.push({ row: fillRow, col: fillCol, markHex: foundHex, markRgb: foundRgb });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 第4步：统一改写
+  let modifiedCount = 0;
+  for (const { row, col, markHex, markRgb } of toModify) {
+    const cell = gridData[row][col];
+    // 改写为同类格子的 markCode/markHex/markRgb
+    // 注意：markCode 需要从 markHex 反查，但这里我们直接用 foundRgb 找最近的 markCode
+    // 更简单的做法：直接用 markHex 对应的 markCode
+    // 由于我们没有 markCode，需要从邻居获取
+    // 其实 foundHex 就是 markHex，我们需要找到对应的 markCode
+    // 但 markHex 在色板中可能对应多个 markCode，所以需要用 foundRgb 来匹配
+    // 最简单：直接从 gridData 中找到该 hex 对应的 markCode
+    let markCode = null;
+    // 从周围的同类格子中找 markCode
+    for (const [dr, dc] of directions) {
+      const nr = row + dr;
+      const nc = col + dc;
+      if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+      const n = gridData[nr] && gridData[nr][nc];
+      if (n && n.markHex === markHex) {
+        markCode = n.markCode;
+        break;
+      }
+    }
+    if (!markCode) continue;
+
+    cell.markCode = markCode;
+    cell.markHex = markHex;
+    cell.markRgb = markRgb ? { ...markRgb } : null;
+    modifiedCount++;
+  }
+
+  return modifiedCount;
+}
+
 /**
  * 根据 spotCleanLevel 获取过滤参数
  * @param {number} level - 0=关, 1=轻度, 2=中度, 3=强度
- * @returns {{ edgeThreshold: number, spotThreshold: number } | null}
+ * @returns {{ edgeThreshold: number, spotThreshold: number, morphColorThreshold: number, morphMaxGap: number } | null}
  */
 function getSpotCleanParams(level) {
   switch (level) {
-    case 1: return { edgeThreshold: 0, spotThreshold: 4 };   // 轻度：只去杂色，邻居中某个颜色 > 4 才改写
-    case 2: return { edgeThreshold: 40, spotThreshold: 3 };   // 中度：保边量化 + 去杂色，邻居 > 3 才改写
-    case 3: return { edgeThreshold: 50, spotThreshold: 2 };   // 强度：保边量化 + 去杂色，邻居 > 2 才改写
+    case 1: return { edgeThreshold: 0, spotThreshold: 4, morphColorThreshold: 30, morphMaxGap: 2 };   // 轻度
+    case 2: return { edgeThreshold: 40, spotThreshold: 3, morphColorThreshold: 30, morphMaxGap: 3 };  // 中度
+    case 3: return { edgeThreshold: 50, spotThreshold: 2, morphColorThreshold: 30, morphMaxGap: 5 };  // 强度
     default: return null;
   }
 }
@@ -266,5 +413,6 @@ function getSpotCleanParams(level) {
 module.exports = {
   filterIsolatedRegions,
   preserveEdgeQuantization,
+  morphologicalLineRepair,
   getSpotCleanParams
 };

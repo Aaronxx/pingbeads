@@ -3,7 +3,7 @@
  */
 const { processSimple, processWithSmartRegions, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData, processMosaicV2, desaturateGrayColors } = require('../../../utils/imageProcessor');
 const { setExcludeSpecial } = require('../../../utils/colorMapper');
-const { filterIsolatedRegions, preserveEdgeQuantization, getSpotCleanParams } = require('../../../utils/spotCleaner');
+const { filterIsolatedRegions, preserveEdgeQuantization, morphologicalLineRepair, getSpotCleanParams } = require('../../../utils/spotCleaner');
 
 module.exports = {
   _waitForData(callback, retryCount) {
@@ -388,22 +388,27 @@ module.exports = {
     const finalCols = presetResult.cols;
     const finalRows = presetResult.rows;
 
-    // 保边量化：在鲜艳度调节之后执行，修复鲜艳度造成的连续色块碎片
+    // 形态学线条重建：对少数派颜色做8方向断裂检测，填充断裂
     if (this.data.spotCleanLevel > 0) {
       const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
       if (spotParams) {
-        const edgeModified = preserveEdgeQuantization(finalGridData, finalRows, finalCols, spotParams.edgeThreshold);
-        console.log('[edgeQuantization] level=', this.data.spotCleanLevel, 'threshold=', spotParams.edgeThreshold, 'modified=', edgeModified);
+        morphologicalLineRepair(finalGridData, finalRows, finalCols, spotParams.morphColorThreshold, spotParams.morphMaxGap);
       }
     }
 
-    // 去杂色：在保边量化之后执行，去掉真正的孤立杂色点
+    // 保边量化：修复连续色块碎片
     if (this.data.spotCleanLevel > 0) {
       const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
-      console.log('[spotClean] level=', this.data.spotCleanLevel, 'params=', spotParams, 'rows=', finalRows, 'cols=', finalCols);
+      if (spotParams && spotParams.edgeThreshold > 0) {
+        preserveEdgeQuantization(finalGridData, finalRows, finalCols, spotParams.edgeThreshold);
+      }
+    }
+
+    // 去杂色：去掉真正的孤立杂色点
+    if (this.data.spotCleanLevel > 0) {
+      const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
       if (spotParams) {
-        const modified = filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.spotThreshold);
-        console.log('[spotClean] modified=', modified);
+        filterIsolatedRegions(finalGridData, finalRows, finalCols, spotParams.spotThreshold);
       }
     }
 
@@ -483,8 +488,15 @@ module.exports = {
     const finalCols = presetResult.cols;
     const finalRows = presetResult.rows;
 
-    // 保边量化：在鲜艳度调节之后执行，修复鲜艳度造成的连续色块碎片
-    // 用原始颜色（rawRgb）做连通区域扫描，让空间相邻、颜色相近的格子统一为同一个 markCode
+    // 形态学线条重建：对少数派颜色做8方向断裂检测，填充断裂
+    if (this.data.spotCleanLevel > 0) {
+      const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
+      if (spotParams) {
+        morphologicalLineRepair(finalGridData, finalRows, finalCols, spotParams.morphColorThreshold, spotParams.morphMaxGap);
+      }
+    }
+
+    // 保边量化：修复连续色块碎片
     // edgeThreshold = 0 时跳过保边量化（轻度模式只做去杂色）
     if (this.data.spotCleanLevel > 0) {
       const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
@@ -493,7 +505,7 @@ module.exports = {
       }
     }
 
-    // 去杂色：在保边量化之后执行，去掉真正的孤立杂色点
+    // 去杂色：去掉真正的孤立杂色点
     if (this.data.spotCleanLevel > 0) {
       const spotParams = getSpotCleanParams(this.data.spotCleanLevel);
       if (spotParams) {
