@@ -286,13 +286,18 @@ function morphologicalLineRepair(gridData, rows, cols, colorThreshold, maxGap) {
     }
   }
 
-  // 第2步：找出少数派颜色的格子
+  // 第2步：找出需要膨胀的格子（少数派颜色 + 深色）
   const minorityCells = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const cell = gridData[row] && gridData[row][col];
       if (!cell || !cell.markCode || !cell.markRgb || cell.isEdge || cell.isEmpty) continue;
-      if (markCodeCounts[cell.markCode] < minorityThreshold) {
+
+      // 深色：RGB 各通道最大值 < 80（黑/深灰/深棕/深蓝等轮廓线颜色）
+      const brightness = Math.max(cell.markRgb.r, cell.markRgb.g, cell.markRgb.b);
+
+      // 少数派颜色（< 5%）或深色（maxRGB < 80）都参与膨胀
+      if (markCodeCounts[cell.markCode] < minorityThreshold || brightness < 80) {
         minorityCells.push({ row, col });
       }
     }
@@ -309,7 +314,7 @@ function morphologicalLineRepair(gridData, rows, cols, colorThreshold, maxGap) {
     for (const [dr, dc] of directions) {
       // 沿方向走 1~maxGap 格，找第一个同类格子
       let foundRow = -1, foundCol = -1;
-      let foundHex = null, foundRgb = null;
+      let foundCode = null, foundHex = null, foundRgb = null;
 
       for (let step = 1; step <= maxGap; step++) {
         const nr = row + dr * step;
@@ -330,6 +335,7 @@ function morphologicalLineRepair(gridData, rows, cols, colorThreshold, maxGap) {
           // 找到同类格子
           foundRow = nr;
           foundCol = nc;
+          foundCode = neighbor.markCode;
           foundHex = neighbor.markHex;
           foundRgb = neighbor.markRgb;
           break;
@@ -338,9 +344,7 @@ function morphologicalLineRepair(gridData, rows, cols, colorThreshold, maxGap) {
 
       if (foundRow >= 0) {
         // 填充 cell 和同类格子之间的所有断裂格子
-        // 选用的颜色：用同类格子的 markCode（更"权威"，因为它是已有的大块）
         for (let step = 1; step < Math.abs(foundRow - row) + Math.abs(foundCol - col); step++) {
-          // 计算中间格子的位置（沿方向逐步走）
           const fillRow = row + dr * step;
           const fillCol = col + dc * step;
           if (fillRow === foundRow && fillCol === foundCol) break;
@@ -349,12 +353,11 @@ function morphologicalLineRepair(gridData, rows, cols, colorThreshold, maxGap) {
           const fillCell = gridData[fillRow] && gridData[fillRow][fillCol];
           if (!fillCell || fillCell.isEdge || fillCell.isEmpty) continue;
 
-          // 如果中间格子的 markCode 和目标不同，需要改写
-          if (fillCell.markCode !== foundHex) {
-            // 检查是否已经在 toModify 列表中（避免重复）
+          // 如果中间格子的 markCode 和同类格子不同，需要改写
+          if (fillCell.markCode !== foundCode) {
             const exists = toModify.some(m => m.row === fillRow && m.col === fillCol);
             if (!exists) {
-              toModify.push({ row: fillRow, col: fillCol, markHex: foundHex, markRgb: foundRgb });
+              toModify.push({ row: fillRow, col: fillCol, newCode: foundCode, newHex: foundHex, newRgb: foundRgb });
             }
           }
         }
@@ -364,32 +367,11 @@ function morphologicalLineRepair(gridData, rows, cols, colorThreshold, maxGap) {
 
   // 第4步：统一改写
   let modifiedCount = 0;
-  for (const { row, col, markHex, markRgb } of toModify) {
+  for (const { row, col, newCode, newHex, newRgb } of toModify) {
     const cell = gridData[row][col];
-    // 改写为同类格子的 markCode/markHex/markRgb
-    // 注意：markCode 需要从 markHex 反查，但这里我们直接用 foundRgb 找最近的 markCode
-    // 更简单的做法：直接用 markHex 对应的 markCode
-    // 由于我们没有 markCode，需要从邻居获取
-    // 其实 foundHex 就是 markHex，我们需要找到对应的 markCode
-    // 但 markHex 在色板中可能对应多个 markCode，所以需要用 foundRgb 来匹配
-    // 最简单：直接从 gridData 中找到该 hex 对应的 markCode
-    let markCode = null;
-    // 从周围的同类格子中找 markCode
-    for (const [dr, dc] of directions) {
-      const nr = row + dr;
-      const nc = col + dc;
-      if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
-      const n = gridData[nr] && gridData[nr][nc];
-      if (n && n.markHex === markHex) {
-        markCode = n.markCode;
-        break;
-      }
-    }
-    if (!markCode) continue;
-
-    cell.markCode = markCode;
-    cell.markHex = markHex;
-    cell.markRgb = markRgb ? { ...markRgb } : null;
+    cell.markCode = newCode;
+    cell.markHex = newHex;
+    cell.markRgb = newRgb ? { ...newRgb } : null;
     modifiedCount++;
   }
 
