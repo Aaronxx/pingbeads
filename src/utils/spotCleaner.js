@@ -16,6 +16,17 @@
 function filterIsolatedRegions(gridData, rows, cols) {
   if (!gridData || rows <= 0 || cols <= 0) return 0;
 
+  // DEBUG: 统计 isEdge
+  let edgeCount = 0;
+  let totalCount = 0;
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const c = gridData[row] && gridData[row][col];
+      if (c) { totalCount++; if (c.isEdge) edgeCount++; }
+    }
+  }
+  console.log('[spotClean] isEdge stats:', { edgeCount, totalCount, ratio: (edgeCount/totalCount*100).toFixed(1) + '%' });
+
   let modifiedCount = 0;
 
   // 8 个方向的偏移量
