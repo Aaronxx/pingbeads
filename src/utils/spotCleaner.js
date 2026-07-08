@@ -99,8 +99,8 @@ function filterIsolatedRegions(gridData, rows, cols) {
         }
 
         if (minDistColor) {
-          // DEBUG 日志：只打前5条
-          if (toModify.length < 5) {
+          // DEBUG 日志：找所有H5
+          if (cell.markCode === 'H5' || cell.markCode === 'E16') {
             console.log('[spotClean] modify:', {
               row, col,
               from: cell.markCode,
