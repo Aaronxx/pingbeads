@@ -9,11 +9,14 @@
  * @param {Array} gridData - 二维网格数据
  * @param {number} rows - 行数
  * @param {number} cols - 列数
- * @param {number} spotThreshold - 邻居数量阈值（邻居中某个颜色的格子数 > 此值才改写）
+ * @param {number} spotThreshold - 邻居数量阈值（邻居中某个颜色的格子数 > 此值才考虑吞噬）
+ * @param {number} protectThreshold - 色差保护阈值（当前格子和主色的 markRgb 欧氏距离 < 此值则不吞噬，保护细节）
  * @returns {number} 被修改的格子数量（0 表示无修改）
  */
-function filterIsolatedRegions(gridData, rows, cols, spotThreshold) {
+function filterIsolatedRegions(gridData, rows, cols, spotThreshold, protectThreshold) {
   if (!gridData || rows <= 0 || cols <= 0 || spotThreshold <= 0) return 0;
+
+  const protectThresholdSq = protectThreshold * protectThreshold;
 
   let modifiedCount = 0;
 
@@ -63,9 +66,9 @@ function filterIsolatedRegions(gridData, rows, cols, spotThreshold) {
         }
       }
 
-      // 如果邻居中某个颜色的格子数 > spotThreshold，且和自己不同，就改写
+      // 如果邻居中某个颜色的格子数 > spotThreshold，且和自己不同，且色差足够大，就吞噬
       if (bestColor && bestColor !== cell.markCode && bestCount > spotThreshold) {
-        // 找到主色的 hex/rgb 信息
+        // 找到主色的 markRgb
         let replacementHex = null;
         let replacementRgb = null;
         for (const [dr, dc] of offsets) {
@@ -79,8 +82,17 @@ function filterIsolatedRegions(gridData, rows, cols, spotThreshold) {
           }
         }
 
-        if (replacementHex) {
-          toModify.push({ row, col, bestColor, replacementHex, replacementRgb });
+        if (replacementHex && replacementRgb) {
+          // 色差保护：当前格子和主色的色差太小 → 不吞噬（可能是细节，不是杂色）
+          const cellRgb = cell.markRgb;
+          const cdr = cellRgb.r - replacementRgb.r;
+          const cdg = cellRgb.g - replacementRgb.g;
+          const cdb = cellRgb.b - replacementRgb.b;
+          const colorDistSq = cdr * cdr + cdg * cdg + cdb * cdb;
+
+          if (colorDistSq >= protectThresholdSq) {
+            toModify.push({ row, col, bestColor, replacementHex, replacementRgb });
+          }
         }
       }
     }
@@ -385,9 +397,9 @@ function morphologicalLineRepair(gridData, rows, cols, colorThreshold, maxGap) {
  */
 function getSpotCleanParams(level) {
   switch (level) {
-    case 1: return { edgeThreshold: 0, spotThreshold: 4, morphColorThreshold: 30, morphMaxGap: 2 };   // 轻度
-    case 2: return { edgeThreshold: 40, spotThreshold: 3, morphColorThreshold: 30, morphMaxGap: 3 };  // 中度
-    case 3: return { edgeThreshold: 50, spotThreshold: 2, morphColorThreshold: 30, morphMaxGap: 5 };  // 强度
+    case 1: return { edgeThreshold: 0, spotThreshold: 4, morphColorThreshold: 30, morphMaxGap: 2, protectThreshold: 50 };   // 轻度
+    case 2: return { edgeThreshold: 40, spotThreshold: 3, morphColorThreshold: 30, morphMaxGap: 3, protectThreshold: 40 };  // 中度
+    case 3: return { edgeThreshold: 50, spotThreshold: 2, morphColorThreshold: 30, morphMaxGap: 5, protectThreshold: 30 };  // 强度
     default: return null;
   }
 }

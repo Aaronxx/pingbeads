@@ -139,7 +139,7 @@ Component({
             if (spotParams.edgeThreshold > 0) {
               preserveEdgeQuantization(this.cachedGridData, rows, cols, spotParams.edgeThreshold);
             }
-            filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.spotThreshold);
+            filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.spotThreshold, spotParams.protectThreshold);
           }
         }
         const stats = this.calculateStats(this.cachedGridData, rows, cols);
@@ -161,7 +161,7 @@ Component({
             if (spotParams.edgeThreshold > 0) {
               preserveEdgeQuantization(this.cachedGridData, rows, cols, spotParams.edgeThreshold);
             }
-            filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.spotThreshold);
+            filterIsolatedRegions(this.cachedGridData, rows, cols, spotParams.spotThreshold, spotParams.protectThreshold);
           }
         }
         const stats = this.calculateStats(this.cachedGridData, rows, cols);
@@ -236,7 +236,7 @@ Component({
             if (spotParams.edgeThreshold > 0) {
               preserveEdgeQuantization(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols, spotParams.edgeThreshold);
             }
-            filterIsolatedRegions(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols, spotParams.spotThreshold);
+            filterIsolatedRegions(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols, spotParams.spotThreshold, spotParams.protectThreshold);
           }
         }
 
