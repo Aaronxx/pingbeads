@@ -5,6 +5,7 @@ const interaction = require('./mixins/interaction');
 const colorReplace = require('./mixins/colorReplace');
 const imageProcessing = require('./mixins/imageProcessing');
 const exportPreset = require('./mixins/exportPreset');
+const { filterIsolatedRegions } = require('../../utils/spotCleaner');
 
 Component({
   properties: {
@@ -27,7 +28,9 @@ Component({
     // 网格预设：[预设索引, 目标列数, 目标行数]
     gridPreset: { type: Array, value: [0, 0, 0] },
     // 分块导出模式：'' | 'horizontal' | 'vertical' | 'grid2x2'
-    splitMode: { type: String, value: '' }
+    splitMode: { type: String, value: '' },
+    // 孤立区域过滤强度：0=关, 1=轻度(≤1豆), 2=中度(≤2豆), 3=强度(≤3豆)
+    spotCleanLevel: { type: Number, value: 0 }
   },
 
   data: {
@@ -128,6 +131,25 @@ Component({
         this.setData({ isProcessing: true });
         this.resetToOriginalColors(this.cachedGridData, rows, cols);
         this.reapplyVibrantScale(this.cachedGridData, rows, cols);
+        // 补调孤立区域过滤（鲜艳度变化会改变 markCode，需重新过滤）
+        if (this.data.spotCleanLevel > 0) {
+          filterIsolatedRegions(this.cachedGridData, rows, cols, this.data.spotCleanLevel);
+        }
+        const stats = this.calculateStats(this.cachedGridData, rows, cols);
+        this.triggerEvent('statsUpdate', { stats: stats });
+        this.setData({ isProcessing: false });
+        this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+      });
+    },
+    // 孤立区域过滤强度变化：需重新从快照应用颜色 + 过滤
+    'spotCleanLevel': function() {
+      this._waitForData((rows, cols, gridSize) => {
+        this.setData({ isProcessing: true });
+        this.resetToOriginalColors(this.cachedGridData, rows, cols);
+        this.reapplyVibrantScale(this.cachedGridData, rows, cols);
+        if (this.data.spotCleanLevel > 0) {
+          filterIsolatedRegions(this.cachedGridData, rows, cols, this.data.spotCleanLevel);
+        }
         const stats = this.calculateStats(this.cachedGridData, rows, cols);
         this.triggerEvent('statsUpdate', { stats: stats });
         this.setData({ isProcessing: false });
@@ -190,6 +212,11 @@ Component({
             this.replaceSpecialColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
             this.reapplyVibrantScale(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
           }
+        }
+
+        // 补调孤立区域过滤（gridPreset 裁剪后颜色重应用完成）
+        if (this.data.spotCleanLevel > 0) {
+          filterIsolatedRegions(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols, this.data.spotCleanLevel);
         }
 
         const stats = this.calculateStats(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);

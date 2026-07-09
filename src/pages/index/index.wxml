@@ -132,6 +132,7 @@
         antiGrayIntensity="{{antiGrayIntensity / 100}}"
         gridPreset="{{[gridPresetIndex, availableGridPresets[gridPresetIndex].cols, availableGridPresets[gridPresetIndex].rows]}}"
         splitMode="{{splitMode}}"
+        spotCleanLevel="{{spotCleanLevel}}"
         bind:cellClick="onCodeClick"
         bind:mosaicGenerated="onMosaicGenerated"
         bind:statsUpdate="onStatsUpdate"
@@ -244,6 +245,40 @@
             bindtap="onMirrorChange"
           >
             <text>🔄 镜像</text>
+          </view>
+        </view>
+        <!-- 孤立区域过滤 -->
+        <view class="spot-clean-row">
+          <text class="spot-clean-label">🧹 去杂色</text>
+          <view class="spot-clean-btns">
+            <view
+              class="spot-clean-btn {{spotCleanLevel === 0 ? 'active' : ''}}"
+              bindtap="onSpotCleanChange"
+              data-level="0"
+            >
+              <text>关</text>
+            </view>
+            <view
+              class="spot-clean-btn {{spotCleanLevel === 1 ? 'active' : ''}}"
+              bindtap="onSpotCleanChange"
+              data-level="1"
+            >
+              <text>轻</text>
+            </view>
+            <view
+              class="spot-clean-btn {{spotCleanLevel === 2 ? 'active' : ''}}"
+              bindtap="onSpotCleanChange"
+              data-level="2"
+            >
+              <text>中</text>
+            </view>
+            <view
+              class="spot-clean-btn {{spotCleanLevel === 3 ? 'active' : ''}}"
+              bindtap="onSpotCleanChange"
+              data-level="3"
+            >
+              <text>强</text>
+            </view>
           </view>
         </view>
       </view>
