@@ -384,8 +384,8 @@
           <text class="collapse-arrow {{showHiddenFeatures ? 'open' : ''}}">▸</text>
         </view>
         <view class="hidden-features {{showHiddenFeatures ? 'show' : ''}}">
-          <!-- 算法版本选择 -->
-          <view class="sub-group">
+          <!-- 算法版本选择（仅卡通模式，马赛克模式有独立算法） -->
+          <view class="sub-group" wx:if="{{processMode !== 'mosaic'}}">
             <view class="sub-group-title">取色算法</view>
             <view class="switch-row">
               <view

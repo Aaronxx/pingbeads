@@ -168,6 +168,19 @@ function createColorPipeline(options) {
       // 3. 替换特殊色
       replaceSpecials(gridData, rows, cols, ver, opts.useSpecialColors);
     },
+
+    /**
+     * 仅替换特殊色（马赛克模式专用）
+     * 不重映射色号、不应用鲜艳度、不做聚合
+     * 保留 processMosaicV2 自己的色号映射结果
+     *
+     * @param {Array} gridData
+     * @param {number} rows
+     * @param {number} cols
+     */
+    replaceSpecialsOnly(gridData, rows, cols) {
+      replaceSpecials(gridData, rows, cols, opts.algorithmVersion, opts.useSpecialColors);
+    },
   };
 }
 

@@ -22,12 +22,16 @@ const { getMarkColorInfoByCode, isSpecialColor, getAlternativeColor } = require(
  * 人眼对绿色通道权重最高，蓝色最低。
  * 距离随红通道均值微调，比纯欧氏更接近人眼感受。
  */
+/**
+ * 色彩距离（欧氏距离平方）
+ * 查找表和聚合都用欧氏距离，保持和柔和/鲜亮模式一致的色彩映射。
+ * 平衡模式的独特优势在于两阶段聚类 + 空间众数滤波，不在于距离公式。
+ */
 function perceptualDistanceSq(r1, g1, b1, r2, g2, b2) {
-  const rmean = (r1 + r2) / 2;
   const dr = r1 - r2;
   const dg = g1 - g2;
   const db = b1 - b2;
-  return ((512 + rmean) * dr * dr >> 8) + 4 * dg * dg + ((767 - rmean) * db * db >> 8);
+  return dr * dr + dg * dg + db * db;
 }
 
 // ========== 查找表（感知距离构建） ==========

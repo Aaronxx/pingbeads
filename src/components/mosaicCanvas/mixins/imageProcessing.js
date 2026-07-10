@@ -315,12 +315,13 @@ module.exports = {
       console.log('[_finishMosaicResult] ⚠️ 所有格子都被标记为边缘，内容为空！');
     }
 
-    // 浊色规避后处理（默认关闭，由 antiGrayIntensity 控制，>0 时启用）
+    // 浊色规避后处理（由 antiGrayIntensity 控制，>0 时启用）
     if (this.data.antiGrayIntensity > 0) {
       desaturateGrayColors(gridData, result.rows, result.cols, this.data.antiGrayIntensity);
     }
 
-    const presetResult = this._applyColorAndPreset(gridData, result.rows, result.cols, result.gridSize);
+    // 马赛克模式专用：不走 reapplyColors，保留 processMosaicV2 的色号映射
+    const presetResult = this._applyMosaicResult(gridData, result.rows, result.cols, result.gridSize);
     const finalGridData = presetResult.gridData;
     const finalCols = presetResult.cols;
     const finalRows = presetResult.rows;

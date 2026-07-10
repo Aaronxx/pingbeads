@@ -302,15 +302,25 @@ Component({
       }
     },
 
-    // 覆盖 mixin 的 _applyColorAndPreset，使用管道统一后处理
+    // 覆盖 mixin 的 _applyColorAndPreset（卡通模式专用）
+    // 完整后处理：鲜艳度 + 聚合 + 特殊色替换
     _applyColorAndPreset(gridData, rows, cols, gridSize) {
-      // 快照保存 processSimple 的原始产出（含 rawRgb，未应用鲜艳度/聚合/特殊色替换）
       this.cachedOriginalGridData = this.deepCloneGridData(gridData, rows, cols);
-      // 管道统一后处理：鲜艳度 + 聚合 + 特殊色替换
       if (this._pipeline) {
         this._pipeline.reapplyColors(gridData, rows, cols);
       }
-      // 网格预设裁剪
+      const presetResult = this._applyGridPreset(gridData, cols, rows);
+      this.cachedGridData = presetResult.gridData;
+      this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
+      return presetResult;
+    },
+
+    // 马赛克模式专用：保留 processMosaicV2 自己的色号映射，不走 reapplyColors
+    _applyMosaicResult(gridData, rows, cols, gridSize) {
+      this.cachedOriginalGridData = this.deepCloneGridData(gridData, rows, cols);
+      if (this._pipeline) {
+        this._pipeline.replaceSpecialsOnly(gridData, rows, cols);
+      }
       const presetResult = this._applyGridPreset(gridData, cols, rows);
       this.cachedGridData = presetResult.gridData;
       this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };

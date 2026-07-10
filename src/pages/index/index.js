@@ -729,8 +729,8 @@ Page({
       useSpecialColors: false,
       removeEdge: false,
       mirrorImage: false,
-      // 鲜艳度
-      vibrantScale: 2,
+      // 鲜艳度（马赛克模式默认0，卡通模式默认2）
+      vibrantScale: this.data.processMode === 'mosaic' ? 0 : 2,
       vibrantBlockColor: defaultBlockColor,
       // 浊色规避
       antiGrayIntensity: 50,
