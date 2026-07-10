@@ -464,7 +464,7 @@ function enhanceVibrant(rgb, scale) {
     case 4: rn = t; gn = p; bn = v; break;
     case 5: rn = v; gn = p; bn = q; break;
   }
-  const contrast = 1.0 + scale * 0.5;
+  const contrast = 1.0 + scale * 0.2;
   return {
     r: Math.max(0, Math.min(255, Math.round(128 + (rn * 255 - 128) * contrast))),
     g: Math.max(0, Math.min(255, Math.round(128 + (gn * 255 - 128) * contrast))),

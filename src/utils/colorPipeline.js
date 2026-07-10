@@ -46,8 +46,12 @@ function compressContrast(pixelData, width, height, strength) {
 }
 
 /**
- * 阶段2后处理：阴影感知空间平滑
- * 对明显比邻居暗的格子，如果邻居有压倒性主色调，替换为邻居色号
+ * 阶段2后处理：空间平滑（阴影消除 + 杂色清理）
+ *
+ * 两种触发条件（满足任一即替换）：
+ * 1. 阴影：格子明显比邻居暗，且邻居有统一主色调
+ * 2. 杂色：格子的色号在邻居中不存在或极少，而邻居有压倒性主色调
+ *
  * @param {Array} gridData
  * @param {number} rows
  * @param {number} cols
@@ -57,7 +61,7 @@ function smoothShadows(gridData, rows, cols, strength) {
   if (!strength || strength <= 0) return;
 
   const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-  const threshold = 30 * strength;
+  const lumaThreshold = 30 * strength;
 
   for (let pass = 0; pass < 2; pass++) {
     const replacements = [];
@@ -65,12 +69,11 @@ function smoothShadows(gridData, rows, cols, strength) {
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const cell = gridData[r] && gridData[r][c];
-        if (!cell || !cell.rawRgb) continue;
-
-        const cellLuma = cell.rawRgb.r * 0.299 + cell.rawRgb.g * 0.587 + cell.rawRgb.b * 0.114;
+        if (!cell || !cell.markCode) continue;
 
         const neighborCodes = {};
         let avgNeighborLuma = 0, neighborCount = 0;
+        let cellLuma = 0;
 
         for (const [dr, dc] of dirs) {
           const nr = r + dr, nc = c + dc;
@@ -86,18 +89,28 @@ function smoothShadows(gridData, rows, cols, strength) {
         if (neighborCount === 0) continue;
         avgNeighborLuma /= neighborCount;
 
-        const lumaDiff = avgNeighborLuma - cellLuma;
-        if (lumaDiff > threshold) {
-          let bestCode = null, bestCount = 0;
-          for (const code in neighborCodes) {
-            if (neighborCodes[code] > bestCount) {
-              bestCount = neighborCodes[code];
-              bestCode = code;
-            }
+        if (cell.rawRgb) {
+          cellLuma = cell.rawRgb.r * 0.299 + cell.rawRgb.g * 0.587 + cell.rawRgb.b * 0.114;
+        }
+
+        // 找邻居中最常见的色号
+        let bestCode = null, bestCount = 0;
+        for (const code in neighborCodes) {
+          if (neighborCodes[code] > bestCount) {
+            bestCount = neighborCodes[code];
+            bestCode = code;
           }
-          if (bestCode && bestCount >= 2 && bestCode !== cell.markCode) {
-            replacements.push({ r, c, bestCode });
-          }
+        }
+        if (!bestCode || bestCode === cell.markCode) continue;
+
+        // 条件1：阴影 — 格子明显比邻居暗，且邻居有统一主色调（≥2个同色）
+        const isShadow = (avgNeighborLuma - cellLuma > lumaThreshold) && bestCount >= 2;
+
+        // 条件2：杂色 — 格子的色号在邻居中不存在，而邻居有压倒性主色调（≥3个同色）
+        const isNoise = !neighborCodes[cell.markCode] && bestCount >= 3;
+
+        if (isShadow || isNoise) {
+          replacements.push({ r, c, bestCode });
         }
       }
     }

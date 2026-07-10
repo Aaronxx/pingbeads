@@ -1636,8 +1636,8 @@ function enhanceVibrant(rgb, scale) {
     case 5: rn = v; gn = p; bn = q; break;
   }
 
-  // 对比度增强
-  const contrast = 1.0 + scale * 0.5; // 1.0 到 1.5
+  // 对比度增强（降低系数，避免放大格子间差异导致杂色）
+  const contrast = 1.0 + scale * 0.2; // 1.0 到 1.2
   return {
     r: Math.max(0, Math.min(255, Math.round(128 + (rn * 255 - 128) * contrast))),
     g: Math.max(0, Math.min(255, Math.round(128 + (gn * 255 - 128) * contrast))),
