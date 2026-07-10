@@ -5,6 +5,7 @@ const interaction = require('./mixins/interaction');
 const colorReplace = require('./mixins/colorReplace');
 const imageProcessing = require('./mixins/imageProcessing');
 const exportPreset = require('./mixins/exportPreset');
+const { createColorPipeline } = require('../../utils/colorPipeline');
 
 Component({
   properties: {
@@ -27,7 +28,9 @@ Component({
     // 网格预设：[预设索引, 目标列数, 目标行数]
     gridPreset: { type: Array, value: [0, 0, 0] },
     // 分块导出模式：'' | 'horizontal' | 'vertical' | 'grid2x2'
-    splitMode: { type: String, value: '' }
+    splitMode: { type: String, value: '' },
+    // 算法版本：'classic' | 'current' | 'perceptual'
+    algorithmVersion: { type: String, value: 'perceptual' }
   },
 
   data: {
@@ -43,8 +46,7 @@ Component({
     isDragging: false,
     flatCells: [],
     cachedWidth: 0,
-    cachedHeight: 0,
-    vibrantScale: 2
+    cachedHeight: 0
   },
 
   // 使用普通属性存储大数组，避免通过 setData 传输
@@ -54,6 +56,12 @@ Component({
   _cropOffsetRow: 0,
   canvasCtx: null,
   canvasNode: null,
+
+  lifetimes: {
+    attached() {
+      this._initPipeline();
+    },
+  },
 
   observers: {
     'imagePath': function(newPath) {
@@ -76,6 +84,11 @@ Component({
       if (this._lastProcessedKey === key) return;
       this._lastProcessedKey = key;
 
+      // 更新管道参数
+      if (this._pipeline) {
+        this._pipeline.update({ mergeThreshold: this.data.mergeThreshold });
+      }
+
       if (this.data.processMode === 'mosaic') {
         this.cachedGridData = null;
         this.cachedGridInfo = null;
@@ -97,8 +110,24 @@ Component({
       }
     },
     'useSpecialColors': function() {
-      // 特殊色开关变化会改变 phase-1 映射逻辑(excludeSpecial)，需重跑完整处理
+      // 特殊色开关变化需重跑完整处理（改变映射逻辑）
       if (this.data.isProcessing) return;
+      if (!this._pipeline) this._initPipeline();
+      this._pipeline.update({ useSpecialColors: this.data.useSpecialColors });
+      if (this.cachedPixelData && this.cachedWidth > 0) {
+        this.triggerEvent('loadingChange', { show: true, text: '正在处理图片...' });
+        this.setData({ isProcessing: true }, () => {
+          setTimeout(() => {
+            this.regenerateFromCache();
+          }, 100);
+        });
+      }
+    },
+    'algorithmVersion': function() {
+      // 算法版本变化需重跑完整处理
+      if (this.data.isProcessing) return;
+      if (!this._pipeline) this._initPipeline();
+      this._pipeline.update({ algorithmVersion: this.data.algorithmVersion });
       if (this.cachedPixelData && this.cachedWidth > 0) {
         this.triggerEvent('loadingChange', { show: true, text: '正在处理图片...' });
         this.setData({ isProcessing: true }, () => {
@@ -126,19 +155,20 @@ Component({
     'vibrantScale': function() {
       this._waitForData((rows, cols, gridSize) => {
         this.setData({ isProcessing: true });
-        this.resetToOriginalColors(this.cachedGridData, rows, cols);
-        this.reapplyVibrantScale(this.cachedGridData, rows, cols);
+        if (!this._pipeline) this._initPipeline();
+        this._pipeline.update({ vibrantScale: this.data.vibrantScale });
+        this._pipeline.reapplyColors(this.cachedGridData, rows, cols);
         const stats = this.calculateStats(this.cachedGridData, rows, cols);
         this.triggerEvent('statsUpdate', { stats: stats });
         this.setData({ isProcessing: false });
         this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
       });
     },
-    // 浊色规避强度变化：改的是 phase-1 映射表，需重跑 regenerateFromCache
     'antiGrayIntensity': function(newVal, oldVal) {
-      // 值未变化时跳过（避免首次传值等场景的 observer 误触发导致重入竞态）
       if (oldVal === newVal || (oldVal !== oldVal && newVal !== newVal)) return;
       if (this.data.isProcessing) return;
+      if (!this._pipeline) this._initPipeline();
+      this._pipeline.update({ antiGrayIntensity: this.data.antiGrayIntensity });
       if (this.cachedPixelData && this.cachedWidth > 0) {
         this.triggerEvent('loadingChange', { show: true, text: '正在处理图片...' });
         this.setData({ isProcessing: true }, () => {
@@ -159,37 +189,22 @@ Component({
         const origRows = this.cachedOriginalGridData.length;
         const gridSize = this.cachedGridInfo ? this.cachedGridInfo.gridSize : 10;
 
-        // 从快照（原始数据，含特殊色）恢复并裁剪
+        // 从快照（原始数据，未应用鲜艳度/聚合/特殊色替换）恢复并裁剪
         if (targetCols === 0 || targetRows === 0) {
-          // 原图比例：从快照快速恢复，无需重处理
-          // 重置 cropOffset，避免之前预设设置的偏移残留（修复预览无法还原）
+          // 原图比例：从快照快速恢复
           this._cropOffsetCol = 0;
           this._cropOffsetRow = 0;
           this.cachedGridData = this.deepCloneGridData(this.cachedOriginalGridData, origRows, origCols);
           this.cachedGridInfo = { cols: origCols, rows: origRows, gridSize };
-          // cachedOriginalGridData 是未应用鲜艳度的原始数据，恢复后需要重新应用鲜艳度和特殊色
-          this.replaceSpecialColors(this.cachedGridData, origRows, origCols);
-          this.reapplyVibrantScale(this.cachedGridData, origRows, origCols);
         } else {
           const presetResult = this._applyGridPreset(this.cachedOriginalGridData, origCols, origRows, newVal);
           this.cachedGridData = presetResult.gridData;
           this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
+        }
 
-          // 非原图比例才需要重新处理颜色
-          // 注意：裁剪后的数据索引与 snapshot 不对齐，不能直接调用 reapplyVibrantScale
-          // （其内部的 resetToOriginalColors 会用 snapshot[row][col] 恢复，但裁剪后 row/col 对应的是原图中心区域，而非 snapshot 的同一索引）
-          // 裁剪时已从 snapshot 浅拷贝了 markCode/markHex/markRgb，只需重新应用替换逻辑
-          const vibrantScale = this.data.vibrantScale;
-          if (vibrantScale === 0) {
-            // 鲜艳度为 0：快照的 mark 值就是最终值，仅需处理特殊色替换
-            if (!this.data.useSpecialColors) {
-              this.replaceSpecialColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
-            }
-          } else {
-            // 鲜艳度非 0：需要重新增强（从 rawRgb 计算，不依赖 snapshot 索引）
-            this.replaceSpecialColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
-            this.reapplyVibrantScale(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
-          }
+        // 管道统一后处理：从 rawRgb 重新映射（鲜艳度 + 聚合 + 特殊色替换）
+        if (this._pipeline) {
+          this._pipeline.reapplyColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
         }
 
         const stats = this.calculateStats(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
@@ -254,6 +269,94 @@ Component({
     ...interaction,
     ...colorReplace,
     ...imageProcessing,
-    ...exportPreset
+    ...exportPreset,
+
+    // 初始化色彩处理管道
+    _initPipeline() {
+      this._pipeline = createColorPipeline({
+        algorithmVersion: this.data.algorithmVersion,
+        vibrantScale: this.data.vibrantScale,
+        mergeThreshold: this.data.mergeThreshold,
+        useSpecialColors: this.data.useSpecialColors,
+        antiGrayIntensity: this.data.antiGrayIntensity,
+      });
+    },
+
+    // 从快照恢复 rawRgb（用于鲜艳度/特殊色参数变化时重新后处理）
+    _restoreRawFromSnapshot(gridData, rows, cols) {
+      const snapshot = this.cachedOriginalGridData;
+      if (!snapshot) return;
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const cell = gridData[row] && gridData[row][col];
+          const snapRow = snapshot.length === rows ? row : 0;
+          const snapCol = snapshot[0] && snapshot[0].length === cols ? col : 0;
+          const snapCell = snapshot[snapRow] && snapshot[snapRow][snapCol];
+          if (cell && snapCell) {
+            cell.rawRgb = snapCell.rawRgb ? { ...snapCell.rawRgb } : null;
+            cell.markCode = snapCell.markCode;
+            cell.markHex = snapCell.markHex;
+            cell.markRgb = snapCell.markRgb ? { ...snapCell.markRgb } : null;
+          }
+        }
+      }
+    },
+
+    // 覆盖 mixin 的 _applyColorAndPreset，使用管道统一后处理
+    _applyColorAndPreset(gridData, rows, cols, gridSize) {
+      // 快照保存 processSimple 的原始产出（含 rawRgb，未应用鲜艳度/聚合/特殊色替换）
+      this.cachedOriginalGridData = this.deepCloneGridData(gridData, rows, cols);
+      // 管道统一后处理：鲜艳度 + 聚合 + 特殊色替换
+      if (this._pipeline) {
+        this._pipeline.reapplyColors(gridData, rows, cols);
+      }
+      // 网格预设裁剪
+      const presetResult = this._applyGridPreset(gridData, cols, rows);
+      this.cachedGridData = presetResult.gridData;
+      this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
+      return presetResult;
+    },
+
+    // 覆盖 mixin 的 regenerateFromCache，使用管道处理
+    regenerateFromCache() {
+      const pixelData = this.getCachedPixelData();
+      const cachedWidth = this.cachedWidth;
+      const cachedHeight = this.cachedHeight;
+      if (!pixelData || cachedWidth === 0) return;
+
+      // 确保管道已初始化
+      if (!this._pipeline) this._initPipeline();
+
+      const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
+
+      if (this.data.processMode === 'mosaic') {
+        // 马赛克模式：暂不支持算法切换，使用 imageProcessor 原版
+        const { processMosaicV2, processWithSmartRegions } = require('../../utils/imageProcessor');
+        try {
+          const result = processMosaicV2(pixelData, cachedWidth, cachedHeight, {
+            gridSize: qualityGridSize,
+            forceGridSize: this.data.forceGridSize || null,
+            blurRadius: 2,
+            morphRadius: 1,
+            minCellArea: 30,
+            mergeThreshold: this.data.mergeThreshold
+          });
+          this._finishMosaicResult(result, qualityGridSize, cachedWidth, cachedHeight);
+        } catch (e) {
+          console.error('马赛克模式处理失败:', e);
+          try {
+            const result = processWithSmartRegions(pixelData, cachedWidth, cachedHeight, qualityGridSize);
+            this._finishSimpleResult(result, qualityGridSize);
+          } catch (e2) {
+            console.error('回退也失败了:', e2);
+            this.setData({ isProcessing: false });
+          }
+        }
+      } else {
+        // 卡通模式：管道统一处理
+        const result = this._pipeline.processPixels(pixelData, cachedWidth, cachedHeight, qualityGridSize);
+        this._finishSimpleResult(result, qualityGridSize);
+      }
+    }
   }
 });

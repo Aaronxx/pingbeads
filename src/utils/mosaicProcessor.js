@@ -678,19 +678,17 @@ class MosaicProcessor {
           }
         }
 
-        // 如果颜色变化太大，使用主导色（16级量化众数）
+        // 如果颜色变化太大，使用主导色（32级量化众数，精度比16级翻倍）
         let finalColor = avgColor;
         if (maxDistSq > maxDistThresholdSq) {
-          // 性能：用整数 key 替代字符串拼接 + split 解析（量化等价于 Math.round(v/16)*16）
-          // 用 Map 保留插入顺序，与原 {} + 字符串 key 在 count 平局时选中相同 bucket
           const colorCount = new Map();
           for (let y = startY; y < endY; y++) {
             const rowBase = y * width;
             for (let x = startX; x < endX; x++) {
               const i = (rowBase + x) * 4;
-              const qr = (pixelData[i] + 8) >> 4;
-              const qg = (pixelData[i + 1] + 8) >> 4;
-              const qb = (pixelData[i + 2] + 8) >> 4;
+              const qr = (pixelData[i] + 4) >> 3;
+              const qg = (pixelData[i + 1] + 4) >> 3;
+              const qb = (pixelData[i + 2] + 4) >> 3;
               const key = (qr << 10) | (qg << 5) | qb;
               colorCount.set(key, (colorCount.get(key) || 0) + 1);
             }
@@ -700,9 +698,9 @@ class MosaicProcessor {
             if (cnt > maxCount) {
               maxCount = cnt;
               finalColor = {
-                r: (key >> 10) << 4,
-                g: ((key >> 5) & 0x1F) << 4,
-                b: (key & 0x1F) << 4
+                r: (key >> 10) << 3,
+                g: ((key >> 5) & 0x1F) << 3,
+                b: (key & 0x1F) << 3
               };
             }
           }
@@ -870,14 +868,12 @@ class MosaicProcessor {
           continue;
         }
 
-        // 主导色（16级量化众数）
-        // 性能：用整数 key 替代字符串拼接 + split 解析（量化等价于 Math.round(v/16)*16）
-        // 用 Map 保留插入顺序，与原 {} + 字符串 key 在 count 平局时选中相同 bucket
+        // 主导色（32级量化众数，精度比16级翻倍）
         const colorCount = new Map();
         for (const c of colors) {
-          const qr = (c.r + 8) >> 4;
-          const qg = (c.g + 8) >> 4;
-          const qb = (c.b + 8) >> 4;
+          const qr = (c.r + 4) >> 3;
+          const qg = (c.g + 4) >> 3;
+          const qb = (c.b + 4) >> 3;
           const key = (qr << 10) | (qg << 5) | qb;
           colorCount.set(key, (colorCount.get(key) || 0) + 1);
         }
@@ -890,7 +886,7 @@ class MosaicProcessor {
         }
         const finalColor = dominantKey < 0
           ? { r: 208, g: 208, b: 208 }
-          : { r: (dominantKey >> 10) << 4, g: ((dominantKey >> 5) & 0x1F) << 4, b: (dominantKey & 0x1F) << 4 };
+          : { r: (dominantKey >> 10) << 3, g: ((dominantKey >> 5) & 0x1F) << 3, b: (dominantKey & 0x1F) << 3 };
         const markColor = fastFindClosestMarkColor(finalColor);
 
         segments.push({

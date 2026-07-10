@@ -132,6 +132,7 @@
         antiGrayIntensity="{{antiGrayIntensity / 100}}"
         gridPreset="{{[gridPresetIndex, availableGridPresets[gridPresetIndex].cols, availableGridPresets[gridPresetIndex].rows]}}"
         splitMode="{{splitMode}}"
+        algorithmVersion="{{algorithmVersion}}"
         bind:cellClick="onCodeClick"
         bind:mosaicGenerated="onMosaicGenerated"
         bind:statsUpdate="onStatsUpdate"
@@ -319,28 +320,6 @@
         </view>
       </view>
 
-      <!-- 浊色规避滑块：偏向高饱和高明度或深色，避开灰浊中间色 -->
-      <view class="setting-group">
-        <view class="group-title">✨ 浊色规避</view>
-        <view class="vibrant-control">
-          <text class="vibrant-label-left">关</text>
-          <view class="vibrant-slider-outer">
-            <view class="vibrant-slider-wrapper">
-              <slider
-                min="0"
-                max="100"
-                value="{{antiGrayIntensity}}"
-                bindchange="onAntiGrayChange"
-                bindchanging="onAntiGrayChanging"
-                block-color="{{antiGrayBlockColor}}"
-                selected-color="{{antiGrayBlockColor}}"
-              />
-            </view>
-          </view>
-          <text class="vibrant-label-right">强</text>
-        </view>
-      </view>
-
       <!-- 第三组：替换功能 -->
       <view class="setting-group">
         <view class="group-title">🔄 颜色替换</view>
@@ -393,6 +372,64 @@
 
             <view class="confirm-btn-small undo-btn" bindtap="onUndo" wx:if="{{canUndo}}">
               <text>撤销</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 隐藏功能：可折叠 -->
+      <view class="setting-group">
+        <view class="group-title group-title-clickable" bindtap="onToggleHiddenFeatures">
+          <text>🔬 隐藏功能</text>
+          <text class="collapse-arrow {{showHiddenFeatures ? 'open' : ''}}">▸</text>
+        </view>
+        <view class="hidden-features {{showHiddenFeatures ? 'show' : ''}}">
+          <!-- 算法版本选择 -->
+          <view class="sub-group">
+            <view class="sub-group-title">取色算法</view>
+            <view class="switch-row">
+              <view
+                class="switch-btn {{algorithmVersion === 'classic' ? 'active' : ''}}"
+                bindtap="onAlgorithmChange"
+                data-version="classic"
+              >
+                <text>🌿 柔和</text>
+              </view>
+              <view
+                class="switch-btn {{algorithmVersion === 'current' ? 'active' : ''}}"
+                bindtap="onAlgorithmChange"
+                data-version="current"
+              >
+                <text>✨ 鲜亮</text>
+              </view>
+              <view
+                class="switch-btn {{algorithmVersion === 'perceptual' ? 'active' : ''}}"
+                bindtap="onAlgorithmChange"
+                data-version="perceptual"
+              >
+                <text>⚖️ 平衡</text>
+              </view>
+            </view>
+          </view>
+          <!-- 浊色规避 -->
+          <view class="sub-group">
+            <view class="sub-group-title">浊色规避</view>
+            <view class="vibrant-control">
+              <text class="vibrant-label-left">关</text>
+              <view class="vibrant-slider-outer">
+                <view class="vibrant-slider-wrapper">
+                  <slider
+                    min="0"
+                    max="100"
+                    value="{{antiGrayIntensity}}"
+                    bindchange="onAntiGrayChange"
+                    bindchanging="onAntiGrayChanging"
+                    block-color="{{antiGrayBlockColor}}"
+                    selected-color="{{antiGrayBlockColor}}"
+                  />
+                </view>
+              </view>
+              <text class="vibrant-label-right">强</text>
             </view>
           </view>
         </view>
@@ -547,6 +584,35 @@
           <view class="help-item-content">
             <text class="help-item-name">浊色规避</text>
             <text class="help-item-desc">避免使用灰浊的中间色，提升颜色纯净度</text>
+          </view>
+        </view>
+        <view class="help-item">
+          <text class="help-item-icon">🧮</text>
+          <view class="help-item-content">
+            <text class="help-item-name">取色算法</text>
+            <view class="help-sub-items">
+              <view class="help-sub-item">
+                <text class="help-sub-icon">🌿</text>
+                <view class="help-sub-content">
+                  <text class="help-sub-name">柔和</text>
+                  <text class="help-sub-desc">纯中位数取色，色块干净平整，适合简单图案</text>
+                </view>
+              </view>
+              <view class="help-sub-item">
+                <text class="help-sub-icon">✨</text>
+                <view class="help-sub-content">
+                  <text class="help-sub-name">鲜亮</text>
+                  <text class="help-sub-desc">智能众数取色，避免灰浊中间色，色彩更鲜明</text>
+                </view>
+              </view>
+              <view class="help-sub-item">
+                <text class="help-sub-icon">⚖️</text>
+                <view class="help-sub-content">
+                  <text class="help-sub-name">平衡</text>
+                  <text class="help-sub-desc">感知距离取色，兼顾色彩整合度和还原度（推荐）</text>
+                </view>
+              </view>
+            </view>
           </view>
         </view>
         <view class="help-item">

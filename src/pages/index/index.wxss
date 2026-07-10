@@ -567,6 +567,42 @@
   flex-wrap: wrap;
 }
 
+.group-title-clickable {
+  cursor: pointer;
+  user-select: none;
+  justify-content: space-between;
+}
+
+.collapse-arrow {
+  font-size: 24rpx;
+  color: #9ca3af;
+  transition: transform 0.2s ease;
+}
+
+.collapse-arrow.open {
+  transform: rotate(90deg);
+}
+
+.hidden-features {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.hidden-features.show {
+  max-height: 500rpx;
+}
+
+.sub-group {
+  margin-top: 20rpx;
+}
+
+.sub-group-title {
+  font-size: 24rpx;
+  color: #9ca3af;
+  margin-bottom: 12rpx;
+}
+
 .actual-size-inline {
   font-size: 22rpx;
   color: #9ca3af;

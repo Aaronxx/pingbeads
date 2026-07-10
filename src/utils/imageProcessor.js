@@ -257,12 +257,9 @@ function processSimple(pixelData, width, height, gridSize, mergeThreshold = 0, v
 
     }
   }
-  // 颜色聚合 - 将相近的原始 RGB 颜色映射到相同的 Mark 色号
-  if (mergeThreshold > 0) {
-    aggregateSimilarColors(gridData, rows, cols, mergeThreshold);
-  }
+  // 注意：aggregateSimilarColors 不在此处调用，由调用方根据 algorithmVersion 选择合并策略
 
-  return { gridData, cols, rows, gridSize };
+  return { gridData, cols, rows, gridSize, mergeThreshold };
 }
 
 /**
@@ -1810,12 +1807,13 @@ function reduceVibrant(rgb, scale) {
     case 5: rn = v; gn = p; bn = q; break;
   }
 
-  // 对比度降低
+  // 对比度降低：往原始颜色的亮度均值收敛（保持色相，不偏向固定灰点）
+  const avgGray = (rn + gn + bn) / 3 * 255;
   const contrast = 1.0 - scale * 0.3; // 1.0 到 0.7
   return {
-    r: Math.max(0, Math.min(255, Math.round(128 + (rn * 255 - 128) * contrast))),
-    g: Math.max(0, Math.min(255, Math.round(128 + (gn * 255 - 128) * contrast))),
-    b: Math.max(0, Math.min(255, Math.round(128 + (bn * 255 - 128) * contrast)))
+    r: Math.max(0, Math.min(255, Math.round(avgGray + (rn * 255 - avgGray) * contrast))),
+    g: Math.max(0, Math.min(255, Math.round(avgGray + (gn * 255 - avgGray) * contrast))),
+    b: Math.max(0, Math.min(255, Math.round(avgGray + (bn * 255 - avgGray) * contrast)))
   };
 }
 

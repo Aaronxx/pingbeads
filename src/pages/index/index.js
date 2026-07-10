@@ -102,6 +102,12 @@ Page({
     antiGrayIntensity: 50,  // 滑块值 0-100（实际强度 = 值/100，传给组件）
     antiGrayBlockColor: '#f59e0b',  // 滑块颜色（橙色，表示偏向鲜艳/深色）
 
+    // 算法版本：'classic' | 'current' | 'perceptual'
+    algorithmVersion: 'perceptual',
+
+    // 隐藏功能面板折叠状态
+    showHiddenFeatures: false,
+
     // 自定义网格大小
     useCustomGridSize: false,  // 是否启用自定义网格大小
     customGridSize: 10,  // 自定义网格大小（3-30）
@@ -472,6 +478,19 @@ Page({
     });
   },
 
+  // 算法版本切换
+  onAlgorithmChange(e) {
+    if (this._checkExporting()) return;
+    const version = e.currentTarget.dataset.version;
+    if (!version || version === this.data.algorithmVersion) return;
+    this.setData({ algorithmVersion: version });
+  },
+
+  // 隐藏功能面板折叠切换
+  onToggleHiddenFeatures() {
+    this.setData({ showHiddenFeatures: !this.data.showHiddenFeatures });
+  },
+
   // 鲜艳度滑块变化
   onVibrantChange(e) {
     // 导出中禁止调整
@@ -635,7 +654,8 @@ Page({
       useSpecialColors: this.data.useSpecialColors,
       removeEdge: this.data.removeEdge,
       mirrorImage: this.data.mirrorImage,
-      splitMode: this.data.splitMode
+      splitMode: this.data.splitMode,
+      algorithmVersion: this.data.algorithmVersion
     };
   },
 
@@ -719,6 +739,8 @@ Page({
       replaceFromCode: '',
       replaceToCode: '',
       replaceScope: 'all',
+      // 算法版本重置为默认值
+      algorithmVersion: 'perceptual',
       // 撤销
       undoStack: [],
       canUndo: false,

@@ -1,8 +1,10 @@
 /**
- * 图片处理 mixin：图片加载、像素处理、马赛克/卡通模式生成
+ * 图片处理 mixin：图片加载、像素处理辅助方法
+ *
+ * regenerateFromCache / _applyColorAndPreset 已在 mosaicCanvas.js 主文件中覆盖，
+ * 通过 colorPipeline.js 统一处理色彩算法。
  */
-const { processSimple, processWithSmartRegions, detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData, processMosaicV2, desaturateGrayColors } = require('../../../utils/imageProcessor');
-const { setExcludeSpecial } = require('../../../utils/colorMapper');
+const { detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData, desaturateGrayColors } = require('../../../utils/imageProcessor');
 
 module.exports = {
   _waitForData(callback, retryCount) {
@@ -66,42 +68,8 @@ module.exports = {
   },
 
   regenerateFromCache() {
-    const pixelData = this.getCachedPixelData();
-    const cachedWidth = this.cachedWidth;
-    const cachedHeight = this.cachedHeight;
-    if (!pixelData || cachedWidth === 0) return;
-
-    // 同步特殊色开关到 colorMapper：useSpecialColors=false 时映射直接排除特殊色
-    setExcludeSpecial(!this.data.useSpecialColors);
-
-    const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
-
-    if (this.data.processMode === 'mosaic') {
-      try {
-        const result = processMosaicV2(pixelData, cachedWidth, cachedHeight, {
-          gridSize: qualityGridSize,
-          forceGridSize: this.data.forceGridSize || null,
-          blurRadius: 2,
-          morphRadius: 1,
-          minCellArea: 30,
-          mergeThreshold: this.data.mergeThreshold
-        });
-        this._finishMosaicResult(result, qualityGridSize, cachedWidth, cachedHeight);
-      } catch (e) {
-        console.error('马赛克模式处理失败:', e);
-        console.warn('回退到旧版算法');
-        try {
-          const result = processWithSmartRegions(pixelData, cachedWidth, cachedHeight, qualityGridSize);
-          this._finishSimpleResult(result, qualityGridSize);
-        } catch (e2) {
-          console.error('回退也失败了:', e2);
-          this.setData({ isProcessing: false });
-        }
-      }
-    } else {
-      const result = processSimple(pixelData, cachedWidth, cachedHeight, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
-      this._finishSimpleResult(result, qualityGridSize);
-    }
+    // 已在 mosaicCanvas.js 主文件中覆盖，通过 colorPipeline 处理
+    // 此处保留空函数防止 mixin 展开时报错
   },
 
   calculateStats(gridData, rows, cols) {
@@ -294,52 +262,22 @@ module.exports = {
   },
 
   processWithSimpleAlgorithm(width, height, _gridSize) {
+    // 像素数据获取失败的回退路径：直接调用主文件的 regenerateFromCache
     this.setData({ isProcessing: false });
-    setExcludeSpecial(!this.data.useSpecialColors);
-    const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
-    let pixelData = this.getCachedPixelData();
-
-    if (this.data.processMode === 'mosaic') {
-      const result = processWithSmartRegions(null, width, height, qualityGridSize);
-      this._finishMosaicResult(result, qualityGridSize, width, height);
-      return;
+    if (this.regenerateFromCache) {
+      this.regenerateFromCache();
     }
-
-    const result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
-    this._finishSimpleResult(result, qualityGridSize);
   },
 
   processPixelData(pixelData, width, height) {
-    setExcludeSpecial(!this.data.useSpecialColors);
     this.cachedPixelData = new Uint8ClampedArray(pixelData);
     this.cachedWidth = width;
     this.cachedHeight = height;
     this.triggerEvent('loadingChange', { show: true, text: '正在处理图片...' });
     this.setData({ isProcessing: true });
 
-    const qualityGridSize = this.getQualityGridSize(this.data.previewQuality);
-
-    if (this.data.processMode === 'mosaic') {
-      try {
-        const result = processMosaicV2(pixelData, width, height, {
-          gridSize: qualityGridSize,
-          forceGridSize: this.data.forceGridSize || null,
-          blurRadius: 2,
-          morphRadius: 1,
-          minCellArea: 30,
-          mergeThreshold: this.data.mergeThreshold
-        });
-        this._finishMosaicResult(result, qualityGridSize, width, height);
-      } catch (e) {
-        console.error('马赛克模式处理失败:', e);
-        console.warn('回退到旧版算法');
-        const result = processWithSmartRegions(pixelData, width, height, qualityGridSize);
-        this._finishMosaicResult(result, qualityGridSize, width, height);
-      }
-    } else {
-      const result = processSimple(pixelData, width, height, qualityGridSize, this.data.mergeThreshold, this.data.vibrantScale);
-      this._finishSimpleResult(result, qualityGridSize);
-    }
+    // 通过主文件的 regenerateFromCache（使用 colorPipeline）处理
+    this.regenerateFromCache();
   },
 
   _finishMosaicResult(result, qualityGridSize, srcWidth, srcHeight) {
@@ -452,12 +390,14 @@ module.exports = {
       // ignore
     }
 
-    // 浊色规避后处理（默认关闭，由 antiGrayIntensity 控制，>0 时启用）
-    if (this.data.antiGrayIntensity > 0) {
-      desaturateGrayColors(result.gridData, result.rows, result.cols, this.data.antiGrayIntensity);
-    }
-
+    // 浊色规避后处理在 _applyColorAndPreset（reapplyColors）之后执行，
+    // 避免被 reapplyColors 从 rawRgb 重新映射时覆盖
     const presetResult = this._applyColorAndPreset(result.gridData, result.rows, result.cols, qualityGridSize);
+
+    // 浊色规避后处理（由 antiGrayIntensity 控制，>0 时启用）
+    if (this.data.antiGrayIntensity > 0) {
+      desaturateGrayColors(presetResult.gridData, presetResult.rows, presetResult.cols, this.data.antiGrayIntensity);
+    }
     const finalGridData = presetResult.gridData;
     const finalCols = presetResult.cols;
     const finalRows = presetResult.rows;

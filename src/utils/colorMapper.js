@@ -98,11 +98,11 @@ const SPECIAL_ALTERNATIVES = {
   "ZG6": "D1",
   "ZG7": "D12",
   "ZG8": "H3",
-  "Y1": "E3",
-  "Y2": "G12",
-  "Y3": "B13",
-  "Y4": "C4",
-  "Y5": "D18"
+  "Y1": "E9",
+  "Y2": "A18",
+  "Y3": "B30",
+  "Y4": "C3",
+  "Y5": "D12"
 };
 
 /**
@@ -134,21 +134,12 @@ function findClosestNonMuddy(target) {
   return best;
 }
 
-// 预计算替代色信息的缓存（用 markColorByCode Map O(1) 查找）
-// 预计算替代色：所有特殊色统一用"特殊色自身 RGB 找最近非浊色、非特殊色普通色"
-// 这样既避开浊色(防 M10/H3 等脏色)，又保证色相匹配(以特殊色自身而非浊色替代为 target)
+// 预计算替代色信息的缓存（用静态 SPECIAL_ALTERNATIVES 映射表，保持老行为）
 const alternativeColorCache = new Map();
-for (const specialCode of Object.keys(SPECIAL_ALTERNATIVES)) {
-  const specialColor = markColorByCode.get(specialCode);
-  if (specialColor) {
-    const better = findClosestNonMuddy(specialColor.rgb);
-    if (better) {
-      alternativeColorCache.set(specialCode, better);
-    } else {
-      // 兜底：用原静态表
-      const altColor = markColorByCode.get(SPECIAL_ALTERNATIVES[specialCode]);
-      if (altColor) alternativeColorCache.set(specialCode, altColor);
-    }
+for (const [specialCode, altCode] of Object.entries(SPECIAL_ALTERNATIVES)) {
+  const altColor = markColorByCode.get(altCode);
+  if (altColor) {
+    alternativeColorCache.set(specialCode, altColor);
   }
 }
 
@@ -181,8 +172,8 @@ function getMarkColorInfoByCode(code) {
 
 // 预计算 256×256×256 RGB 到 Mark 的映射表
 // 为平衡性能和内存，使用 8-bit 精度映射
-let colorLookupTable = null;      // 仅含普通色（useSpecialColors=false 用）
-let specialLookupTable = null;    // 仅含特殊色（合并时用）
+let colorLookupTable = null;      // 全色板主表（markPalette，灰色惩罚只加普通色）
+let specialLookupTable = null;    // 普通色专用表（normalPalette + 浊色惩罚，exclude 模式用）
 // 延迟初始化查找表，避免阻塞小程序启动
 let lookupTableReady = false;
 
@@ -239,8 +230,8 @@ const paletteGrayness = markPalette.map(c => computeGrayness(c.rgb));
 let antiGrayIntensity = 0;
 
 // 距离惩罚缩放系数：把 grayness(0-1) 换算成与"距离平方"同量级
-// RGB 最大距离平方 ≈ 195075，SCALE 取其 ~5% 使中等强度下惩罚可见
-const ANTI_GRAY_SCALE = 10000;
+// RGB 最大距离平方 ≈ 195075，SCALE 取其 ~1.5% 使中等强度下惩罚适度（不强制跳色）
+const ANTI_GRAY_SCALE = 3000;
 
 /**
  * 设置浊色规避强度，触发查找表惰性重建
@@ -337,16 +328,18 @@ function buildLookupTableFor(palette, grayness) {
   return table;
 }
 
-// 普通色浊度数组（按 normalPalette 顺序）
+// 全色板浊度数组：特殊色位置为 0（不惩罚），普通色为实际浊度
+const fullPaletteGrayness = markPalette.map(c => isSpecialColor(c.code) ? 0 : computeGrayness(c.rgb));
+// 普通色浊度数组（按 normalPalette 顺序，exclude 模式专用表用）
 const normalPaletteGrayness = normalPalette.map(c => computeGrayness(c.rgb));
 
 function buildColorLookupTable() {
   if (colorLookupTable) return;
-  // 普通色表（含浊色惩罚）
-  colorLookupTable = buildLookupTableFor(normalPalette, normalPaletteGrayness);
-  // 特殊色表（不含浊色惩罚，特殊色少且不参与浊色规避）
-  if (specialPalette.length > 0) {
-    specialLookupTable = buildLookupTableFor(specialPalette, null);
+  // 主表：全色板构建（恢复老行为），灰色惩罚只加在普通色上，特殊色不惩罚
+  colorLookupTable = buildLookupTableFor(markPalette, fullPaletteGrayness);
+  // exclude 模式专用表：仅普通色 + 浊色惩罚
+  if (!specialLookupTable) {
+    specialLookupTable = buildLookupTableFor(normalPalette, normalPaletteGrayness);
   }
 }
 
@@ -450,25 +443,13 @@ function fastFindClosestMarkColor(targetRgb, excludeSpecial) {
   const bIdx = Math.min(31, targetRgb.b >> 3);
   const bucketIdx = rIdx * resolution * resolution + gIdx * resolution + bIdx;
 
-  // 普通色表的结果
+  // 始终用全色板主表（恢复老行为：先找最近色，再决定是否替换特殊色）
   let result = colorLookupTable[bucketIdx];
 
-  // 若不排除特殊色，比较普通色表和特殊色表，取距离更近的
-  if (!exclude && specialLookupTable) {
-    const specialResult = specialLookupTable[bucketIdx];
-    if (specialResult) {
-      const drN = specialResult.rgb.r - targetRgb.r;
-      const dgN = specialResult.rgb.g - targetRgb.g;
-      const dbN = specialResult.rgb.b - targetRgb.b;
-      const distSpecial = drN * drN + dgN * dgN + dbN * dbN;
-      const drR = result.rgb.r - targetRgb.r;
-      const dgR = result.rgb.g - targetRgb.g;
-      const dbR = result.rgb.b - targetRgb.b;
-      const distNormal = drR * drR + dgR * dgR + dbR * dbR;
-      if (distSpecial < distNormal) {
-        result = specialResult;
-      }
-    }
+  // exclude 模式：如果结果是特殊色，替换为静态替代色
+  if (exclude && result && isSpecialColor(result.code)) {
+    const alt = getAlternativeColor(result.code);
+    if (alt) result = alt;
   }
 
   const cacheMax = exclude ? EXCLUDE_SPECIAL_CACHE_MAX : RGB_CACHE_MAX;
@@ -492,8 +473,8 @@ function findClosestMarkColor(targetRgb, excludeSpecial) {
 
   // 性能：直接计算平方距离，避免每色 Math.sqrt + Math.pow
   // findClosestMarkColor 是 fastFindClosestMarkColor 的精确回退路径（无 LUT 时走这里）
+  // 始终搜索全色板（恢复老行为），exclude 时后处理替换特殊色
   for (const color of markPalette) {
-    if (exclude && isSpecialColor(color.code)) continue;
     const dr = targetRgb.r - color.rgb.r;
     const dg = targetRgb.g - color.rgb.g;
     const db = targetRgb.b - color.rgb.b;
@@ -509,6 +490,14 @@ function findClosestMarkColor(targetRgb, excludeSpecial) {
     // 内部按平方距离比较（更快），对外仍返回线性欧氏距离以保留语义
     distance: minDistance === Infinity ? Infinity : Math.sqrt(minDistance)
   };
+
+  // exclude 模式：替换特殊色为静态替代色
+  if (exclude && result && isSpecialColor(result.code)) {
+    const alt = getAlternativeColor(result.code);
+    if (alt) {
+      result = { ...alt, distance: result.distance };
+    }
+  }
 
   return result;
 }
