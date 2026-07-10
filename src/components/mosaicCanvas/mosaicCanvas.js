@@ -30,7 +30,9 @@ Component({
     // 分块导出模式：'' | 'horizontal' | 'vertical' | 'grid2x2'
     splitMode: { type: String, value: '' },
     // 算法版本：'classic' | 'current' | 'perceptual'
-    algorithmVersion: { type: String, value: 'perceptual' }
+    algorithmVersion: { type: String, value: 'perceptual' },
+    // 阴影消除强度 (0-1)
+    shadowStrength: { type: Number, value: 0.3 }
   },
 
   data: {
@@ -178,6 +180,21 @@ Component({
         });
       }
     },
+    // 阴影消除强度变化：影响预处理（对比度压缩）和后处理（空间平滑），需重跑
+    'shadowStrength': function(newVal, oldVal) {
+      if (oldVal === newVal || (oldVal !== oldVal && newVal !== newVal)) return;
+      if (this.data.isProcessing) return;
+      if (!this._pipeline) this._initPipeline();
+      this._pipeline.update({ shadowStrength: this.data.shadowStrength });
+      if (this.cachedPixelData && this.cachedWidth > 0) {
+        this.triggerEvent('loadingChange', { show: true, text: '正在处理图片...' });
+        this.setData({ isProcessing: true }, () => {
+          setTimeout(() => {
+            this.regenerateFromCache();
+          }, 100);
+        });
+      }
+    },
     'gridPreset': function(newVal, oldVal) {
       // 网格预设变化时，使用原始缓存数据重新裁剪
       if (oldVal && oldVal[0] === newVal[0]) return;
@@ -279,6 +296,7 @@ Component({
         mergeThreshold: this.data.mergeThreshold,
         useSpecialColors: this.data.useSpecialColors,
         antiGrayIntensity: this.data.antiGrayIntensity,
+        shadowStrength: this.data.shadowStrength,
       });
     },
 

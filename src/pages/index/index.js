@@ -102,6 +102,10 @@ Page({
     antiGrayIntensity: 50,  // 滑块值 0-100（实际强度 = 值/100，传给组件）
     antiGrayBlockColor: '#f59e0b',  // 滑块颜色（橙色，表示偏向鲜艳/深色）
 
+    // 阴影消除：对比度压缩 + 空间平滑（默认开启，强度30）
+    shadowStrength: 30,  // 滑块值 0-100（实际强度 = 值/100，传给组件）
+    shadowBlockColor: '#8b5cf6',  // 滑块颜色（紫色）
+
     // 算法版本：'classic' | 'current' | 'perceptual'
     algorithmVersion: 'perceptual',
 
@@ -544,6 +548,17 @@ Page({
     });
   },
 
+  // 阴影消除滑块变化（完成）
+  onShadowChange(e) {
+    if (this._checkExporting()) return;
+    this.setData({ shadowStrength: e.detail.value });
+  },
+
+  // 阴影消除滑块拖动中（仅更新显示）
+  onShadowChanging(e) {
+    this.setData({ shadowStrength: e.detail.value });
+  },
+
   // 自定义网格大小勾选
   onCustomGridToggle(e) {
     if (this._checkExporting()) return;
@@ -655,7 +670,8 @@ Page({
       removeEdge: this.data.removeEdge,
       mirrorImage: this.data.mirrorImage,
       splitMode: this.data.splitMode,
-      algorithmVersion: this.data.algorithmVersion
+      algorithmVersion: this.data.algorithmVersion,
+      shadowStrength: this.data.shadowStrength
     };
   },
 
@@ -734,6 +750,8 @@ Page({
       vibrantBlockColor: defaultBlockColor,
       // 浊色规避
       antiGrayIntensity: 50,
+      // 阴影消除
+      shadowStrength: 30,
       // 替换面板
       showReplacePanel: false,
       replaceFromCode: '',

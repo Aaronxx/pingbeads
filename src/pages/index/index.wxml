@@ -130,6 +130,7 @@
         regenerateTrigger="{{regenerateTrigger}}"
         vibrantScale="{{vibrantScale}}"
         antiGrayIntensity="{{antiGrayIntensity / 100}}"
+        shadowStrength="{{shadowStrength / 100}}"
         gridPreset="{{[gridPresetIndex, availableGridPresets[gridPresetIndex].cols, availableGridPresets[gridPresetIndex].rows]}}"
         splitMode="{{splitMode}}"
         algorithmVersion="{{algorithmVersion}}"
@@ -426,6 +427,26 @@
                     bindchanging="onAntiGrayChanging"
                     block-color="{{antiGrayBlockColor}}"
                     selected-color="{{antiGrayBlockColor}}"
+                  />
+                </view>
+              </view>
+              <text class="vibrant-label-right">强</text>
+            </view>
+          </view>
+          <view class="sub-group">
+            <view class="sub-group-title">阴影消除</view>
+            <view class="vibrant-control">
+              <text class="vibrant-label-left">关</text>
+              <view class="vibrant-slider-outer">
+                <view class="vibrant-slider-wrapper">
+                  <slider
+                    min="0"
+                    max="100"
+                    value="{{shadowStrength}}"
+                    bindchange="onShadowChange"
+                    bindchanging="onShadowChanging"
+                    block-color="{{shadowBlockColor}}"
+                    selected-color="{{shadowBlockColor}}"
                   />
                 </view>
               </view>
