@@ -347,9 +347,10 @@ class MosaicProcessor {
       return { segments: [], segmentCount: 0, cols: 1, rows: 1, gridSize: 1, hasGridLines: false, width: width || 0, height: height || 0 };
     }
 
-  // 强制网格大小：跳过扫描线检测，直接均匀切割
+    // 强制网格大小：跳过扫描线检测，直接走无边界处理
     if (forceGridSize && forceGridSize > 0) {
-      return this._processNoGridLines(pixelData, width, height, forceGridSize, minCellArea);
+      const noBorderProcessor = new NoBorderMosaicProcessor();
+      return noBorderProcessor.process(pixelData, width, height, forceGridSize);
     }
 
     // ===== 步骤1: 多线扫描找分界线 =====
@@ -513,8 +514,9 @@ class MosaicProcessor {
     const minLineRatio = 0.4; // 至少达到预期的40%
 
     if (hLineRatio < minLineRatio || vLineRatio < minLineRatio) {
-      // 网格线数量不足，但cellSize已检测到，用检测到的cellSize做均匀切割
-      return this._processNoGridLines(pixelData, width, height, cellSize);
+      // 网格线数量不足，委托给无边界处理器
+      const noBorderProcessor = new NoBorderMosaicProcessor();
+      return noBorderProcessor.process(pixelData, width, height, cellSize);
     }
 
     // 推断分界线颜色（用于识别哪些像素属于分界线）
@@ -529,8 +531,9 @@ class MosaicProcessor {
 
 
     if (cols === 0 || rows === 0) {
-      // 网格构建失败，回退
-      return this._processNoGridLines(pixelData, width, height, cellSize);
+      // 网格构建失败，委托给无边界处理器
+      const noBorderProcessor = new NoBorderMosaicProcessor();
+      return noBorderProcessor.process(pixelData, width, height, cellSize);
     }
 
     // ===== 步骤5: 提取每个色块的颜色 =====

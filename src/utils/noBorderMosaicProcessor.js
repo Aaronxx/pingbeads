@@ -13,7 +13,42 @@
  */
 
 const { fastFindClosestMarkColor } = require('./colorMapper');
-const { medianColor, extractDominantColor } = require('./mosaicProcessor');
+
+// ========== 自包含工具函数（避免循环依赖） ==========
+
+function fastMedian(arr) {
+  const len = arr.length;
+  if (len === 0) return 0;
+  const sorted = arr.slice().sort((a, b) => a - b);
+  const mid = len >> 1;
+  return len % 2 === 1 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+}
+
+function medianColor(colors) {
+  if (!colors || colors.length === 0) return null;
+  const rs = [], gs = [], bs = [];
+  for (const c of colors) { rs.push(c.r); gs.push(c.g); bs.push(c.b); }
+  return { r: fastMedian(rs), g: fastMedian(gs), b: fastMedian(bs) };
+}
+
+function extractDominantColor(colors) {
+  if (!colors || colors.length === 0) return null;
+  if (colors.length <= 4) return medianColor(colors);
+  const median = medianColor(colors);
+  if (!median) return null;
+  const sigmaSq = 2 * 25 * 25;
+  let sumW = 0, sumR = 0, sumG = 0, sumB = 0;
+  for (const c of colors) {
+    const dr = c.r - median.r;
+    const dg = c.g - median.g;
+    const db = c.b - median.b;
+    const distSq = dr * dr + dg * dg + db * db;
+    const w = Math.exp(-distSq / sigmaSq);
+    sumW += w; sumR += c.r * w; sumG += c.g * w; sumB += c.b * w;
+  }
+  if (sumW === 0) return median;
+  return { r: Math.round(sumR / sumW), g: Math.round(sumG / sumW), b: Math.round(sumB / sumW) };
+}
 
 class NoBorderMosaicProcessor {
 
