@@ -93,9 +93,17 @@ class NoBorderMosaicProcessor {
         const cellH = endY - startY;
         if (cellW <= 0 || cellH <= 0) continue;
 
+        // 取中心50%区域像素（排除边缘串色）
+        const marginX = Math.floor(cellW * 0.25);
+        const marginY = Math.floor(cellH * 0.25);
+        const sx0 = startX + marginX;
+        const sx1 = endX - marginX;
+        const sy0 = startY + marginY;
+        const sy1 = endY - marginY;
+
         const colors = [];
-        for (let y = startY; y < endY; y++) {
-          for (let x = startX; x < endX; x++) {
+        for (let y = sy0; y < sy1; y++) {
+          for (let x = sx0; x < sx1; x++) {
             const i = (y * width + x) * 4;
             colors.push({ r: pixelData[i], g: pixelData[i + 1], b: pixelData[i + 2] });
           }
