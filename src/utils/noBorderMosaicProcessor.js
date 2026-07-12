@@ -12,43 +12,7 @@
  *    利用"同一列在所有行上宽度一致"的特性，支持非均匀色块大小（7/8混合）
  */
 
-const { fastFindClosestMarkColor } = require('./colorMapper');
-
-// ========== 自包含工具函数（避免循环依赖） ==========
-
-function fastMedian(arr) {
-  const len = arr.length;
-  if (len === 0) return 0;
-  const sorted = arr.slice().sort((a, b) => a - b);
-  const mid = len >> 1;
-  return len % 2 === 1 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
-}
-
-function medianColor(colors) {
-  if (!colors || colors.length === 0) return null;
-  const rs = [], gs = [], bs = [];
-  for (const c of colors) { rs.push(c.r); gs.push(c.g); bs.push(c.b); }
-  return { r: fastMedian(rs), g: fastMedian(gs), b: fastMedian(bs) };
-}
-
-function extractDominantColor(colors) {
-  if (!colors || colors.length === 0) return null;
-  if (colors.length <= 4) return medianColor(colors);
-  const median = medianColor(colors);
-  if (!median) return null;
-  const sigmaSq = 2 * 25 * 25;
-  let sumW = 0, sumR = 0, sumG = 0, sumB = 0;
-  for (const c of colors) {
-    const dr = c.r - median.r;
-    const dg = c.g - median.g;
-    const db = c.b - median.b;
-    const distSq = dr * dr + dg * dg + db * db;
-    const w = Math.exp(-distSq / sigmaSq);
-    sumW += w; sumR += c.r * w; sumG += c.g * w; sumB += c.b * w;
-  }
-  if (sumW === 0) return median;
-  return { r: Math.round(sumR / sumW), g: Math.round(sumG / sumW), b: Math.round(sumB / sumW) };
-}
+const { extractCellColor } = require('./mosaicColorUtils');
 
 class NoBorderMosaicProcessor {
 
@@ -58,6 +22,9 @@ class NoBorderMosaicProcessor {
    * @param {number} width
    * @param {number} height
    * @param {number} cellSize - 推断的色块大小（整数基准）
+   * @param {Array} [excludeXLines] - 需要排除的X坐标（分界线位置），取色时跳过这些列
+   * @param {Array} [excludeYLines] - 需要排除的Y坐标（分界线位置），取色时跳过这些行
+   * @param {number} [lineThickness] - 分界线宽度
    * @returns {{segments, cols, rows, gridSize, hasGridLines, width, height}}
    */
   process(pixelData, width, height, cellSize) {
@@ -93,36 +60,19 @@ class NoBorderMosaicProcessor {
         const cellH = endY - startY;
         if (cellW <= 0 || cellH <= 0) continue;
 
-        // 取中心50%区域像素（排除边缘串色）
-        const marginX = Math.floor(cellW * 0.25);
-        const marginY = Math.floor(cellH * 0.25);
-        const sx0 = startX + marginX;
-        const sx1 = endX - marginX;
-        const sy0 = startY + marginY;
-        const sy1 = endY - marginY;
-
-        const colors = [];
-        for (let y = sy0; y < sy1; y++) {
-          for (let x = sx0; x < sx1; x++) {
-            const i = (y * width + x) * 4;
-            colors.push({ r: pixelData[i], g: pixelData[i + 1], b: pixelData[i + 2] });
-          }
-        }
-
-        if (colors.length === 0) continue;
-
-        const finalColor = extractDominantColor(colors) || { r: 200, g: 200, b: 200 };
-        const markColor = fastFindClosestMarkColor(finalColor);
+        // 取色：中心50%区域采样 + 中位数引导加权平均
+        const colorResult = extractCellColor(pixelData, width, startX, endX, startY, endY);
+        if (!colorResult) continue;
 
         segments.push({
           id: segId++,
           x: startX, y: startY,
           width: cellW, height: cellH,
-          col, row, avgColor: finalColor,
-          markCode: markColor ? markColor.code : 'M001',
-          markHex: markColor ? markColor.hex : '#CCCCCC',
-          markRgb: markColor ? markColor.rgb : { r: 204, g: 204, b: 204 },
-          pixelCount: colors.length
+          col, row, avgColor: colorResult.avgColor,
+          markCode: colorResult.markCode,
+          markHex: colorResult.markHex,
+          markRgb: colorResult.markRgb,
+          pixelCount: cellW * cellH
         });
       }
     }

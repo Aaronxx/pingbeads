@@ -12,6 +12,7 @@
 
 const { fastFindClosestMarkColor } = require('./colorMapper');
 const { NoBorderMosaicProcessor } = require('./noBorderMosaicProcessor');
+const { extractCellColor } = require('./mosaicColorUtils');
 
 // ========== 工具函数 ==========
 
@@ -374,20 +375,6 @@ class MosaicProcessor {
     const hInference = inferCellSize(hLines, 5, 80);
     const vInference = inferCellSize(vLines, 5, 80);
 
-    // ===== 步骤2b: 黑白像素占比检测（参考 7ec2bc4 的 extremeRatio 检测） =====
-    let darkPixelCount = 0, lightPixelCount = 0, sampleCount = 0;
-    const sampleStepX = Math.max(5, Math.floor(width / 30));
-    const sampleStepY = Math.max(5, Math.floor(height / 30));
-    for (let y = 0; y < height; y += sampleStepY) {
-      for (let x = 0; x < width; x += sampleStepX) {
-        const idx = (y * width + x) * 4;
-        const r = pixelData[idx], g = pixelData[idx + 1], b = pixelData[idx + 2];
-        if (r < 50 && g < 50 && b < 50) darkPixelCount++;
-        else if (r > 200 && g > 200 && b > 200) lightPixelCount++;
-        sampleCount++;
-      }
-    }
-
     let cellSize, lineThickness, hasGridLines, confidence;
 
     // 边界线宽度一致性检测：真正的边界线宽度在整张图上一致，
@@ -502,19 +489,45 @@ class MosaicProcessor {
 
 
     // ===== 步骤3: 精确定位所有分界线 =====
-    // 合并所有扫描线的分界线，找到全局一致的分界线位置
     const hLineCenters = this._mergeLineCenters(hLines, cellSize, 3);
     const vLineCenters = this._mergeLineCenters(vLines, cellSize, 3);
 
-    // 检查网格线数量是否充足（对于无网格线的马赛克图，检测到的线可能不够）
+    // 检查分界线数量是否充足 + 规律性
+    // AI生成图的分界线可能数量少且间距不规律
     const expectedHLines = Math.round(height / cellSize);
     const expectedVLines = Math.round(width / cellSize);
     const hLineRatio = expectedHLines > 0 ? hLineCenters.length / expectedHLines : 0;
     const vLineRatio = expectedVLines > 0 ? vLineCenters.length / expectedVLines : 0;
-    const minLineRatio = 0.4; // 至少达到预期的40%
 
-    if (hLineRatio < minLineRatio || vLineRatio < minLineRatio) {
-      // 网格线数量不足，委托给无边界处理器
+    // 检查分界线间距是否规律（接近 cellSize 的整数倍）
+    const checkLineRegularity = (lineCenters, cellSize) => {
+      if (lineCenters.length < 3) return false;
+      const gaps = [];
+      for (let i = 1; i < lineCenters.length; i++) {
+        gaps.push(lineCenters[i] - lineCenters[i - 1]);
+      }
+      let regular = 0;
+      for (const gap of gaps) {
+        const multiple = Math.round(gap / cellSize);
+        if (multiple >= 1 && Math.abs(gap - cellSize * multiple) <= cellSize * 0.2) {
+          regular++;
+        }
+      }
+      return regular / gaps.length >= 0.5;
+    };
+
+    const hRegular = checkLineRegularity(hLineCenters, cellSize);
+    const vRegular = checkLineRegularity(vLineCenters, cellSize);
+    const hSufficient = hLineRatio >= 0.3;
+    const vSufficient = vLineRatio >= 0.3;
+
+    console.log('[mosaic process] 分界线检查: hRatio=' + hLineRatio.toFixed(2) + ' vRatio=' + vLineRatio.toFixed(2)
+      + ' hRegular=' + hRegular + ' vRegular=' + vRegular
+      + ' hLines=' + hLineCenters.length + '/' + expectedHLines + ' vLines=' + vLineCenters.length + '/' + expectedVLines);
+
+    // 两个方向都不满足（数量不足或间距不规律）-> 走无边界处理
+    if (!(hSufficient && hRegular) && !(vSufficient && vRegular)) {
+      console.log('[mosaic process] 分界线不足/不规律 -> 走无边界处理');
       const noBorderProcessor = new NoBorderMosaicProcessor();
       return noBorderProcessor.process(pixelData, width, height, cellSize);
     }
@@ -523,12 +536,13 @@ class MosaicProcessor {
     const lineColor = inferLineColor(pixelData, width, height, hLines, vLines);
 
     // ===== 步骤4: 构建网格 =====
-    // 从分界线位置推断色块边界
     const cellBounds = this._buildCellBounds(hLineCenters, vLineCenters, width, height, lineThickness);
 
     const cols = cellBounds.hCells.length;
     const rows = cellBounds.vCells.length;
 
+    console.log('[mosaic process] 有边界切分: hLines=' + hLineCenters.length + ' vLines=' + vLineCenters.length
+      + ' cols=' + cols + ' rows=' + rows + ' cellSize=' + cellSize);
 
     if (cols === 0 || rows === 0) {
       // 网格构建失败，委托给无边界处理器
@@ -537,56 +551,28 @@ class MosaicProcessor {
     }
 
     // ===== 步骤5: 提取每个色块的颜色 =====
-    // borderSkip: 只排除分界线的一半宽度，保留更多有效像素
+    // borderSkip: 排除分界线宽度，再用中心50%采样避免串色
     const borderSkip = borderMargin !== undefined ? borderMargin : Math.max(1, Math.ceil(lineThickness / 2));
 
     const segments = [];
     let segId = 0;
-    let skippedSmall = 0, skippedNoColor = 0;
 
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         const cellX = cellBounds.hCells[col];
         const cellY = cellBounds.vCells[row];
 
-        // 提取色块内像素（排除边界）
-        const colors = [];
+        // 色块区域（排除边界线）
         const startX = cellX.start + borderSkip;
         const endX = cellX.end - borderSkip;
         const startY = cellY.start + borderSkip;
         const endY = cellY.end - borderSkip;
 
-        if (startX >= endX || startY >= endY) {
-          // 色块太小，用全区域
-          for (let y = cellY.start; y < cellY.end && y < height; y++) {
-            for (let x = cellX.start; x < cellX.end && x < width; x++) {
-              const i = (y * width + x) * 4;
-              colors.push({ r: pixelData[i], g: pixelData[i + 1], b: pixelData[i + 2] });
-            }
-          }
-        } else {
-          for (let y = startY; y < endY && y < height; y++) {
-            for (let x = startX; x < endX && x < width; x++) {
-              const i = (y * width + x) * 4;
-              colors.push({ r: pixelData[i], g: pixelData[i + 1], b: pixelData[i + 2] });
-            }
-          }
-        }
+        if (startX >= endX || startY >= endY) continue;
 
-        if (colors.length < minCellArea) {
-          // 色块太小，跳过
-          skippedSmall++;
-          continue;
-        }
-
-        // 中位数引导的加权平均取色（抗噪 + 准确代表主色调）
-        const avgColor = extractDominantColor(colors);
-        if (!avgColor) {
-          skippedNoColor++;
-          continue;
-        }
-
-        const markColor = fastFindClosestMarkColor(avgColor);
+        // 共享取色：中心50%区域 + 中位数引导加权平均
+        const colorResult = extractCellColor(pixelData, width, startX, endX, startY, endY);
+        if (!colorResult) continue;
 
         segments.push({
           id: segId++,
@@ -596,11 +582,11 @@ class MosaicProcessor {
           height: cellY.end - cellY.start,
           col,
           row,
-          avgColor,
-          markCode: markColor.code,
-          markHex: markColor.hex,
-          markRgb: markColor.rgb,
-          pixelCount: colors.length
+          avgColor: colorResult.avgColor,
+          markCode: colorResult.markCode,
+          markHex: colorResult.markHex,
+          markRgb: colorResult.markRgb,
+          pixelCount: (endX - startX) * (endY - startY)
         });
       }
     }
@@ -715,750 +701,15 @@ class MosaicProcessor {
 
     return { hCells, vCells };
   }
-
-  /**
-   * 检测网格偏移量（X 和 Y 两个方向）
-   *
-   * 两步检测：
-   * 1. 颜色跳变点投票找候选偏移（取票数前3）
-   * 2. 对每个候选偏移验证：用该偏移切分后，格子内部颜色方差最小的就是最佳偏移
-   *    （正确的偏移会让格子边界落在色块交界处，格子内部颜色最均匀）
-   */
-  _detectGridOffset(pixelData, width, height, gridSize) {
-    const colorDistThreshold = 30;
-    const scanRowCount = Math.min(9, Math.max(3, Math.floor(height / 30)));
-    const scanColCount = Math.min(9, Math.max(3, Math.floor(width / 30)));
-
-    // X 方向跳变投票
-    const offsetVotesX = new Array(gridSize).fill(0);
-    for (let s = 0; s < scanRowCount; s++) {
-      const y = Math.floor(height * (s + 1) / (scanRowCount + 1));
-      for (let x = 2; x < width - 2; x++) {
-        const i1 = (y * width + x - 2) * 4;
-        const i2 = (y * width + x + 2) * 4;
-        const dr = pixelData[i1] - pixelData[i2];
-        const dg = pixelData[i1 + 1] - pixelData[i2 + 1];
-        const db = pixelData[i1 + 2] - pixelData[i2 + 2];
-        if (dr * dr + dg * dg + db * db > colorDistThreshold * colorDistThreshold) {
-          offsetVotesX[x % gridSize]++;
-        }
-      }
-    }
-
-    // Y 方向跳变投票
-    const offsetVotesY = new Array(gridSize).fill(0);
-    for (let s = 0; s < scanColCount; s++) {
-      const x = Math.floor(width * (s + 1) / (scanColCount + 1));
-      for (let y = 2; y < height - 2; y++) {
-        const i1 = ((y - 2) * width + x) * 4;
-        const i2 = ((y + 2) * width + x) * 4;
-        const dr = pixelData[i1] - pixelData[i2];
-        const dg = pixelData[i1 + 1] - pixelData[i2 + 1];
-        const db = pixelData[i1 + 2] - pixelData[i2 + 2];
-        if (dr * dr + dg * dg + db * db > colorDistThreshold * colorDistThreshold) {
-          offsetVotesY[y % gridSize]++;
-        }
-      }
-    }
-
-    // 取票数前3的候选偏移
-    const topCandidates = (votes) => {
-      const indexed = votes.map((v, i) => ({ offset: i, votes: v }));
-      return indexed.sort((a, b) => b.votes - a.votes).slice(0, 3);
-    };
-
-    const candidatesX = topCandidates(offsetVotesX);
-    const candidatesY = topCandidates(offsetVotesY);
-
-    // 验证：用候选偏移切分后，计算格子内部的平均颜色方差
-    // 方差最小的偏移 = 格子边界对齐最好 = 正确偏移
-    const validateOffset = (offset, gridSize, totalSize, pixelData, width, height, isHorizontal) => {
-      let totalVariance = 0;
-      let cellCount = 0;
-      const sampleLines = isHorizontal
-        ? [Math.floor(height * 0.25), Math.floor(height * 0.5), Math.floor(height * 0.75)]
-        : [Math.floor(width * 0.25), Math.floor(width * 0.5), Math.floor(width * 0.75)];
-
-      for (let cellStart = offset; cellStart + gridSize <= totalSize; cellStart += gridSize) {
-        for (const linePos of sampleLines) {
-          const colors = [];
-          for (let p = cellStart + 1; p < cellStart + gridSize - 1; p++) {
-            const i = isHorizontal
-              ? (linePos * width + p) * 4
-              : (p * width + linePos) * 4;
-            colors.push({ r: pixelData[i], g: pixelData[i + 1], b: pixelData[i + 2] });
-          }
-          if (colors.length < 2) continue;
-          // 计算方差
-          const avgR = colors.reduce((s, c) => s + c.r, 0) / colors.length;
-          const avgG = colors.reduce((s, c) => s + c.g, 0) / colors.length;
-          const avgB = colors.reduce((s, c) => s + c.b, 0) / colors.length;
-          for (const c of colors) {
-            totalVariance += (c.r - avgR) ** 2 + (c.g - avgG) ** 2 + (c.b - avgB) ** 2;
-          }
-          cellCount++;
-        }
-      }
-      return cellCount > 0 ? totalVariance / cellCount : Infinity;
-    };
-
-    // 对 X 方向候选验证
-    let bestOffsetX = 0, bestVarX = Infinity;
-    for (const c of candidatesX) {
-      const v = validateOffset(c.offset, gridSize, width, pixelData, width, height, true);
-      if (v < bestVarX) { bestVarX = v; bestOffsetX = c.offset; }
-    }
-
-    // 对 Y 方向候选验证
-    let bestOffsetY = 0, bestVarY = Infinity;
-    for (const c of candidatesY) {
-      const v = validateOffset(c.offset, gridSize, height, pixelData, width, height, false);
-      if (v < bestVarY) { bestVarY = v; bestOffsetY = c.offset; }
-    }
-
-    const minVotes = Math.min(scanRowCount, scanColCount) * 3;
-    return {
-      offsetX: bestOffsetX,
-      offsetY: bestOffsetY,
-      hasBoundary: (candidatesX[0] && candidatesX[0].votes > minVotes) || (candidatesY[0] && candidatesY[0].votes > minVotes)
-    };
-  }
-
-  /**
-   * 无分界线模式：偏移对齐 + 边缘裁剪 + 均匀切分
-   *
-   * 改进：
-   * 1. 检测网格偏移，对齐到实际色块边界
-   * 2. 裁掉四周不完整色块（只裁碎片，不裁完整色块）
-   */
-  /**
-   * 用扫描线检测到的分界线位置精确切分色块
-   * 不依赖均匀切分，直接用实际颜色跳变位置作为色块边界
-   */
-  _processByDetectedLines(pixelData, width, height, cellSize, hLineCenters, vLineCenters) {
-    // 构建行列边界（在分界线之间插入均匀网格线填补空缺）
-    const buildBoundaries = (lineCenters, totalSize, cellSize) => {
-      if (lineCenters.length === 0) {
-        // 没有检测到分界线，均匀切分
-        const lines = [];
-        for (let i = 0; i <= totalSize; i += cellSize) lines.push(i);
-        return lines;
-      }
-
-      // 排序
-      const sorted = [...lineCenters].sort((a, b) => a - b);
-
-      // 在首尾和分界线之间补充缺失的网格线
-      const result = [0];
-
-      for (let i = 0; i < sorted.length; i++) {
-        const gap = sorted[i] - result[result.length - 1];
-
-        if (gap > cellSize * 1.5) {
-          // 间距太大（同色块跨了多个cell），在中间插入均匀线
-          let pos = result[result.length - 1] + cellSize;
-          while (pos < sorted[i] - cellSize * 0.5) {
-            result.push(pos);
-            pos += cellSize;
-          }
-        }
-        result.push(sorted[i]);
-      }
-
-      // 尾部补充
-      while (result[result.length - 1] + cellSize < totalSize) {
-        result.push(result[result.length - 1] + cellSize);
-      }
-      result.push(totalSize);
-
-      return result;
-    };
-
-    const colBoundaries = buildBoundaries(hLineCenters, width, cellSize);
-    const rowBoundaries = buildBoundaries(vLineCenters, height, cellSize);
-
-    const cols = colBoundaries.length - 1;
-    const rows = rowBoundaries.length - 1;
-
-    console.log('[mosaic detectedLines] cols=' + cols + ' rows=' + rows
-      + ' colBounds[0..5]=' + JSON.stringify(colBoundaries.slice(0, 6))
-      + ' rowBounds[0..5]=' + JSON.stringify(rowBoundaries.slice(0, 6)));
-
-    const segments = [];
-    let segId = 0;
-
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        const startX = colBoundaries[col];
-        const endX = Math.min(colBoundaries[col + 1], width);
-        const startY = rowBoundaries[row];
-        const endY = Math.min(rowBoundaries[row + 1], height);
-
-        const cellW = endX - startX;
-        const cellH = endY - startY;
-        if (cellW <= 0 || cellH <= 0) continue;
-
-        // 收集格子内像素
-        const colors = [];
-        for (let y = startY; y < endY; y++) {
-          for (let x = startX; x < endX; x++) {
-            const i = (y * width + x) * 4;
-            colors.push({ r: pixelData[i], g: pixelData[i + 1], b: pixelData[i + 2] });
-          }
-        }
-
-        if (colors.length === 0) continue;
-
-        // 中位数引导加权平均取色
-        const finalColor = extractDominantColor(colors) || { r: 200, g: 200, b: 200 };
-        const markColor = fastFindClosestMarkColor(finalColor);
-
-        segments.push({
-          id: segId++,
-          x: startX, y: startY,
-          width: cellW, height: cellH,
-          col, row, avgColor: finalColor,
-          markCode: markColor ? markColor.code : 'M001',
-          markHex: markColor ? markColor.hex : '#CCCCCC',
-          markRgb: markColor ? markColor.rgb : { r: 204, g: 204, b: 204 },
-          pixelCount: colors.length
-        });
-      }
-    }
-
-    return {
-      segments, segmentCount: segments.length,
-      cols, rows, gridSize: cellSize, hasGridLines: false,
-      width, height
-    };
-  }
-
-  /**
-   * 跳变追踪切分（无边界马赛克图）
-   *
-   * 通过多线扫描收集颜色跳变位置，投票合并出全局色块边界。
-   * 间距大于 cellSize*1.5 的地方（同色块跨多格）用逐格追踪补充：
-   * 从上一个实际跳变出发，预期下一个在 cellSize±1 处。
-   */
-  _processByEdgeTracking(pixelData, width, height, cellSize) {
-    const colorDistThreshold = 30;
-    const scanCount = Math.min(31, Math.max(15, Math.floor(Math.min(width, height) / 30)));
-    const bucketSize = Math.max(2, Math.floor(cellSize / 2));
-
-    // 步骤1：多线扫描收集跳变位置
-    // X 方向（横向扫描线，记录 x 坐标的跳变）
-    const xJumpVotes = {};
-    const yJumpVotes = {};
-
-    for (let i = 0; i < scanCount; i++) {
-      // 横向扫描
-      const y = Math.floor(height * i / (scanCount - 1));
-      for (let x = 2; x < width - 2; x++) {
-        const i1 = (y * width + x - 2) * 4;
-        const i2 = (y * width + x + 2) * 4;
-        const dr = pixelData[i1] - pixelData[i2];
-        const dg = pixelData[i1 + 1] - pixelData[i2 + 1];
-        const db = pixelData[i1 + 2] - pixelData[i2 + 2];
-        if (dr * dr + dg * dg + db * db > colorDistThreshold * colorDistThreshold) {
-          const bucket = Math.round(x / bucketSize) * bucketSize;
-          xJumpVotes[bucket] = (xJumpVotes[bucket] || 0) + 1;
-        }
-      }
-
-      // 纵向扫描
-      const x = Math.floor(width * i / (scanCount - 1));
-      for (let y2 = 2; y2 < height - 2; y2++) {
-        const i1 = ((y2 - 2) * width + x) * 4;
-        const i2 = ((y2 + 2) * width + x) * 4;
-        const dr = pixelData[i1] - pixelData[i2];
-        const dg = pixelData[i1 + 1] - pixelData[i2 + 1];
-        const db = pixelData[i1 + 2] - pixelData[i2 + 2];
-        if (dr * dr + dg * dg + db * db > colorDistThreshold * colorDistThreshold) {
-          const bucket = Math.round(y2 / bucketSize) * bucketSize;
-          yJumpVotes[bucket] = (yJumpVotes[bucket] || 0) + 1;
-        }
-      }
-    }
-
-    // 步骤2：筛选高频跳变位置（出现次数 ≥ 扫描线数 × 30%）
-    const minVotes = Math.max(2, Math.floor(scanCount * 0.3));
-    const filterJumps = (votes, minVotes, minGap) => {
-      const sorted = Object.entries(votes)
-        .filter(([_, count]) => count >= minVotes)
-        .map(([pos]) => Number(pos))
-        .sort((a, b) => a - b);
-      // 移除间距过小的（噪声）
-      const result = [];
-      for (const pos of sorted) {
-        if (result.length === 0 || pos - result[result.length - 1] >= minGap) {
-          result.push(pos);
-        }
-      }
-      return result;
-    };
-
-    // 步骤2.5：聚合连续跳变 — JPG过渡带产生的连续跳变合并成一个边界
-    const clusterJumps = (jumps, minGap) => {
-      if (jumps.length === 0) return [];
-      const clusters = [];
-      let current = [jumps[0]];
-      for (let i = 1; i < jumps.length; i++) {
-        if (jumps[i] - jumps[i - 1] <= minGap) {
-          current.push(jumps[i]);
-        } else {
-          clusters.push(current);
-          current = [jumps[i]];
-        }
-      }
-      clusters.push(current);
-      // 每个聚类取中位数作为边界位置
-      return clusters.map(c => Math.round(c.reduce((s, v) => s + v, 0) / c.length));
-    };
-
-    // 过滤掉间距过小的噪声 + 聚合连续跳变
-    const minGap = Math.floor(cellSize * 0.6);
-    const xJumps = clusterJumps(
-      filterJumps(xJumpVotes, minVotes, minGap),
-      minGap
-    );
-    const yJumps = clusterJumps(
-      filterJumps(yJumpVotes, minVotes, minGap),
-      minGap
-    );
-
-    console.log('[mosaic edgeTrack] xJumps(' + xJumps.length + '): ' + JSON.stringify(xJumps.slice(0, 10))
-      + ' yJumps(' + yJumps.length + '): ' + JSON.stringify(yJumps.slice(0, 10)));
-
-    // 步骤3：构建完整边界线
-    const buildBoundaries = (jumps, totalSize, cellSize) => {
-      if (jumps.length === 0) {
-        const lines = [];
-        for (let i = 0; i <= totalSize; i += cellSize) lines.push(i);
-        return lines;
-      }
-
-      const result = [0];
-
-      // 第一个跳变之前补充
-      let firstExpected = jumps[0] % cellSize; // 偏移
-      while (firstExpected + cellSize < jumps[0] - cellSize * 0.3) {
-        result.push(firstExpected);
-        firstExpected += cellSize;
-      }
-      if (result[result.length - 1] !== jumps[0]) result.push(jumps[0]);
-
-      // 逐个跳变追踪
-      for (let i = 1; i < jumps.length; i++) {
-        const gap = jumps[i] - jumps[i - 1];
-        if (gap > cellSize * 1.5) {
-          // 同色块跨多格：按 cellSize 间距补充
-          let pos = jumps[i - 1] + cellSize;
-          while (pos < jumps[i] - cellSize * 0.5) {
-            result.push(pos);
-            pos += cellSize;
-          }
-        }
-        result.push(jumps[i]);
-      }
-
-      // 尾部补充
-      const last = result[result.length - 1];
-      let pos = last + cellSize;
-      while (pos < totalSize) {
-        result.push(pos);
-        pos += cellSize;
-      }
-      if (result[result.length - 1] < totalSize) result.push(totalSize);
-
-      return result.filter((v, i, arr) => i === 0 || v !== arr[i - 1]);
-    };
-
-    const colBoundaries = buildBoundaries(xJumps, width, cellSize);
-    const rowBoundaries = buildBoundaries(yJumps, height, cellSize);
-    const cols = colBoundaries.length - 1;
-    const rows = rowBoundaries.length - 1;
-
-    console.log('[mosaic edgeTrack] cols=' + cols + ' rows=' + rows
-      + ' colBounds[0..6]=' + JSON.stringify(colBoundaries.slice(0, 7)));
-
-    // 步骤4：逐色块取色
-    const segments = [];
-    let segId = 0;
-
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        const startX = colBoundaries[col];
-        const endX = Math.min(colBoundaries[col + 1], width);
-        const startY = rowBoundaries[row];
-        const endY = Math.min(rowBoundaries[row + 1], height);
-
-        const cellW = endX - startX;
-        const cellH = endY - startY;
-        if (cellW <= 0 || cellH <= 0) continue;
-
-        const colors = [];
-        for (let y = startY; y < endY; y++) {
-          for (let x = startX; x < endX; x++) {
-            const i = (y * width + x) * 4;
-            colors.push({ r: pixelData[i], g: pixelData[i + 1], b: pixelData[i + 2] });
-          }
-        }
-
-        if (colors.length === 0) continue;
-
-        const finalColor = extractDominantColor(colors) || { r: 200, g: 200, b: 200 };
-        const markColor = fastFindClosestMarkColor(finalColor);
-
-        segments.push({
-          id: segId++,
-          x: startX, y: startY,
-          width: cellW, height: cellH,
-          col, row, avgColor: finalColor,
-          markCode: markColor ? markColor.code : 'M001',
-          markHex: markColor ? markColor.hex : '#CCCCCC',
-          markRgb: markColor ? markColor.rgb : { r: 204, g: 204, b: 204 },
-          pixelCount: colors.length
-        });
-      }
-    }
-
-    console.log('[mosaic edgeTrack] segments=' + segments.length);
-
-    return {
-      segments, segmentCount: segments.length,
-      cols, rows, gridSize: cellSize, hasGridLines: false,
-      width, height
-    };
-  }
-
-  _processNoGridLines(pixelData, width, height, gridSize) {
-    // 检测网格偏移
-    const offset = this._detectGridOffset(pixelData, width, height, gridSize);
-    const startX0 = offset.hasBoundary ? offset.offsetX : 0;
-    const startY0 = offset.hasBoundary ? offset.offsetY : 0;
-
-    /**
-     * 逐列确定边界：跳变投票法
-     *
-     * 利用"同一列在所有行上宽度一致"的特性：
-     * 在每个预期边界位置附近 ±2px 窗口内，
-     * 统计所有扫描线上的颜色跳变次数，
-     * 跳变最多的位置就是真实色块边界
-     */
-    const findBoundaries = (startPos, totalSize, gridSize, isHorizontal) => {
-      const boundaries = [startPos];
-      let pos = startPos;
-
-      // 扫描线位置
-      const lineCount = 15;
-      const scanLines = [];
-      const lineDim = isHorizontal ? height : width;
-      for (let i = 1; i <= lineCount; i++) {
-        scanLines.push(Math.floor(lineDim * i / (lineCount + 1)));
-      }
-
-      const colorDistThresholdSq = 30 * 30;
-
-      while (pos + 3 < totalSize) {
-        let expectedEnd = pos + gridSize;
-        if (expectedEnd >= totalSize) {
-          boundaries.push(totalSize);
-          break;
-        }
-
-        // 在 expectedEnd ±2px 窗口内统计跳变
-        const windowStart = Math.max(pos + 3, expectedEnd - 2);
-        const windowEnd = Math.min(totalSize - 1, expectedEnd + 2);
-        const jumpCounts = {};
-
-        for (const linePos of scanLines) {
-          for (let p = windowStart; p <= windowEnd; p++) {
-            // 检查 p 和 p+1 之间是否有跳变
-            const i1 = isHorizontal
-              ? (linePos * width + p) * 4
-              : (p * width + linePos) * 4;
-            const i2 = isHorizontal
-              ? (linePos * width + p + 1) * 4
-              : ((p + 1) * width + linePos) * 4;
-
-            const dr = pixelData[i1] - pixelData[i2];
-            const dg = pixelData[i1 + 1] - pixelData[i2 + 1];
-            const db = pixelData[i1 + 2] - pixelData[i2 + 2];
-
-            if (dr * dr + dg * dg + db * db > colorDistThresholdSq) {
-              jumpCounts[p] = (jumpCounts[p] || 0) + 1;
-            }
-          }
-        }
-
-        // 选跳变次数最多的位置作为边界
-        let bestEnd = expectedEnd;
-        let maxJumps = 0;
-        for (const p in jumpCounts) {
-          if (jumpCounts[p] > maxJumps) {
-            maxJumps = jumpCounts[p];
-            bestEnd = Number(p);
-          }
-        }
-
-        // 如果窗口内没有任何跳变（同色块跨多格），用预期位置
-        boundaries.push(bestEnd);
-        pos = bestEnd;
-      }
-
-      if (boundaries[boundaries.length - 1] < totalSize) {
-        boundaries.push(totalSize);
-      }
-
-      return boundaries;
-    };
-
-    const colBoundaries = findBoundaries(startX0, width, gridSize, true);
-    const rowBoundaries = findBoundaries(startY0, height, gridSize, false);
-    const cols = colBoundaries.length - 1;
-    const rows = rowBoundaries.length - 1;
-
-    // 打印前几列/行的实际宽度
-    const colWidths = colBoundaries.slice(0, 8).map((v, i, a) => i > 0 ? v - a[i - 1] : 0).slice(1);
-    const rowHeights = rowBoundaries.slice(0, 8).map((v, i, a) => i > 0 ? v - a[i - 1] : 0).slice(1);
-    console.log('[mosaic noGridLines] gridSize=' + gridSize + ' cols=' + cols + ' rows=' + rows
-      + ' colWidths[0..6]=' + JSON.stringify(colWidths)
-      + ' rowHeights[0..6]=' + JSON.stringify(rowHeights));
-
-    const segments = [];
-    let segId = 0;
-
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        const startX = colBoundaries[col];
-        const endX = Math.min(colBoundaries[col + 1], width);
-        const startY = rowBoundaries[row];
-        const endY = Math.min(rowBoundaries[row + 1], height);
-
-        const cellW = endX - startX;
-        const cellH = endY - startY;
-        if (cellW <= 0 || cellH <= 0) continue;
-
-        const colors = [];
-        for (let y = startY; y < endY; y++) {
-          for (let x = startX; x < endX; x++) {
-            const i = (y * width + x) * 4;
-            colors.push({ r: pixelData[i], g: pixelData[i + 1], b: pixelData[i + 2] });
-          }
-        }
-
-        if (colors.length === 0) continue;
-
-        const finalColor = extractDominantColor(colors) || { r: 200, g: 200, b: 200 };
-        const markColor = fastFindClosestMarkColor(finalColor);
-
-        segments.push({
-          id: segId++,
-          x: startX, y: startY,
-          width: cellW, height: cellH,
-          col, row, avgColor: finalColor,
-          markCode: markColor ? markColor.code : 'M001',
-          markHex: markColor ? markColor.hex : '#CCCCCC',
-          markRgb: markColor ? markColor.rgb : { r: 204, g: 204, b: 204 },
-          pixelCount: colors.length
-        });
-      }
-    }
-
-    console.log('[mosaic noGridLines] segments=' + segments.length);
-
-    return {
-      segments, segmentCount: segments.length,
-      cols, rows, gridSize, hasGridLines: false,
-      width, height
-    };
-  }
-
-  /**
-   * 无网格线马赛克图：均匀切割 + 动态插入窄边界网格线
-   * 扫描图片检测主要颜色边界，在边界位置插入额外网格线
-   */
-  _processWithDetectedBoundaries(pixelData, width, height, gridSize, minCellArea) {
-    const colorDistThreshold = 30; // 降低阈值检测更多边界
-    const scanRowCount = Math.min(15, Math.max(5, Math.floor(height / 20)));
-    const scanColCount = Math.min(15, Math.max(5, Math.floor(width / 20)));
-
-    // 扫描多行收集垂直边界位置
-    const halfGrid = Math.max(2, Math.floor(gridSize / 2));
-    const vBoundaryVotes = {};
-    for (let s = 0; s < scanRowCount; s++) {
-      const y = Math.floor(height * (s + 1) / (scanRowCount + 1));
-      let prevChangeX = -100;
-      for (let x = 2; x < width - 2; x++) {
-        const i1 = (y * width + x - 2) * 4;
-        const i2 = (y * width + x + 2) * 4;
-        const dist = Math.sqrt(
-          (pixelData[i1] - pixelData[i2]) ** 2 +
-          (pixelData[i1 + 1] - pixelData[i2 + 1]) ** 2 +
-          (pixelData[i1 + 2] - pixelData[i2 + 2]) ** 2
-        );
-        if (dist > colorDistThreshold && x - prevChangeX > halfGrid) {
-          const bucket = Math.round(x / halfGrid) * halfGrid;
-          vBoundaryVotes[bucket] = (vBoundaryVotes[bucket] || 0) + 1;
-          prevChangeX = x;
-        }
-      }
-    }
-
-    // 扫描多列收集水平边界位置
-    const hBoundaryVotes = {};
-    for (let s = 0; s < scanColCount; s++) {
-      const x = Math.floor(width * (s + 1) / (scanColCount + 1));
-      let prevChangeY = -100;
-      for (let y = 2; y < height - 2; y++) {
-        const i1 = ((y - 2) * width + x) * 4;
-        const i2 = ((y + 2) * width + x) * 4;
-        const dist = Math.sqrt(
-          (pixelData[i1] - pixelData[i2]) ** 2 +
-          (pixelData[i1 + 1] - pixelData[i2 + 1]) ** 2 +
-          (pixelData[i1 + 2] - pixelData[i2 + 2]) ** 2
-        );
-        if (dist > colorDistThreshold && y - prevChangeY > halfGrid) {
-          const bucket = Math.round(y / halfGrid) * halfGrid;
-          hBoundaryVotes[bucket] = (hBoundaryVotes[bucket] || 0) + 1;
-          prevChangeY = y;
-        }
-      }
-    }
-
-    // 过滤：只保留最显著的边界（按票数排序，每方向最多3条）
-    const maxBoundaries = 3;
-    const sortedV = Object.entries(vBoundaryVotes).sort((a, b) => b[1] - a[1]).slice(0, maxBoundaries * 2);
-    const sortedH = Object.entries(hBoundaryVotes).sort((a, b) => b[1] - a[1]).slice(0, maxBoundaries * 2);
-
-    // 进一步过滤：边界之间距离至少 gridSize/2，避免太密集
-    const filterClose = (entries, minDist) => {
-      const result = [];
-      for (const [pos, count] of entries) {
-        const p = Number(pos);
-        const tooClose = result.some(r => Math.abs(r[0] - p) < minDist);
-        if (!tooClose) result.push([p, count]);
-      }
-      return result;
-    };
-
-    const minDist = Math.floor(gridSize / 2);
-    const filteredV = filterClose(sortedV, minDist).slice(0, maxBoundaries);
-    const filteredH = filterClose(sortedH, minDist).slice(0, maxBoundaries);
-
-    const detectedVBoundaries = filteredV.map(e => e[0]).sort((a, b) => a - b);
-    const detectedHBoundaries = filteredH.map(e => e[0]).sort((a, b) => a - b);
-
-    // 生成常规网格位置
-    const regularVLines = [];
-    for (let x = 0; x <= width; x += gridSize) regularVLines.push(x);
-    const regularHLines = [];
-    for (let y = 0; y <= height; y += gridSize) regularHLines.push(y);
-
-    // 合并检测到的边界和常规网格
-    // 如果检测到的边界距离常规网格线很近（< gridSize/2），替换该线而不是添加
-    const mergeLines = (regular, detected) => {
-      const merged = [...regular];
-      for (const b of detected) {
-        // 找最近的常规网格线
-        let closestIdx = -1, closestDist = Infinity;
-        for (let i = 0; i < merged.length; i++) {
-          const dist = Math.abs(merged[i] - b);
-          if (dist < closestDist) {
-            closestDist = dist;
-            closestIdx = i;
-          }
-        }
-        // 如果距离 < gridSize/2，替换；否则添加
-        if (closestDist < gridSize / 2 && closestIdx >= 0) {
-          merged[closestIdx] = b;
-        } else {
-          merged.push(b);
-        }
-      }
-      merged.sort((a, b) => a - b);
-      return merged.filter((v, i, arr) => i === 0 || v !== arr[i - 1]);
-    };
-
-    const allVLines = mergeLines(regularVLines, detectedVBoundaries);
-    const allHLines = mergeLines(regularHLines, detectedHBoundaries);
-
-
-    // 构建格子
-    const segments = [];
-    let segId = 0;
-    let skippedSmall = 0;
-    let skippedPositions = [];
-
-    for (let row = 0; row < allHLines.length - 1; row++) {
-      for (let col = 0; col < allVLines.length - 1; col++) {
-        const startX = allVLines[col];
-        const startY = allHLines[row];
-        const endX = Math.min(allVLines[col + 1], width);
-        const endY = Math.min(allHLines[row + 1], height);
-
-        const cellW = endX - startX;
-        const cellH = endY - startY;
-        if (cellW <= 1 || cellH <= 1) continue;
-
-        // 采样收集格子内像素
-        const colors = [];
-        const step = Math.max(1, Math.floor(Math.max(cellW, cellH) / 8));
-        for (let y = startY; y < endY; y += step) {
-          for (let x = startX; x < endX; x += step) {
-            const i = (y * width + x) * 4;
-            colors.push({ r: pixelData[i], g: pixelData[i + 1], b: pixelData[i + 2] });
-          }
-        }
-
-        if (colors.length < minCellArea) {
-          skippedSmall++;
-          if (skippedPositions.length < 10) skippedPositions.push('(' + col + ',' + row + '):' + cellW + 'x' + cellH);
-          continue;
-        }
-
-        // 主导色（16级量化众数）
-        const colorCount = {};
-        for (const c of colors) {
-          const key = `${Math.round(c.r / 16) * 16},${Math.round(c.g / 16) * 16},${Math.round(c.b / 16) * 16}`;
-          colorCount[key] = (colorCount[key] || 0) + 1;
-        }
-        let maxCount = 0, dominantKey = '208,208,208';
-        for (const key in colorCount) {
-          if (colorCount[key] > maxCount) {
-            maxCount = colorCount[key];
-            dominantKey = key;
-          }
-        }
-        const [r, g, b] = dominantKey.split(',').map(Number);
-        const finalColor = { r, g, b };
-        const markColor = fastFindClosestMarkColor(finalColor);
-
-        segments.push({
-          id: segId++,
-          x: startX, y: startY,
-          width: cellW, height: cellH,
-          col, row, avgColor: finalColor,
-          markCode: markColor.code,
-          markHex: markColor.hex,
-          markRgb: markColor.rgb,
-          pixelCount: colors.length
-        });
-      }
-    }
-
-
-    const cols = allVLines.length - 1;
-    const rows = allHLines.length - 1;
-
-    return {
-      segments, segmentCount: segments.length,
-      cols, rows, gridSize, hasGridLines: false,
-      width, height
-    };
-  }
 }
 
+module.exports = {
+  MosaicProcessor,
+  scanLineForGridLines,
+  inferCellSize,
+  medianColor,
+  extractDominantColor
+};
 module.exports = {
   MosaicProcessor,
   scanLineForGridLines,

@@ -52,6 +52,10 @@
       {
         "value": "fix_colorstats2.js",
         "type": "file"
+      },
+      {
+        "value": ".zcode",
+        "type": "folder"
       }
     ],
     "include": []
