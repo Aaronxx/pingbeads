@@ -173,6 +173,9 @@
     <view class="split-btn {{splitMode ? 'has-mode' : ''}}" bindtap="toggleSplitPopup">
       <text>{{splitMode ? '重选' : '✂️ 分块导出'}}</text>
     </view>
+    <view class="snapshot-btn" bindtap="exportSnapshot">
+      <text>📷</text>
+    </view>
   </view>
 
   <!-- ========================

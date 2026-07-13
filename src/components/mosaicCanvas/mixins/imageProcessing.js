@@ -106,47 +106,68 @@ module.exports = {
     };
   },
 
-  getVisibleRange() {
-    if (!this.cachedGridData || !this.cachedGridInfo) {
-      return null;
+  // 统计指定范围内的颜色
+  calculateStatsInRange(gridData, startRow, endRow, startCol, endCol) {
+    const { formatMarkCode } = require('../../../utils/colorHelpers');
+    const shouldRemoveEdge = this.data.removeEdge === true;
+
+    const colorCounts = {};
+    let totalCount = 0;
+
+    for (let row = startRow; row <= endRow; row++) {
+      for (let col = startCol; col <= endCol; col++) {
+        const cell = gridData[row] && gridData[row][col];
+        if (!cell || !cell.markCode) continue;
+        if (shouldRemoveEdge && cell.isEdge) continue;
+        const code = cell.markCode;
+        const formattedCode = formatMarkCode(code);
+        if (!colorCounts[formattedCode]) {
+          colorCounts[formattedCode] = {
+            code: formattedCode,
+            originalCode: code,
+            hex: cell.markHex || '#000000',
+            count: 0
+          };
+        }
+        colorCounts[formattedCode].count++;
+        totalCount++;
+      }
     }
-    const { cols, rows, gridSize } = this.cachedGridInfo;
-    const scale = this.data.scale || 1;
-    const offsetX = this.data.offsetX || 0;
-    const offsetY = this.data.offsetY || 0;
-
-    const cellSize = gridSize * scale;
-    const canvasWidth = this.data.canvasWidth || 300;
-    const canvasHeight = this.data.canvasHeight || 300;
-
-    const buffer = cellSize;
-    const visibleLeft = -buffer;
-    const visibleRight = canvasWidth + buffer;
-    const visibleTop = -buffer;
-    const visibleBottom = canvasHeight + buffer;
-
-    const totalGridWidth = cols * gridSize;
-    const totalGridHeight = rows * gridSize;
-    const baseScaleX = canvasWidth / totalGridWidth;
-    const baseScaleY = canvasHeight / totalGridHeight;
-    const baseScale = Math.min(baseScaleX, baseScaleY, 1);
-    const actualScale = baseScale * scale;
-    const baseOffsetX = (canvasWidth - totalGridWidth * actualScale) / 2;
-    const baseOffsetY = (canvasHeight - totalGridHeight * actualScale) / 2;
-
-    const finalOffsetX = baseOffsetX + offsetX;
-    const finalOffsetY = baseOffsetY + offsetY;
-
-    const startCol = Math.max(0, Math.floor((visibleLeft - finalOffsetX) / cellSize));
-    const endCol = Math.min(cols - 1, Math.ceil((visibleRight - finalOffsetX) / cellSize));
-    const startRow = Math.max(0, Math.floor((visibleTop - finalOffsetY) / cellSize));
-    const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - finalOffsetY) / cellSize));
 
     return {
-      startCol,
-      endCol,
-      startRow,
-      endRow
+      colorCount: Object.keys(colorCounts).length,
+      totalCount: totalCount,
+      sortedByCount: Object.values(colorCounts).sort((a, b) => b.count - a.count)
+    };
+  },
+
+  getVisibleRange() {
+    if (!this.cachedGridData || !this.cachedGridInfo) return null;
+    const { cols, rows, gridSize } = this.cachedGridInfo;
+
+    const userScale = this.data.scale || 1;
+    const canvasWidth = this.data.canvasWidth || 300;
+    const canvasHeight = this.data.canvasHeight || 300;
+    const totalGridWidth = cols * gridSize;
+    const totalGridHeight = rows * gridSize;
+    const scaleX = totalGridWidth > 0 ? canvasWidth / totalGridWidth : 1;
+    const scaleY = totalGridHeight > 0 ? canvasHeight / totalGridHeight : 1;
+    const baseScale = Math.min(scaleX, scaleY, 1);
+    const scale = baseScale * userScale;
+    const actualCanvasWidth = canvasWidth * userScale;
+    const actualCanvasHeight = canvasHeight * userScale;
+    const baseOffsetX = (actualCanvasWidth - totalGridWidth * scale) / 2;
+    const baseOffsetY = (actualCanvasHeight - totalGridHeight * scale) / 2;
+    const offsetX = baseOffsetX;
+    const offsetY = baseOffsetY;
+    const cellSize = gridSize * scale;
+    const buffer = cellSize;
+
+    return {
+      startCol: Math.max(0, Math.floor((-buffer - offsetX) / cellSize)),
+      endCol: Math.min(cols - 1, Math.ceil((actualCanvasWidth + buffer - offsetX) / cellSize)),
+      startRow: Math.max(0, Math.floor((-buffer - offsetY) / cellSize)),
+      endRow: Math.min(rows - 1, Math.ceil((actualCanvasHeight + buffer - offsetY) / cellSize))
     };
   },
 
@@ -315,11 +336,7 @@ module.exports = {
       console.log('[_finishMosaicResult] ⚠️ 所有格子都被标记为边缘，内容为空！');
     }
 
-    // 浊色规避后处理（由 antiGrayIntensity 控制，>0 时启用）
-    if (this.data.antiGrayIntensity > 0) {
-      desaturateGrayColors(gridData, result.rows, result.cols, this.data.antiGrayIntensity);
-    }
-
+    // 浊色规避已移入 _applyMosaicResult 内部
     // 马赛克模式专用：不走 reapplyColors，保留 processMosaicV2 的色号映射
     const presetResult = this._applyMosaicResult(gridData, result.rows, result.cols, result.gridSize);
     const finalGridData = presetResult.gridData;
@@ -391,14 +408,9 @@ module.exports = {
       // ignore
     }
 
-    // 浊色规避后处理在 _applyColorAndPreset（reapplyColors）之后执行，
-    // 避免被 reapplyColors 从 rawRgb 重新映射时覆盖
+    // 浊色规避已移入 _applyColorAndPreset 内部，确保快照包含浊色规避结果
     const presetResult = this._applyColorAndPreset(result.gridData, result.rows, result.cols, qualityGridSize);
 
-    // 浊色规避后处理（由 antiGrayIntensity 控制，>0 时启用）
-    if (this.data.antiGrayIntensity > 0) {
-      desaturateGrayColors(presetResult.gridData, presetResult.rows, presetResult.cols, this.data.antiGrayIntensity);
-    }
     const finalGridData = presetResult.gridData;
     const finalCols = presetResult.cols;
     const finalRows = presetResult.rows;

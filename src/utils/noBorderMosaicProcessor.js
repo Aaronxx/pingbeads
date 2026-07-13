@@ -39,12 +39,6 @@ class NoBorderMosaicProcessor {
     const cols = colBoundaries.length - 1;
     const rows = rowBoundaries.length - 1;
 
-    const colWidths = colBoundaries.slice(0, 8).map((v, i, a) => i > 0 ? v - a[i - 1] : 0).slice(1);
-    const rowHeights = rowBoundaries.slice(0, 8).map((v, i, a) => i > 0 ? v - a[i - 1] : 0).slice(1);
-    console.log('[noBorder] cellSize=' + cellSize + ' cols=' + cols + ' rows=' + rows
-      + ' colWidths[0..6]=' + JSON.stringify(colWidths)
-      + ' rowHeights[0..6]=' + JSON.stringify(rowHeights));
-
     // 逐色块取色
     const segments = [];
     let segId = 0;
@@ -77,7 +71,6 @@ class NoBorderMosaicProcessor {
       }
     }
 
-    console.log('[noBorder] segments=' + segments.length);
 
     return {
       segments, segmentCount: segments.length,

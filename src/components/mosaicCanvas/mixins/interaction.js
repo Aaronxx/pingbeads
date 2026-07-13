@@ -63,9 +63,9 @@ module.exports = {
         let newOffsetX = this.initialOffsetX * scaleDelta + (currentCenterX - this.initialCenterX);
         let newOffsetY = this.initialOffsetY * scaleDelta + (currentCenterY - this.initialCenterY);
 
-        const maxOffset = Math.max(2000, canvasWidth * newScale);
-        newOffsetX = Math.max(-maxOffset, Math.min(maxOffset, newOffsetX));
-        newOffsetY = Math.max(-maxOffset, Math.min(maxOffset, newOffsetY));
+        const limits = this._getDragLimits();
+        newOffsetX = Math.max(limits.minX, Math.min(limits.maxX, newOffsetX));
+        newOffsetY = Math.max(limits.minY, Math.min(limits.maxY, newOffsetY));
 
         this.setData({ scale: newScale, offsetX: newOffsetX, offsetY: newOffsetY });
       }
@@ -77,18 +77,16 @@ module.exports = {
       const deltaY = current.clientY - last.clientY;
 
       if (this.data.scale >= 1.0) {
-        const canvasWidth = this.data.canvasWidth;
-        const canvasHeight = this.data.canvasHeight;
-        const maxOffset = Math.max(2000, canvasWidth * this.data.scale);
+        const limits = this._getDragLimits();
 
         let newOffsetX = this.data.offsetX + deltaX;
         let newOffsetY = this.data.offsetY + deltaY;
-        newOffsetX = Math.max(-maxOffset, Math.min(maxOffset, newOffsetX));
-        newOffsetY = Math.max(-maxOffset, Math.min(maxOffset, newOffsetY));
 
-        // 先更新实例属性，再 setData（setData 是异步的，下次 move 进来时 _lastTouch 已是最新）
+        const clampedX = Math.max(limits.minX, Math.min(limits.maxX, newOffsetX));
+        const clampedY = Math.max(limits.minY, Math.min(limits.maxY, newOffsetY));
+
         this._lastTouch = { clientX: current.clientX, clientY: current.clientY };
-        this.setData({ offsetX: newOffsetX, offsetY: newOffsetY });
+        this.setData({ offsetX: clampedX, offsetY: clampedY });
       }
     }
   },
@@ -100,11 +98,8 @@ module.exports = {
       this.initialTouchDistance = 0;
       this.initialCenterX = 0;
       this.initialCenterY = 0;
-
-      if (this.cachedGridData && this.cachedGridInfo) {
-        const { cols, rows, gridSize } = this.cachedGridInfo;
-        this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
-      }
+      // 不重新渲染：CSS transform 已经处理了视觉位移，renderToCanvas 的 baseOffset 会叠加导致跳变
+      // 拖动通过 CSS transform 处理，不触发 canvas 重绘
     }
   },
 
@@ -128,5 +123,49 @@ module.exports = {
         this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
       }
     });
+  },
+
+  /**
+   * 计算拖动限制范围
+   *
+   * 拖动通过 CSS transform: translate(offsetX, offsetY) 实现
+   * canvas-container 宽高 = canvasWidth × canvasHeight，scale 也是 CSS scale
+   *
+   * 限制：放大后的图片不能拖出可见区域（canvas-container 的边界）
+   * - 缩放后图片尺寸 = canvasWidth × scale
+   * - 图片左边缘位置 = offsetX，不能小于 -(imageWidth - canvasWidth + margin)
+   * - 图片右边缘位置 = offsetX + imageWidth，不能大于 canvasWidth - margin
+   */
+  _getDragLimits() {
+    const canvasWidth = this.data.canvasWidth || 300;
+    const canvasHeight = this.data.canvasHeight || 300;
+    const scale = this.data.scale || 1;
+
+    // CSS transform: translate(offsetX, offsetY) scale(scale)
+    // scale 的变换原点是 center，缩放后图片中心不变
+    // 缩放后图片溢出量 = (imageWidth - canvasWidth) / 2
+
+    const imageWidth = canvasWidth * scale;
+    const imageHeight = canvasHeight * scale;
+
+    // 图片比可见区域大时才允许拖动
+    const overflowX = imageWidth - canvasWidth;
+    const overflowY = imageHeight - canvasHeight;
+
+    if (overflowX <= 0 && overflowY <= 0) {
+      // 图片比可见区域小或等大，不允许拖动
+      return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+    }
+
+    // 允许拖动的范围 = 溢出量的一半（CSS scale 从中心缩放，两边各溢出一半）
+    const maxOffsetX = overflowX > 0 ? overflowX / 2 : 0;
+    const maxOffsetY = overflowY > 0 ? overflowY / 2 : 0;
+
+    return {
+      minX: -maxOffsetX,
+      maxX: maxOffsetX,
+      minY: -maxOffsetY,
+      maxY: maxOffsetY
+    };
   }
 };

@@ -960,9 +960,39 @@ Page({
       return;
     }
 
-    const { cols, rows, gridSize } = exportData.gridInfo;
-    const gridData = exportData.gridData;
-    const segments = exportData.segments;
+    const { cols: fullCols, rows: fullRows, gridSize } = exportData.gridInfo;
+    const fullGridData = exportData.gridData;
+    const fullSegments = exportData.segments;
+
+    // 快照导出：使用可见区域的子矩阵
+    let colOffset = 0;
+    let rowOffset = 0;
+    let exportStats = null;
+
+    let cols, rows, gridData, segments;
+
+    if (this._snapshotRange) {
+      const snap = this._snapshotRange;
+      cols = snap.subCols;
+      rows = snap.subRows;
+      colOffset = snap.startCol;
+      rowOffset = snap.startRow;
+      exportStats = snap.subStats;
+      // 从完整 gridData 中截取子矩阵
+      gridData = [];
+      for (let r = 0; r < rows; r++) {
+        gridData[r] = [];
+        for (let c = 0; c < cols; c++) {
+          gridData[r][c] = fullGridData[rowOffset + r] && fullGridData[rowOffset + r][colOffset + c];
+        }
+      }
+      segments = null; // 快照模式不支持 segments
+    } else {
+      cols = fullCols;
+      rows = fullRows;
+      gridData = fullGridData;
+      segments = fullSegments;
+    }
 
     // 智能模式或普通模式都需要有数据
     if (!gridData && !segments) {
@@ -971,17 +1001,17 @@ Page({
       return;
     }
 
-    // 如果设置了分块导出模式，走分块导出流程
-    if (this.data.splitMode) {
-      this.exportSplitPNG(gridData, cols, rows, gridSize, exportData);
+    // 如果设置了分块导出模式，走分块导出流程（快照模式不走分块）
+    if (this.data.splitMode && !this._snapshotRange) {
+      this.exportSplitPNG(fullGridData, fullCols, fullRows, gridSize, exportData);
       return;
     }
 
-    // 检查是否为智能模式
-    const isMosaicMode = !!segments;
+    // 检查是否为智能模式（快照模式强制走 gridData 分支）
+    const isMosaicMode = !!segments || !!this._snapshotRange;
 
-    // 直接从 flatCells 获取统计结果
-    const stats = this.data.flatCells || { sortedByCount: [] };
+    // 统计数据：快照模式用子矩阵统计，否则用全图统计
+    const stats = exportStats || this.data.flatCells || { sortedByCount: [] };
 
     // 统计行：显示所有颜色，按数量排序（需要先计算statsHeight）
     const statsList = stats.sortedByCount;
@@ -1363,10 +1393,12 @@ Page({
         setTimeout(() => {
           const exportOptions = {
             success: (res) => {
+              that._snapshotRange = null; // 清理快照参数
               that.saveToPhotoAlbum(res.tempFilePath);
             },
             fail: (err) => {
               console.error('[exportPNG] canvasToTempFilePath 失败:', err?.errMsg || err);
+              that._snapshotRange = null;
               wx.showToast({ title: '导出失败，请重试', icon: 'none' });
               that.setData({ isExporting: false });
             }
@@ -1888,6 +1920,117 @@ Page({
   // 关闭帮助面板
   onHelpClose() {
     this.setData({ showHelpPanel: false });
+  },
+
+  // 快照导出：中心点 + 半径方案
+  exportSnapshot() {
+    if (this._checkExporting()) return;
+    if (!this.data.mosaicData) {
+      wx.showToast({ title: '请先生成拼豆图纸', icon: 'none' });
+      return;
+    }
+
+    const mosaicCanvas = this.selectComponent('#mosaic-canvas');
+    if (!mosaicCanvas || !mosaicCanvas.getExportData) {
+      wx.showToast({ title: '导出组件异常', icon: 'none' });
+      return;
+    }
+
+    const exportData = mosaicCanvas.getExportData();
+    if (!exportData || !exportData.gridData || !exportData.gridInfo) {
+      wx.showToast({ title: '请先生成拼豆图纸', icon: 'none' });
+      return;
+    }
+
+    const { cols: fullCols, rows: fullRows, gridSize } = exportData.gridInfo;
+    const fullGridData = exportData.gridData;
+    const that = this;
+
+    // 获取 wrapper 和 container 的 boundingClientRect
+    const query = mosaicCanvas.createSelectorQuery();
+    query.select('#mosaic-wrapper').boundingClientRect();
+    query.select('#canvas-container').boundingClientRect();
+    query.exec((res) => {
+      const wrapperRect = res[0];
+      const containerRect = res[1];
+
+      if (!wrapperRect || !containerRect) {
+        wx.showToast({ title: '无法获取可见区域', icon: 'none' });
+        return;
+      }
+
+      // 1. 计算 wrapper 中心在 container 内的坐标（= canvas 物理坐标）
+      const centerPhysX = wrapperRect.left + wrapperRect.width / 2 - containerRect.left;
+      const centerPhysY = wrapperRect.top + wrapperRect.height / 2 - containerRect.top;
+
+      // 2. renderToCanvas 公式（完全复用）
+      const userScale = mosaicCanvas.data.scale || 1;
+      const canvasWidth = mosaicCanvas.data.canvasWidth || 300;
+      const canvasHeight = mosaicCanvas.data.canvasHeight || 300;
+      const canvasNode = mosaicCanvas.canvasNode;
+      const totalGridWidth = fullCols * gridSize;
+      const totalGridHeight = fullRows * gridSize;
+      const sx = totalGridWidth > 0 ? canvasWidth / totalGridWidth : 1;
+      const sy = totalGridHeight > 0 ? canvasHeight / totalGridHeight : 1;
+      const baseScale = Math.min(sx, sy, 1);
+      const scale = baseScale * userScale;
+      const actualCanvasWidth = canvasNode ? canvasNode.width : canvasWidth * userScale;
+      const actualCanvasHeight = canvasNode ? canvasNode.height : canvasHeight * userScale;
+      const baseOffsetX = (actualCanvasWidth - totalGridWidth * scale) / 2;
+      const baseOffsetY = (actualCanvasHeight - totalGridHeight * scale) / 2;
+      const offsetX = baseOffsetX;
+      const offsetY = baseOffsetY;
+      const cellSize = gridSize * scale;
+
+      // 3. 中心点对应的格子
+      const centerCol = (centerPhysX - offsetX) / cellSize;
+      const centerRow = (centerPhysY - offsetY) / cellSize;
+
+      // 4. 可见格子数（boundingClientRect 已含 transform，wrapperRect.width 就是可见的 CSS 宽度）
+      // wrapperRect.width 在 container 内对应的物理像素宽度
+      const physRatio = containerRect.width > 0 ? actualCanvasWidth / containerRect.width : 1;
+      const halfCols = (wrapperRect.width * physRatio) / cellSize / 2;
+      const halfRows = (wrapperRect.height * physRatio) / cellSize / 2;
+
+      // 5. 从中心向两侧扩展
+      const startCol = Math.max(0, Math.floor(centerCol - halfCols));
+      const endCol = Math.min(fullCols - 1, Math.ceil(centerCol + halfCols));
+      const startRow = Math.max(0, Math.floor(centerRow - halfRows));
+      const endRow = Math.min(fullRows - 1, Math.ceil(centerRow + halfRows));
+
+      console.log('[snapshot] center:', centerCol.toFixed(1), centerRow.toFixed(1),
+        'half:', halfCols.toFixed(1), halfRows.toFixed(1),
+        'cell:', startCol, endCol, startRow, endRow,
+        'offset:', Math.round(offsetX), Math.round(offsetY),
+        'cellSize:', cellSize.toFixed(2),
+        'canvasNode.w:', canvasNode?.width,
+        'container.w:', containerRect.width,
+        'wrapper.w:', wrapperRect.width,
+        'physRatio:', physRatio.toFixed(3),
+        'dataOffset:', mosaicCanvas.data.offsetX, mosaicCanvas.data.offsetY,
+        'baseOffset:', baseOffsetX.toFixed(1), baseOffsetY.toFixed(1),
+        'scale:', userScale.toFixed(2),
+        'fullCols:', fullCols, 'fullRows:', fullRows,
+        'gridDataRows:', fullGridData.length, 'gridDataCols:', fullGridData[0]?.length);
+
+      // 限制范围
+      const safeStartCol = Math.max(0, Math.min(startCol, fullCols - 1));
+      const safeEndCol = Math.max(safeStartCol, Math.min(endCol, fullCols - 1));
+      const safeStartRow = Math.max(0, Math.min(startRow, fullRows - 1));
+      const safeEndRow = Math.max(safeStartRow, Math.min(endRow, fullRows - 1));
+
+      const subCols = safeEndCol - safeStartCol + 1;
+      const subRows = safeEndRow - safeStartRow + 1;
+
+      // 统计
+      const subStats = mosaicCanvas.calculateStatsInRange(
+        fullGridData, safeStartRow, safeEndRow, safeStartCol, safeEndCol
+      );
+
+      // 设置快照参数，复用 exportPNG
+      that._snapshotRange = { startCol: safeStartCol, endCol: safeEndCol, startRow: safeStartRow, endRow: safeEndRow, subCols, subRows, subStats };
+      that.exportPNG();
+    });
   },
 
   // 分享给好友

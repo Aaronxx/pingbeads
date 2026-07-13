@@ -14,6 +14,112 @@ const { fastFindClosestMarkColor } = require('./colorMapper');
 const { NoBorderMosaicProcessor } = require('./noBorderMosaicProcessor');
 const { extractCellColor } = require('./mosaicColorUtils');
 
+/**
+ * 验证图片是否为马赛克图（无网格线类型）
+ *
+ * 核心原理：马赛克图的单元格内部颜色平坦（组内方差小），
+ * 单元格之间颜色差异大（组间方差大）。
+ * 非马赛克图单元格内部颜色杂乱，组内/组间方差比值接近 1。
+ *
+ * @param {Uint8ClampedArray} pixelData
+ * @param {number} width
+ * @param {number} height
+ * @param {number} cellSize - 候选色块大小
+ * @returns {boolean} true 表示是马赛克图，false 表示非马赛克图
+ */
+function validateGridPattern(pixelData, width, height, cellSize) {
+  if (cellSize < 3 || width < cellSize * 2 || height < cellSize * 2) return false;
+
+  const cols = Math.floor(width / cellSize);
+  const rows = Math.floor(height / cellSize);
+  if (cols < 3 || rows < 3) return false;
+
+  // 辅助：获取像素颜色
+  function getPixel(x, y) {
+    if (x < 0 || x >= width || y < 0 || y >= height) return null;
+    const idx = (y * width + x) * 4;
+    return { r: pixelData[idx], g: pixelData[idx + 1], b: pixelData[idx + 2] };
+  }
+
+  // 辅助：颜色距离平方
+  function distSq(a, b) {
+    const dr = a.r - b.r, dg = a.g - b.g, db = a.b - b.b;
+    return dr * dr + dg * dg + db * db;
+  }
+
+  // 采样单元格：均匀选取最多 20 个
+  const sampleCount = Math.min(20, cols * rows);
+  const stepC = Math.max(1, Math.floor(cols / Math.ceil(Math.sqrt(sampleCount))));
+  const stepR = Math.max(1, Math.floor(rows / Math.ceil(Math.sqrt(sampleCount))));
+
+  const cellAvgs = []; // 每个采样单元格的平均色
+  const withinVariances = []; // 每个采样单元格的组内方差
+
+  for (let row = 0; row < rows; row += stepR) {
+    for (let col = 0; col < cols; col += stepC) {
+      if (cellAvgs.length >= sampleCount) break;
+
+      const cx = col * cellSize;
+      const cy = row * cellSize;
+      // 采样单元格中心 3×3 区域
+      const halfCell = Math.floor(cellSize / 2);
+      const sx = cx + halfCell;
+      const sy = cy + halfCell;
+
+      const samples = [];
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const p = getPixel(sx + dx, sy + dy);
+          if (p) samples.push(p);
+        }
+      }
+      if (samples.length < 3) continue;
+
+      // 计算平均值
+      const avg = { r: 0, g: 0, b: 0 };
+      for (const s of samples) { avg.r += s.r; avg.g += s.g; avg.b += s.b; }
+      avg.r /= samples.length; avg.g /= samples.length; avg.b /= samples.length;
+
+      // 计算组内方差（到平均值的平均距离平方）
+      let withinVar = 0;
+      for (const s of samples) { withinVar += distSq(s, avg); }
+      withinVar /= samples.length;
+
+      cellAvgs.push({ avg, col, row });
+      withinVariances.push(withinVar);
+    }
+  }
+
+  if (cellAvgs.length < 4) return false;
+
+  // 计算组间方差：相邻单元格平均色之间的距离
+  const betweenDistances = [];
+  for (let i = 0; i < cellAvgs.length; i++) {
+    for (let j = i + 1; j < cellAvgs.length; j++) {
+      // 只比较相邻的单元格
+      const dc = Math.abs(cellAvgs[i].col - cellAvgs[j].col);
+      const dr = Math.abs(cellAvgs[i].row - cellAvgs[j].row);
+      if (dc + dr === 1) { // 直接相邻
+        betweenDistances.push(distSq(cellAvgs[i].avg, cellAvgs[j].avg));
+      }
+    }
+  }
+
+  if (betweenDistances.length < 3) return false;
+
+  // 平均组内方差
+  const avgWithinVar = withinVariances.reduce((s, v) => s + v, 0) / withinVariances.length;
+  // 平均组间方差
+  const avgBetweenVar = betweenDistances.reduce((s, v) => s + v, 0) / betweenDistances.length;
+
+  // 马赛克图：组内方差远小于组间方差 -> 比值 << 1
+  // 非马赛克图：组内方差接近组间方差 -> 比值 ≈ 1
+  if (avgBetweenVar < 1) return false; // 组间方差极小，可能是纯色图
+  const ratio = avgWithinVar / avgBetweenVar;
+
+  return ratio < 0.3;
+}
+
 // ========== 工具函数 ==========
 
 /** 快速中位数 */
@@ -477,16 +583,12 @@ class MosaicProcessor {
     }
 
     if (!hasGridLines) {
-      // 无边界马赛克图：委托给独立的 NoBorderMosaicProcessor 处理
+      // 验证是否为无网格线马赛克图：单元格内部颜色是否平坦
+      const isMosaic = validateGridPattern(pixelData, width, height, cellSize);
+      const finalCellSize = isMosaic ? cellSize : fallbackGridSize;
       const noBorderProcessor = new NoBorderMosaicProcessor();
-      return noBorderProcessor.process(pixelData, width, height, cellSize);
+      return noBorderProcessor.process(pixelData, width, height, finalCellSize);
     }
-
-    console.log('[mosaic process] 有边界, cellSize=' + cellSize + ' lineThickness=' + lineThickness
-      + ' confidence=' + confidence
-      + ' hBorder=' + JSON.stringify(hBorderCheck)
-      + ' vBorder=' + JSON.stringify(vBorderCheck));
-
 
     // ===== 步骤3: 精确定位所有分界线 =====
     const hLineCenters = this._mergeLineCenters(hLines, cellSize, 3);
@@ -521,13 +623,8 @@ class MosaicProcessor {
     const hSufficient = hLineRatio >= 0.3;
     const vSufficient = vLineRatio >= 0.3;
 
-    console.log('[mosaic process] 分界线检查: hRatio=' + hLineRatio.toFixed(2) + ' vRatio=' + vLineRatio.toFixed(2)
-      + ' hRegular=' + hRegular + ' vRegular=' + vRegular
-      + ' hLines=' + hLineCenters.length + '/' + expectedHLines + ' vLines=' + vLineCenters.length + '/' + expectedVLines);
-
     // 两个方向都不满足（数量不足或间距不规律）-> 走无边界处理
     if (!(hSufficient && hRegular) && !(vSufficient && vRegular)) {
-      console.log('[mosaic process] 分界线不足/不规律 -> 走无边界处理');
       const noBorderProcessor = new NoBorderMosaicProcessor();
       return noBorderProcessor.process(pixelData, width, height, cellSize);
     }
@@ -540,9 +637,6 @@ class MosaicProcessor {
 
     const cols = cellBounds.hCells.length;
     const rows = cellBounds.vCells.length;
-
-    console.log('[mosaic process] 有边界切分: hLines=' + hLineCenters.length + ' vLines=' + vLineCenters.length
-      + ' cols=' + cols + ' rows=' + rows + ' cellSize=' + cellSize);
 
     if (cols === 0 || rows === 0) {
       // 网格构建失败，委托给无边界处理器

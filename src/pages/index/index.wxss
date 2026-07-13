@@ -1026,7 +1026,7 @@
 }
 
 .save-btn-full {
-  width: 60%;
+  width: 56%;
   height: 80rpx;
   display: flex;
   align-items: center;
@@ -1070,13 +1070,33 @@
 
 /* 有分割模式时保存按钮变小 */
 .save-btn-full.has-split {
-  width: 52%;
+  width: 50%;
   font-size: 26rpx;
+}
+
+/* 快照导出按钮（图标按钮） */
+.snapshot-btn {
+  width: 72rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #34d399 0%, #059669 100%);
+  color: #fff;
+  font-size: 32rpx;
+  border-radius: 50%;
+  box-shadow: 0 4rpx 16rpx rgba(5, 150, 105, 0.35);
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.snapshot-btn:active {
+  transform: scale(0.92);
 }
 
 /* 分块导出按钮 */
 .split-btn {
-  width: 32%;
+  width: 28%;
   height: 80rpx;
   display: flex;
   align-items: center;

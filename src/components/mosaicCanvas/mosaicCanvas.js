@@ -6,6 +6,7 @@ const colorReplace = require('./mixins/colorReplace');
 const imageProcessing = require('./mixins/imageProcessing');
 const exportPreset = require('./mixins/exportPreset');
 const { createColorPipeline } = require('../../utils/colorPipeline');
+const { desaturateGrayColors } = require('../../utils/imageProcessor');
 
 Component({
   properties: {
@@ -157,16 +158,46 @@ Component({
         this.setData({ isProcessing: true });
         if (!this._pipeline) this._initPipeline();
         this._pipeline.update({ vibrantScale: this.data.vibrantScale });
-        this._pipeline.reapplyColors(this.cachedGridData, rows, cols);
-        const stats = this.calculateStats(this.cachedGridData, rows, cols);
+
+        // 鲜艳度聚合必须基于全图颜色分布，避免裁剪后聚类不一致
+        if (this.cachedOriginalGridData && this.cachedGridInfo) {
+          const origCols = this.cachedOriginalGridData[0] ? this.cachedOriginalGridData[0].length : 0;
+          const origRows = this.cachedOriginalGridData.length;
+          const isCropped = rows !== origRows || cols !== origCols;
+
+          if (isCropped) {
+            // 从全图快照恢复 → 全图聚合 → 再裁剪到预设
+            const fullGrid = this.deepCloneGridData(this.cachedOriginalGridData, origRows, origCols);
+            this._pipeline.reapplyColors(fullGrid, origRows, origCols);
+            // 保存聚合结果回快照（后续裁剪时复用）
+            this.cachedOriginalGridData = this.deepCloneGridData(fullGrid, origRows, origCols);
+            // 裁剪
+            const presetVal = this.data.gridPreset;
+            const presetResult = this._applyGridPreset(fullGrid, origCols, origRows, presetVal);
+            this.cachedGridData = presetResult.gridData;
+            this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
+          } else {
+            // 原图比例：直接在当前数据上做
+            this._pipeline.reapplyColors(this.cachedGridData, rows, cols);
+            this.cachedOriginalGridData = this.deepCloneGridData(this.cachedGridData, rows, cols);
+          }
+        } else {
+          this._pipeline.reapplyColors(this.cachedGridData, rows, cols);
+        }
+
+        const gi = this.cachedGridInfo;
+        const gd = this.cachedGridData;
+        const stats = this.calculateStats(gd, gi.rows, gi.cols);
         this.triggerEvent('statsUpdate', { stats: stats });
         this.setData({ isProcessing: false });
-        this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+        this.renderToCanvas(gd, gi.cols, gi.rows, gridSize);
       });
     },
     'antiGrayIntensity': function(newVal, oldVal) {
       if (oldVal === newVal || (oldVal !== oldVal && newVal !== newVal)) return;
       if (this.data.isProcessing) return;
+      // 首次加载时 _applyColorAndPreset 已处理过，不需要重新生成
+      if (!this.cachedGridData) return;
       if (!this._pipeline) this._initPipeline();
       this._pipeline.update({ antiGrayIntensity: this.data.antiGrayIntensity });
       if (this.cachedPixelData && this.cachedWidth > 0) {
@@ -202,10 +233,7 @@ Component({
           this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
         }
 
-        // 管道统一后处理：从 rawRgb 重新映射（鲜艳度 + 聚合 + 特殊色替换）
-        if (this._pipeline) {
-          this._pipeline.reapplyColors(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
-        }
+        // 裁剪后不修改任何色块：快照中已保存首次处理时的最终色号，直接复用
 
         const stats = this.calculateStats(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
         const gridInfo = this.cachedGridInfo;
@@ -254,12 +282,8 @@ Component({
     'offsetX,offsetY': function() {
       if (this.data.isDragging) return;
       if (this._isResetting) return;
-      if (this.isRendering) return;
-      if (this.cachedGridData && this.cachedGridInfo) {
-        const { cols, rows, gridSize } = this.cachedGridInfo;
-        this._showTouchLoading = true;
-        this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
-      }
+      // 拖动通过 CSS transform 处理，不触发 canvas 重绘
+      // （renderToCanvas 会用 data.offsetX 叠加 baseOffset 导致坐标偏移）
     }
   },
 
@@ -303,24 +327,33 @@ Component({
     },
 
     // 覆盖 mixin 的 _applyColorAndPreset（卡通模式专用）
-    // 完整后处理：鲜艳度 + 聚合 + 特殊色替换
-    _applyColorAndPreset(gridData, rows, cols, gridSize) {
-      this.cachedOriginalGridData = this.deepCloneGridData(gridData, rows, cols);
-      if (this._pipeline) {
-        this._pipeline.reapplyColors(gridData, rows, cols);
-      }
-      const presetResult = this._applyGridPreset(gridData, cols, rows);
-      this.cachedGridData = presetResult.gridData;
-      this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
-      return presetResult;
-    },
+    // 完整后处理：鲜艳度 + 聚合 + 特殊色替换 + 浊色规避
+	    _applyColorAndPreset(gridData, rows, cols, gridSize) {
+	      if (this._pipeline) {
+	        this._pipeline.reapplyColors(gridData, rows, cols);
+	      }
+	      // 浊色规避在快照保存之前执行，确保快照包含浊色规避结果
+	      if (this.data.antiGrayIntensity > 0) {
+	        desaturateGrayColors(gridData, rows, cols, this.data.antiGrayIntensity);
+	      }
+	      // 快照必须在所有颜色处理之后保存，确保包含聚合+浊色规避后的最终色号
+	      this.cachedOriginalGridData = this.deepCloneGridData(gridData, rows, cols);
+	      const presetResult = this._applyGridPreset(gridData, cols, rows);
+	      this.cachedGridData = presetResult.gridData;
+	      this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
+	      return presetResult;
+	    },
 
     // 马赛克模式专用：保留 processMosaicV2 自己的色号映射，不走 reapplyColors
     _applyMosaicResult(gridData, rows, cols, gridSize) {
-      this.cachedOriginalGridData = this.deepCloneGridData(gridData, rows, cols);
       if (this._pipeline) {
         this._pipeline.replaceSpecialsOnly(gridData, rows, cols);
       }
+      // 浊色规避在快照保存之前执行
+      if (this.data.antiGrayIntensity > 0) {
+        desaturateGrayColors(gridData, rows, cols, this.data.antiGrayIntensity);
+      }
+      this.cachedOriginalGridData = this.deepCloneGridData(gridData, rows, cols);
       const presetResult = this._applyGridPreset(gridData, cols, rows);
       this.cachedGridData = presetResult.gridData;
       this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
