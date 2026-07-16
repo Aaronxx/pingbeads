@@ -138,6 +138,7 @@
         bind:statsUpdate="onStatsUpdate"
         bind:gridInfoUpdate="onGridInfoUpdate"
         bind:loadingChange="onLoadingChange"
+        bind:undoCleared="onUndoCleared"
       />
       <!-- 空状态 -->
       <view wx:else class="placeholder">

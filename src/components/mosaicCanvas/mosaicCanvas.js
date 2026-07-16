@@ -75,6 +75,7 @@ Component({
         this.setData({ isProcessing: true });
         setTimeout(() => {
           this.regenerateFromCache();
+          this._clearUndoAndNotify();
         }, 200);
       }
     },
@@ -85,7 +86,6 @@ Component({
       if (this._lastProcessedKey === key) return;
       this._lastProcessedKey = key;
 
-      // 更新管道参数
       if (this._pipeline) {
         this._pipeline.update({ mergeThreshold: this.data.mergeThreshold });
       }
@@ -99,44 +99,19 @@ Component({
       this._cropOffsetCol = 0;
       this._cropOffsetRow = 0;
 
-      if (this.cachedPixelData && this.cachedWidth > 0) {
-        this.triggerEvent('loadingChange', { show: true, text: '正在处理图片...' });
-        this.setData({ isProcessing: true }, () => {
-          setTimeout(() => {
-            this.regenerateFromCache();
-          }, 100);
-        });
-      } else if (this.data.imagePath) {
-        this.processImage(this.data.imagePath);
-      }
+      this._reapplyPipeline(3);
     },
     'useSpecialColors': function() {
-      // 特殊色开关变化需重跑完整处理（改变映射逻辑）
       if (this.data.isProcessing) return;
       if (!this._pipeline) this._initPipeline();
       this._pipeline.update({ useSpecialColors: this.data.useSpecialColors });
-      if (this.cachedPixelData && this.cachedWidth > 0) {
-        this.triggerEvent('loadingChange', { show: true, text: '正在处理图片...' });
-        this.setData({ isProcessing: true }, () => {
-          setTimeout(() => {
-            this.regenerateFromCache();
-          }, 100);
-        });
-      }
+      this._reapplyPipeline(3);
     },
     'algorithmVersion': function() {
-      // 算法版本变化需重跑完整处理
       if (this.data.isProcessing) return;
       if (!this._pipeline) this._initPipeline();
       this._pipeline.update({ algorithmVersion: this.data.algorithmVersion });
-      if (this.cachedPixelData && this.cachedWidth > 0) {
-        this.triggerEvent('loadingChange', { show: true, text: '正在处理图片...' });
-        this.setData({ isProcessing: true }, () => {
-          setTimeout(() => {
-            this.regenerateFromCache();
-          }, 100);
-        });
-      }
+      this._reapplyPipeline(3);
     },
     'removeEdge': function() {
       this._waitForData((rows, cols, gridSize) => {
@@ -154,120 +129,19 @@ Component({
       });
     },
     'vibrantScale': function() {
-      this._waitForData((rows, cols, gridSize) => {
-        this.setData({ isProcessing: true });
-        if (!this._pipeline) this._initPipeline();
-        this._pipeline.update({ vibrantScale: this.data.vibrantScale });
-
-        // 鲜艳度聚合必须基于全图颜色分布，避免裁剪后聚类不一致
-        if (this.cachedOriginalGridData && this.cachedGridInfo) {
-          const origCols = this.cachedOriginalGridData[0] ? this.cachedOriginalGridData[0].length : 0;
-          const origRows = this.cachedOriginalGridData.length;
-          const isCropped = rows !== origRows || cols !== origCols;
-
-          if (isCropped) {
-            // 从全图快照恢复 → 全图聚合 → 再裁剪到预设
-            const fullGrid = this.deepCloneGridData(this.cachedOriginalGridData, origRows, origCols);
-            this._pipeline.reapplyColors(fullGrid, origRows, origCols);
-            // reapplyColors 就地修改 fullGrid，_applyGridPreset 不修改输入，直接赋值即可
-            this.cachedOriginalGridData = fullGrid;
-            // 裁剪
-            const presetVal = this.data.gridPreset;
-            const presetResult = this._applyGridPreset(fullGrid, origCols, origRows, presetVal);
-            this.cachedGridData = presetResult.gridData;
-            this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
-          } else {
-            // 原图比例：直接在当前数据上做
-            this._pipeline.reapplyColors(this.cachedGridData, rows, cols);
-            // 未裁剪时 cachedGridData 与 cachedOriginalGridData 同尺寸，
-            // gridPreset 变更时会从 originalGridData 克隆出新 cachedGridData（打破引用）
-            this.cachedOriginalGridData = this.cachedGridData;
-          }
-        } else {
-          this._pipeline.reapplyColors(this.cachedGridData, rows, cols);
-        }
-
-        const gi = this.cachedGridInfo;
-        const gd = this.cachedGridData;
-        const stats = this.calculateStats(gd, gi.rows, gi.cols);
-        this.triggerEvent('statsUpdate', { stats: stats });
-        this.setData({ isProcessing: false });
-        this.renderToCanvas(gd, gi.cols, gi.rows, gridSize);
-      });
+      this._reapplyPipeline(2);
     },
     'antiGrayIntensity': function(newVal, oldVal) {
       if (oldVal === newVal || (oldVal !== oldVal && newVal !== newVal)) return;
       if (this.data.isProcessing) return;
-      // 首次加载时 _applyColorAndPreset 已处理过，不需要重新生成
       if (!this.cachedGridData) return;
       if (!this._pipeline) this._initPipeline();
       this._pipeline.update({ antiGrayIntensity: this.data.antiGrayIntensity });
-      if (this.cachedPixelData && this.cachedWidth > 0) {
-        this.triggerEvent('loadingChange', { show: true, text: '正在处理图片...' });
-        this.setData({ isProcessing: true }, () => {
-          setTimeout(() => {
-            this.regenerateFromCache();
-          }, 100);
-        });
-      }
+      this._reapplyPipeline(2);
     },
     'gridPreset': function(newVal, oldVal) {
-      // 网格预设变化时，使用原始缓存数据重新裁剪
       if (oldVal && oldVal[0] === newVal[0]) return;
-
-      const applyPreset = () => {
-        const targetCols = newVal[1];
-        const targetRows = newVal[2];
-        const origCols = this.cachedOriginalGridData[0] ? this.cachedOriginalGridData[0].length : 0;
-        const origRows = this.cachedOriginalGridData.length;
-        const gridSize = this.cachedGridInfo ? this.cachedGridInfo.gridSize : 10;
-
-        // 从快照（原始数据，未应用鲜艳度/聚合/特殊色替换）恢复并裁剪
-        if (targetCols === 0 || targetRows === 0) {
-          // 原图比例：从快照快速恢复
-          this._cropOffsetCol = 0;
-          this._cropOffsetRow = 0;
-          this.cachedGridData = this.deepCloneGridData(this.cachedOriginalGridData, origRows, origCols);
-          this.cachedGridInfo = { cols: origCols, rows: origRows, gridSize };
-        } else {
-          const presetResult = this._applyGridPreset(this.cachedOriginalGridData, origCols, origRows, newVal);
-          this.cachedGridData = presetResult.gridData;
-          this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
-        }
-
-        // 裁剪后不修改任何色块：快照中已保存首次处理时的最终色号，直接复用
-
-        const stats = this.calculateStats(this.cachedGridData, this.cachedGridInfo.rows, this.cachedGridInfo.cols);
-        const gridInfo = this.cachedGridInfo;
-
-        wx.nextTick(() => {
-          if (!gridInfo) return;
-          this.triggerEvent('statsUpdate', { stats });
-          this.triggerEvent('gridInfoUpdate', {
-            cols: gridInfo.cols,
-            rows: gridInfo.rows
-          });
-        });
-        this.resetPreviewState();
-        this.renderToCanvas(this.cachedGridData, this.cachedGridInfo.cols, this.cachedGridInfo.rows, gridSize);
-      };
-
-      if (this.cachedOriginalGridData) {
-        applyPreset();
-      } else {
-        const waitForOriginal = (retryCount) => {
-          if (retryCount > 10) {
-            console.warn('[mosaicCanvas] gridPreset: 等待 cachedOriginalGridData 超时');
-            return;
-          }
-          if (!this.cachedOriginalGridData) {
-            setTimeout(() => waitForOriginal(retryCount + 1), 100);
-            return;
-          }
-          applyPreset();
-        };
-        waitForOriginal(0);
-      }
+      this._reapplyPipeline(1);
     },
     'scale': function() {
       if (this._isResetting) return;
@@ -301,7 +175,6 @@ Component({
     ...imageProcessing,
     ...exportPreset,
 
-    // 初始化色彩处理管道
     _initPipeline() {
       this._pipeline = createColorPipeline({
         algorithmVersion: this.data.algorithmVersion,
@@ -309,6 +182,118 @@ Component({
         mergeThreshold: this.data.mergeThreshold,
         useSpecialColors: this.data.useSpecialColors,
         antiGrayIntensity: this.data.antiGrayIntensity,
+      });
+    },
+
+    _clearUndoAndNotify() {
+      this.triggerEvent('undoCleared');
+    },
+
+    _reapplyPipeline(level) {
+      if (level >= 3) {
+        if (this.cachedPixelData && this.cachedWidth > 0) {
+          this.triggerEvent('loadingChange', { show: true, text: '正在处理图片...' });
+          this.setData({ isProcessing: true }, () => {
+            setTimeout(() => {
+              this.regenerateFromCache();
+              this._clearUndoAndNotify();
+            }, 100);
+          });
+        } else if (this.data.imagePath) {
+          this.processImage(this.data.imagePath);
+        }
+        return;
+      }
+
+      this._waitForData((rows, cols, gridSize) => {
+        this.setData({ isProcessing: true });
+
+        if (level >= 2) {
+          if (!this._pipeline) this._initPipeline();
+          this._pipeline.update({
+            vibrantScale: this.data.vibrantScale,
+            antiGrayIntensity: this.data.antiGrayIntensity,
+            useSpecialColors: this.data.useSpecialColors,
+            algorithmVersion: this.data.algorithmVersion,
+            mergeThreshold: this.data.mergeThreshold
+          });
+
+          if (this.cachedOriginalGridData) {
+            const origRows = this.cachedOriginalGridData.length;
+            const origCols = this.cachedOriginalGridData[0] ? this.cachedOriginalGridData[0].length : 0;
+            const isCropped = rows !== origRows || cols !== origCols;
+
+            if (isCropped) {
+              const fullGrid = this.deepCloneGridData(this.cachedOriginalGridData, origRows, origCols);
+              this._pipeline.reapplyColors(fullGrid, origRows, origCols);
+              if (this.data.antiGrayIntensity > 0) {
+                desaturateGrayColors(fullGrid, origRows, origCols, this.data.antiGrayIntensity);
+              }
+              this.cachedOriginalGridData = fullGrid;
+              const presetResult = this._applyGridPreset(fullGrid, origCols, origRows, this.data.gridPreset);
+              this.cachedGridData = presetResult.gridData;
+              this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
+            } else {
+              this._pipeline.reapplyColors(this.cachedGridData, rows, cols);
+              if (this.data.antiGrayIntensity > 0) {
+                desaturateGrayColors(this.cachedGridData, rows, cols, this.data.antiGrayIntensity);
+              }
+              this.cachedOriginalGridData = this.cachedGridData;
+            }
+          } else {
+            this._pipeline.reapplyColors(this.cachedGridData, rows, cols);
+            if (this.data.antiGrayIntensity > 0) {
+              desaturateGrayColors(this.cachedGridData, rows, cols, this.data.antiGrayIntensity);
+            }
+          }
+        }
+
+        if (level === 1) {
+          if (this.cachedOriginalGridData) {
+            const origRows = this.cachedOriginalGridData.length;
+            const origCols = this.cachedOriginalGridData[0] ? this.cachedOriginalGridData[0].length : 0;
+            const presetVal = this.data.gridPreset;
+            const targetCols = presetVal[1];
+            const targetRows = presetVal[2];
+
+            if (targetCols === 0 || targetRows === 0) {
+              this._cropOffsetCol = 0;
+              this._cropOffsetRow = 0;
+              this.cachedGridData = this.deepCloneGridData(this.cachedOriginalGridData, origRows, origCols);
+              this.cachedGridInfo = { cols: origCols, rows: origRows, gridSize };
+            } else {
+              const presetResult = this._applyGridPreset(this.cachedOriginalGridData, origCols, origRows, presetVal);
+              this.cachedGridData = presetResult.gridData;
+              this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
+            }
+            this.resetPreviewState();
+            const gi = this.cachedGridInfo;
+            this.triggerEvent('gridInfoUpdate', { cols: gi.cols, rows: gi.rows });
+          } else {
+            this.setData({ isProcessing: false });
+            const waitAndApply = (retryCount) => {
+              if (retryCount > 10) return;
+              if (!this.cachedOriginalGridData) {
+                setTimeout(() => waitAndApply(retryCount + 1), 100);
+                return;
+              }
+              this._reapplyPipeline(1);
+            };
+            waitAndApply(0);
+            return;
+          }
+        }
+
+        const gi = this.cachedGridInfo;
+        const gd = this.cachedGridData;
+        const stats = this.calculateStats(gd, gi.rows, gi.cols);
+        this.triggerEvent('statsUpdate', { stats: stats });
+        this.setData({ isProcessing: false });
+        this.renderToCanvas(gd, gi.cols, gi.rows, gridSize);
+
+        if (level >= 1) {
+          this._clearUndoAndNotify();
+        }
       });
     },
 

@@ -368,6 +368,10 @@ Page({
     }
   },
 
+  onUndoCleared() {
+    this.setData({ undoStack: [], canUndo: false });
+  },
+
   // 点击颜色色号回调
   onCodeClick(e) {
     const { code } = e.detail;
