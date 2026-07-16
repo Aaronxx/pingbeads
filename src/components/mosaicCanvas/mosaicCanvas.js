@@ -96,7 +96,6 @@ Component({
         this.cachedSegments = null;
       }
       this.cachedOriginalGridData = null;
-      this._canvasSizeInitialized = false;
       this._cropOffsetCol = 0;
       this._cropOffsetRow = 0;
 
@@ -283,8 +282,12 @@ Component({
     'offsetX,offsetY': function() {
       if (this.data.isDragging) return;
       if (this._isResetting) return;
-      // 拖动通过 CSS transform 处理，不触发 canvas 重绘
-      // （renderToCanvas 会用 data.offsetX 叠加 baseOffset 导致坐标偏移）
+      if (this.isRendering) return;
+      if (this.cachedGridData && this.cachedGridInfo) {
+        const { cols, rows, gridSize } = this.cachedGridInfo;
+        this._showTouchLoading = true;
+        this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+      }
     }
   },
 

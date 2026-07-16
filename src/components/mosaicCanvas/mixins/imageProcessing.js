@@ -179,7 +179,6 @@ module.exports = {
     this.cachedSegments = null;
     this._cropOffsetCol = 0;
     this._cropOffsetRow = 0;
-    this._canvasSizeInitialized = false;
 
     this.triggerEvent('loadingChange', { show: true, text: '正在处理图片...' });
     this.setData({ isProcessing: true });

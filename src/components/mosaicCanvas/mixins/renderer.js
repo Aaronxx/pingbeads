@@ -85,12 +85,9 @@ module.exports = {
         canvasWidth = Math.min(canvasWidth, MAX_CANVAS_SIZE);
         canvasHeight = Math.min(canvasHeight, MAX_CANVAS_SIZE);
 
-        // 首次渲染时用实际 CSS 尺寸更新 canvasWidth（确保 canvas 物理像素足够）
-        // 但只在 data.canvasWidth 和实际尺寸不匹配时更新一次（避免雪球效应）
-        if (!that._canvasSizeInitialized && res[0].width > canvasWidth) {
+        if (res[0].width > canvasWidth || res[0].height > canvasHeight) {
           canvasWidth = Math.min(res[0].width, MAX_CANVAS_SIZE);
           canvasHeight = Math.min(res[0].height, MAX_CANVAS_SIZE);
-          that._canvasSizeInitialized = true;
         }
 
         const userScale = that.data.scale || 1;

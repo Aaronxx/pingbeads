@@ -99,7 +99,6 @@ module.exports = {
       this.initialCenterX = 0;
       this.initialCenterY = 0;
       // 不重新渲染：CSS transform 已经处理了视觉位移，renderToCanvas 的 baseOffset 会叠加导致跳变
-      // 拖动通过 CSS transform 处理，不触发 canvas 重绘
     }
   },
 
