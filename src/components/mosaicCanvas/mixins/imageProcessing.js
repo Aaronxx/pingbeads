@@ -144,39 +144,36 @@ module.exports = {
   /**
    * 获取当前可见区域对应的网格行列范围
    *
-   * 映射链路：屏幕坐标 → container CSS 坐标 → canvas 位图坐标 → grid 行列
+   * 映射思路：renderer 在 canvas 位图空间绘制 grid，canvas CSS 显示空间与 container 一致。
+   * 用户看到的是 container 经 CSS transform 后被 wrapper(overflow:hidden) 裁切的结果。
    *
-   * 1. boundingClientRect 获取 wrapper 屏幕位置
-   * 2. 逆 CSS transform（translate + scale + transform-origin:center）映射到 container CSS 坐标
-   * 3. CSS 坐标 × (actualCanvasWidth / canvasWidth) 映射到 canvas 位图像素
-   * 4. 用 renderToCanvas 同一套 offsetX/cellSize 公式映射到 grid 行列
+   * 步骤：
+   * 1. 从 _lastRenderParams（renderer 缓存）获取 grid 在 canvas 位图空间中的绘制参数
+   * 2. 将位图空间参数转换为 container CSS 空间（× canvasWidth / actualCanvasWidth）
+   * 3. 逆 CSS transform 将 wrapper 可见区域映射到 container CSS 空间
+   * 4. CSS 空间 → grid 行列
    *
    * @returns {Promise<{startCol, endCol, startRow, endRow, subCols, subRows} | null>}
    */
   getVisibleGridRange() {
     if (!this.cachedGridData || !this.cachedGridInfo) return Promise.resolve(null);
     const { cols, rows, gridSize } = this.cachedGridInfo;
+    const rp = this._lastRenderParams;
+    if (!rp) return Promise.resolve(null);
+
     const userScale = this.data.scale || 1;
-    const canvasWidth = this.data.canvasWidth || 300;
-    const canvasHeight = this.data.canvasHeight || 300;
     const dataOffsetX = this.data.offsetX || 0;
     const dataOffsetY = this.data.offsetY || 0;
+    const canvasWidth = rp.canvasWidth;
+    const canvasHeight = rp.canvasHeight;
+    const actualCanvasWidth = rp.actualCanvasWidth;
+    const actualCanvasHeight = rp.actualCanvasHeight;
 
-    // renderToCanvas 的公式（位图像素空间）
-    const totalGridWidth = cols * gridSize;
-    const totalGridHeight = rows * gridSize;
-    const scaleX = totalGridWidth > 0 ? canvasWidth / totalGridWidth : 1;
-    const scaleY = totalGridHeight > 0 ? canvasHeight / totalGridHeight : 1;
-    const baseScale = Math.min(scaleX, scaleY, 1);
-    const scale = baseScale * userScale;
-
-    const actualCanvasWidth = this.canvasNode ? this.canvasNode.width : canvasWidth * userScale;
-    const actualCanvasHeight = this.canvasNode ? this.canvasNode.height : canvasHeight * userScale;
-    const baseOffsetX = (actualCanvasWidth - totalGridWidth * scale) / 2;
-    const baseOffsetY = (actualCanvasHeight - totalGridHeight * scale) / 2;
-    const renderOffsetX = baseOffsetX + dataOffsetX;
-    const renderOffsetY = baseOffsetY + dataOffsetY;
-    const cellSize = gridSize * scale;
+    // grid 在 container CSS 坐标空间中的偏移和 cellSize
+    const cssToBitmap = actualCanvasWidth / canvasWidth;
+    const cssOffsetX = rp.offsetX / cssToBitmap;
+    const cssOffsetY = rp.offsetY / cssToBitmap;
+    const cssCellSize = rp.cellSize / cssToBitmap;
 
     const canvasObj = this;
 
@@ -193,40 +190,30 @@ module.exports = {
         const viewportWidth = wrapperRect.width;
         const viewportHeight = wrapperRect.height;
 
-        const centerCSSX = (viewportWidth / 2 - canvasWidth / 2 - dataOffsetX) / userScale + canvasWidth / 2;
-        const centerCSSY = (viewportHeight / 2 - canvasHeight / 2 - dataOffsetY) / userScale + canvasHeight / 2;
+        // 逆 CSS transform：wrapper 四边映射到 container CSS 坐标
+        // transform: translate(dataOffsetX, dataOffsetY) scale(userScale), origin: center
+        // 逆变换：cx = (screenX_inWrapper - canvasWidth/2 - dataOffsetX) / userScale + canvasWidth/2
+        const cssLeft = (-canvasWidth / 2 - dataOffsetX) / userScale + canvasWidth / 2;
+        const cssRight = (viewportWidth - canvasWidth / 2 - dataOffsetX) / userScale + canvasWidth / 2;
+        const cssTop = (-canvasHeight / 2 - dataOffsetY) / userScale + canvasHeight / 2;
+        const cssBottom = (viewportHeight - canvasHeight / 2 - dataOffsetY) / userScale + canvasHeight / 2;
 
-        const bitmapCenterX = centerCSSX * (actualCanvasWidth / canvasWidth);
-        const bitmapCenterY = centerCSSY * (actualCanvasHeight / canvasHeight);
-
-        const centerCol = (bitmapCenterX - renderOffsetX) / cellSize;
-        const centerRow = (bitmapCenterY - renderOffsetY) / cellSize;
-
-        const visibleBitmapWidth = viewportWidth * actualCanvasWidth / canvasWidth / userScale;
-        const visibleBitmapHeight = viewportHeight * actualCanvasHeight / canvasHeight / userScale;
-
-        const halfCols = visibleBitmapWidth / cellSize / 2;
-        const halfRows = visibleBitmapHeight / cellSize / 2;
-
-        const startCol = Math.max(0, Math.floor(centerCol - halfCols));
-        const endCol = Math.min(cols - 1, Math.ceil(centerCol + halfCols));
-        const startRow = Math.max(0, Math.floor(centerRow - halfRows));
-        const endRow = Math.min(rows - 1, Math.ceil(centerRow + halfRows));
+        // CSS 坐标 → grid 行列
+        const startCol = Math.max(0, Math.floor((cssLeft - cssOffsetX) / cssCellSize));
+        const endCol = Math.min(cols - 1, Math.ceil((cssRight - cssOffsetX) / cssCellSize));
+        const startRow = Math.max(0, Math.floor((cssTop - cssOffsetY) / cssCellSize));
+        const endRow = Math.min(rows - 1, Math.ceil((cssBottom - cssOffsetY) / cssCellSize));
 
         const subCols = endCol - startCol + 1;
         const subRows = endRow - startRow + 1;
 
         console.log('[getVisibleGridRange]', JSON.stringify({
           cols, rows, gridSize,
-          userScale, canvasWidth, canvasHeight, dataOffsetX, dataOffsetY,
-          actualCanvasWidth, actualCanvasHeight,
-          baseScale, scale, cellSize,
-          baseOffsetX, baseOffsetY, renderOffsetX, renderOffsetY,
+          userScale, dataOffsetX, dataOffsetY,
+          canvasWidth, canvasHeight, actualCanvasWidth, actualCanvasHeight,
+          cssToBitmap, cssOffsetX, cssOffsetY, cssCellSize,
           viewportWidth, viewportHeight,
-          centerCSSX, centerCSSY, bitmapCenterX, bitmapCenterY,
-          centerCol, centerRow,
-          visibleBitmapWidth, visibleBitmapHeight,
-          halfCols, halfRows,
+          cssLeft, cssRight, cssTop, cssBottom,
           startCol, endCol, startRow, endRow, subCols, subRows
         }));
 
