@@ -146,14 +146,6 @@ module.exports = {
           gridSize
         };
 
-        console.log('[renderToCanvas]', JSON.stringify({
-          canvasWidth, canvasHeight, res0width: res[0] ? res[0].width : 'N/A',
-          actualCanvasWidth, actualCanvasHeight,
-          userScale, baseScale, scale, cellSize,
-          baseOffsetX, baseOffsetY, offsetX, offsetY,
-          cols, rows, gridSize
-        }));
-
         const buffer = cellSize;
         const visibleLeft = -buffer;
         const visibleRight = actualCanvasWidth + buffer;

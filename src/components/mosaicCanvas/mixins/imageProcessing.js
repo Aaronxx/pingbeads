@@ -144,14 +144,16 @@ module.exports = {
   /**
    * 获取当前可见区域对应的网格行列范围
    *
-   * 映射思路：renderer 在 canvas 位图空间绘制 grid，canvas CSS 显示空间与 container 一致。
-   * 用户看到的是 container 经 CSS transform 后被 wrapper(overflow:hidden) 裁切的结果。
+   * 映射链路：
+   *   1. _lastRenderParams 记录了 renderer 最后一次渲染时的位图绘制参数
+   *   2. 位图 → CSS 空间：gridCssX = renderOffsetX × (canvasWidth / actualCanvasWidth)
+   *   3. 逆 CSS transform：wrapper 可见区域 → container CSS 坐标
+   *   4. CSS 坐标 → grid 行列
    *
-   * 步骤：
-   * 1. 从 _lastRenderParams（renderer 缓存）获取 grid 在 canvas 位图空间中的绘制参数
-   * 2. 将位图空间参数转换为 container CSS 空间（× canvasWidth / actualCanvasWidth）
-   * 3. 逆 CSS transform 将 wrapper 可见区域映射到 container CSS 空间
-   * 4. CSS 空间 → grid 行列
+   * 注意：拖动后 renderer 不重渲染（CSS transform 处理视觉位移），
+   * 所以 canvas 内容中 grid 的位置 = 最后渲染时的 rp.offsetX，
+   * 而屏幕效果 = canvas 内容 + 当前 CSS transform。
+   * 逆变换时必须用当前 dataOffsetX/userScale（不是渲染时的）。
    *
    * @returns {Promise<{startCol, endCol, startRow, endRow, subCols, subRows} | null>}
    */
@@ -162,15 +164,11 @@ module.exports = {
     if (!rp) return Promise.resolve(null);
 
     const userScale = this.data.scale || 1;
-    const dataOffsetX = this.data.offsetX || 0;
-    const dataOffsetY = this.data.offsetY || 0;
-    const canvasWidth = rp.canvasWidth;
-    const canvasHeight = rp.canvasHeight;
-    const actualCanvasWidth = rp.actualCanvasWidth;
-    const actualCanvasHeight = rp.actualCanvasHeight;
+    const currentDataOffsetX = this.data.offsetX || 0;
+    const currentDataOffsetY = this.data.offsetY || 0;
 
-    // grid 在 container CSS 坐标空间中的偏移和 cellSize
-    const cssToBitmap = actualCanvasWidth / canvasWidth;
+    // grid 在 container CSS 空间中的位置（由最后一次渲染决定，拖动不改变 canvas 内容）
+    const cssToBitmap = rp.actualCanvasWidth / rp.canvasWidth;
     const cssOffsetX = rp.offsetX / cssToBitmap;
     const cssOffsetY = rp.offsetY / cssToBitmap;
     const cssCellSize = rp.cellSize / cssToBitmap;
@@ -190,13 +188,17 @@ module.exports = {
         const viewportWidth = wrapperRect.width;
         const viewportHeight = wrapperRect.height;
 
-        // 逆 CSS transform：wrapper 四边映射到 container CSS 坐标
-        // transform: translate(dataOffsetX, dataOffsetY) scale(userScale), origin: center
-        // 逆变换：cx = (screenX_inWrapper - canvasWidth/2 - dataOffsetX) / userScale + canvasWidth/2
-        const cssLeft = (-canvasWidth / 2 - dataOffsetX) / userScale + canvasWidth / 2;
-        const cssRight = (viewportWidth - canvasWidth / 2 - dataOffsetX) / userScale + canvasWidth / 2;
-        const cssTop = (-canvasHeight / 2 - dataOffsetY) / userScale + canvasHeight / 2;
-        const cssBottom = (viewportHeight - canvasHeight / 2 - dataOffsetY) / userScale + canvasHeight / 2;
+        // 逆 CSS transform：wrapper 四边 → container CSS 坐标
+        // transform: translate(dOX, dOY) scale(uS), origin: center
+        // container CSS (cx) → 屏幕（相对 wrapper 左上角）:
+        //   sx = (cx - cw/2) * uS + cw/2 + dOX
+        // 逆：cx = (sx - cw/2 - dOX) / uS + cw/2
+        const cw = rp.canvasWidth;
+        const ch = rp.canvasHeight;
+        const cssLeft = (-cw / 2 - currentDataOffsetX) / userScale + cw / 2;
+        const cssRight = (viewportWidth - cw / 2 - currentDataOffsetX) / userScale + cw / 2;
+        const cssTop = (-ch / 2 - currentDataOffsetY) / userScale + ch / 2;
+        const cssBottom = (viewportHeight - ch / 2 - currentDataOffsetY) / userScale + ch / 2;
 
         // CSS 坐标 → grid 行列
         const startCol = Math.max(0, Math.floor((cssLeft - cssOffsetX) / cssCellSize));
@@ -204,18 +206,8 @@ module.exports = {
         const startRow = Math.max(0, Math.floor((cssTop - cssOffsetY) / cssCellSize));
         const endRow = Math.min(rows - 1, Math.ceil((cssBottom - cssOffsetY) / cssCellSize));
 
-        const subCols = endCol - startCol + 1;
-        const subRows = endRow - startRow + 1;
-
-        console.log('[getVisibleGridRange]', JSON.stringify({
-          cols, rows, gridSize,
-          userScale, dataOffsetX, dataOffsetY,
-          canvasWidth, canvasHeight, actualCanvasWidth, actualCanvasHeight,
-          cssToBitmap, cssOffsetX, cssOffsetY, cssCellSize,
-          viewportWidth, viewportHeight,
-          cssLeft, cssRight, cssTop, cssBottom,
-          startCol, endCol, startRow, endRow, subCols, subRows
-        }));
+        const subCols = Math.max(1, endCol - startCol + 1);
+        const subRows = Math.max(1, endRow - startRow + 1);
 
         resolve({ startCol, endCol, startRow, endRow, subCols, subRows });
       });
