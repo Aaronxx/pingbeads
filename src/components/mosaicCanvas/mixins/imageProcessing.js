@@ -193,36 +193,15 @@ module.exports = {
         const viewportWidth = wrapperRect.width;
         const viewportHeight = wrapperRect.height;
 
-        // wrapper 中心在屏幕上的位置
-        const wrapperCenterScreenX = wrapperRect.left + viewportWidth / 2;
-        const wrapperCenterScreenY = wrapperRect.top + viewportHeight / 2;
+        const centerCSSX = (viewportWidth / 2 - canvasWidth / 2 - dataOffsetX) / userScale + canvasWidth / 2;
+        const centerCSSY = (viewportHeight / 2 - canvasHeight / 2 - dataOffsetY) / userScale + canvasHeight / 2;
 
-        // CSS transform: translate(dataOffsetX, dataOffsetY) scale(userScale)
-        // transform-origin: center center
-        //
-        // container 的 CSS 点 (cx, cy) 映射到屏幕：
-        //   screenX = wrapperRect.left + (cx - canvasWidth/2) * userScale + canvasWidth/2 + dataOffsetX
-        //   screenY = wrapperRect.top  + (cy - canvasHeight/2) * userScale + canvasHeight/2 + dataOffsetY
-        //
-        // 逆变换（screen → CSS）：
-        //   cx = (screenX - wrapperRect.left - canvasWidth/2 - dataOffsetX) / userScale + canvasWidth/2
-        //   cy = (screenY - wrapperRect.top - canvasHeight/2 - dataOffsetY) / userScale + canvasHeight/2
-
-        const centerCSSX = (wrapperCenterScreenX - wrapperRect.left - canvasWidth / 2 - dataOffsetX) / userScale + canvasWidth / 2;
-        const centerCSSY = (wrapperCenterScreenY - wrapperRect.top - canvasHeight / 2 - dataOffsetY) / userScale + canvasHeight / 2;
-
-        // CSS 坐标 → canvas 位图像素
         const bitmapCenterX = centerCSSX * (actualCanvasWidth / canvasWidth);
         const bitmapCenterY = centerCSSY * (actualCanvasHeight / canvasHeight);
 
-        // canvas 位图像素 → grid 行列（复用 renderToCanvas 公式）
         const centerCol = (bitmapCenterX - renderOffsetX) / cellSize;
         const centerRow = (bitmapCenterY - renderOffsetY) / cellSize;
 
-        // 可见区域在位图像素中的尺寸
-        // viewportWidth 在屏幕上 = 位图像素 × (canvasWidth/actualCanvasWidth) × userScale
-        // 所以 viewportWidth 在位图像素中 = viewportWidth / (canvasWidth/actualCanvasWidth) / userScale
-        //                                    = viewportWidth * actualCanvasWidth / canvasWidth / userScale
         const visibleBitmapWidth = viewportWidth * actualCanvasWidth / canvasWidth / userScale;
         const visibleBitmapHeight = viewportHeight * actualCanvasHeight / canvasHeight / userScale;
 
@@ -236,6 +215,20 @@ module.exports = {
 
         const subCols = endCol - startCol + 1;
         const subRows = endRow - startRow + 1;
+
+        console.log('[getVisibleGridRange]', JSON.stringify({
+          cols, rows, gridSize,
+          userScale, canvasWidth, canvasHeight, dataOffsetX, dataOffsetY,
+          actualCanvasWidth, actualCanvasHeight,
+          baseScale, scale, cellSize,
+          baseOffsetX, baseOffsetY, renderOffsetX, renderOffsetY,
+          viewportWidth, viewportHeight,
+          centerCSSX, centerCSSY, bitmapCenterX, bitmapCenterY,
+          centerCol, centerRow,
+          visibleBitmapWidth, visibleBitmapHeight,
+          halfCols, halfRows,
+          startCol, endCol, startRow, endRow, subCols, subRows
+        }));
 
         resolve({ startCol, endCol, startRow, endRow, subCols, subRows });
       });
