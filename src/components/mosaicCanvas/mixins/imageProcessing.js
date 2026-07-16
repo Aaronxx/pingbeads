@@ -207,6 +207,7 @@ module.exports = {
           canvasWidth: Math.floor(displayWidth),
           canvasHeight: Math.floor(displayHeight)
         });
+        that._viewportSize = null;
 
         that.tryGetPixelData(imagePath, res.width, res.height, Math.floor(displayWidth), Math.floor(displayHeight), actualGridSize);
       },

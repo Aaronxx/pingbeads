@@ -19,6 +19,11 @@ module.exports = {
   // _lastTouch: 单指拖动时记录上一次触摸点（实例属性，不进 data）
 
   handleTouchStart(e) {
+    // 缓存可见区域实际尺寸（异步，后续 touchMove 用缓存值）
+    if (!this._viewportSize) {
+      this._cacheViewportSize();
+    }
+
     if (e.touches.length === 2) {
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
@@ -99,6 +104,8 @@ module.exports = {
       this.initialCenterX = 0;
       this.initialCenterY = 0;
       // 不重新渲染：CSS transform 已经处理了视觉位移，renderToCanvas 的 baseOffset 会叠加导致跳变
+      // 刷新可见区域缓存（尺寸可能因 resize 变化）
+      this._cacheViewportSize();
     }
   },
 
@@ -127,36 +134,28 @@ module.exports = {
   /**
    * 计算拖动限制范围
    *
-   * 拖动通过 CSS transform: translate(offsetX, offsetY) 实现
-   * canvas-container 宽高 = canvasWidth × canvasHeight，scale 也是 CSS scale
+   * 拖动通过 CSS transform: translate(offsetX, offsetY) scale(scale) 实现
+   * transform-origin: center center
    *
-   * 限制：放大后的图片不能拖出可见区域（canvas-container 的边界）
-   * - 缩放后图片尺寸 = canvasWidth × scale
-   * - 图片左边缘位置 = offsetX，不能小于 -(imageWidth - canvasWidth + margin)
-   * - 图片右边缘位置 = offsetX + imageWidth，不能大于 canvasWidth - margin
+   * 限制：放大后的图片不能拖出可见区域（wrapper 的边界）
+   * - 使用 _viewportSize（boundingClientRect 缓存）而非 canvasWidth，更准确
+   * - 缩放后图片溢出量 = (viewportWidth × scale - viewportWidth) / 2
    */
   _getDragLimits(targetScale) {
-    const canvasWidth = this.data.canvasWidth || 300;
-    const canvasHeight = this.data.canvasHeight || 300;
+    const viewportWidth = this._viewportSize ? this._viewportSize.width : (this.data.canvasWidth || 300);
+    const viewportHeight = this._viewportSize ? this._viewportSize.height : (this.data.canvasHeight || 300);
     const scale = targetScale != null ? targetScale : (this.data.scale || 1);
 
-    // CSS transform: translate(offsetX, offsetY) scale(scale)
-    // scale 的变换原点是 center，缩放后图片中心不变
-    // 缩放后图片溢出量 = (imageWidth - canvasWidth) / 2
+    const imageWidth = viewportWidth * scale;
+    const imageHeight = viewportHeight * scale;
 
-    const imageWidth = canvasWidth * scale;
-    const imageHeight = canvasHeight * scale;
-
-    // 图片比可见区域大时才允许拖动
-    const overflowX = imageWidth - canvasWidth;
-    const overflowY = imageHeight - canvasHeight;
+    const overflowX = imageWidth - viewportWidth;
+    const overflowY = imageHeight - viewportHeight;
 
     if (overflowX <= 0 && overflowY <= 0) {
-      // 图片比可见区域小或等大，不允许拖动
       return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
     }
 
-    // 允许拖动的范围 = 溢出量的一半（CSS scale 从中心缩放，两边各溢出一半）
     const maxOffsetX = overflowX > 0 ? overflowX / 2 : 0;
     const maxOffsetY = overflowY > 0 ? overflowY / 2 : 0;
 
@@ -166,5 +165,15 @@ module.exports = {
       minY: -maxOffsetY,
       maxY: maxOffsetY
     };
+  },
+
+  _cacheViewportSize() {
+    const query = this.createSelectorQuery();
+    query.select('#mosaic-wrapper').boundingClientRect();
+    query.exec((res) => {
+      if (res[0]) {
+        this._viewportSize = { width: res[0].width, height: res[0].height };
+      }
+    });
   }
 };
