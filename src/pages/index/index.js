@@ -1926,7 +1926,8 @@ Page({
     this.setData({ showHelpPanel: false });
   },
 
-  // 快照导出：中心点 + 半径方案
+  // 快照导出：只导出可见区域
+  // 坐标映射在 mosaicCanvas.getVisibleGridRange() 中完成（组件内部拥有所有参数）
   exportSnapshot() {
     if (this._checkExporting()) return;
     if (!this.data.mosaicData) {
@@ -1935,7 +1936,7 @@ Page({
     }
 
     const mosaicCanvas = this.selectComponent('#mosaic-canvas');
-    if (!mosaicCanvas || !mosaicCanvas.getExportData) {
+    if (!mosaicCanvas || !mosaicCanvas.getVisibleGridRange) {
       wx.showToast({ title: '导出组件异常', icon: 'none' });
       return;
     }
@@ -1946,78 +1947,21 @@ Page({
       return;
     }
 
-    const { cols: fullCols, rows: fullRows, gridSize } = exportData.gridInfo;
     const fullGridData = exportData.gridData;
     const that = this;
 
-    // 获取 wrapper 和 container 的 boundingClientRect
-    const query = mosaicCanvas.createSelectorQuery();
-    query.select('#mosaic-wrapper').boundingClientRect();
-    query.select('#canvas-container').boundingClientRect();
-    query.exec((res) => {
-      const wrapperRect = res[0];
-      const containerRect = res[1];
-
-      if (!wrapperRect || !containerRect) {
+    mosaicCanvas.getVisibleGridRange().then((range) => {
+      if (!range) {
         wx.showToast({ title: '无法获取可见区域', icon: 'none' });
         return;
       }
 
-      // 1. 计算 wrapper 中心在 container 内的坐标（= canvas 物理坐标）
-      const centerPhysX = wrapperRect.left + wrapperRect.width / 2 - containerRect.left;
-      const centerPhysY = wrapperRect.top + wrapperRect.height / 2 - containerRect.top;
-
-      // 2. renderToCanvas 公式（完全复用）
-      const userScale = mosaicCanvas.data.scale || 1;
-      const canvasWidth = mosaicCanvas.data.canvasWidth || 300;
-      const canvasHeight = mosaicCanvas.data.canvasHeight || 300;
-      const canvasNode = mosaicCanvas.canvasNode;
-      const totalGridWidth = fullCols * gridSize;
-      const totalGridHeight = fullRows * gridSize;
-      const sx = totalGridWidth > 0 ? canvasWidth / totalGridWidth : 1;
-      const sy = totalGridHeight > 0 ? canvasHeight / totalGridHeight : 1;
-      const baseScale = Math.min(sx, sy, 1);
-      const scale = baseScale * userScale;
-      const actualCanvasWidth = canvasNode ? canvasNode.width : canvasWidth * userScale;
-      const actualCanvasHeight = canvasNode ? canvasNode.height : canvasHeight * userScale;
-      const baseOffsetX = (actualCanvasWidth - totalGridWidth * scale) / 2;
-      const baseOffsetY = (actualCanvasHeight - totalGridHeight * scale) / 2;
-      const offsetX = baseOffsetX;
-      const offsetY = baseOffsetY;
-      const cellSize = gridSize * scale;
-
-      // 3. 中心点对应的格子
-      const centerCol = (centerPhysX - offsetX) / cellSize;
-      const centerRow = (centerPhysY - offsetY) / cellSize;
-
-      // 4. 可见格子数（boundingClientRect 已含 transform，wrapperRect.width 就是可见的 CSS 宽度）
-      // wrapperRect.width 在 container 内对应的物理像素宽度
-      const physRatio = containerRect.width > 0 ? actualCanvasWidth / containerRect.width : 1;
-      const halfCols = (wrapperRect.width * physRatio) / cellSize / 2;
-      const halfRows = (wrapperRect.height * physRatio) / cellSize / 2;
-
-      // 5. 从中心向两侧扩展
-      const startCol = Math.max(0, Math.floor(centerCol - halfCols));
-      const endCol = Math.min(fullCols - 1, Math.ceil(centerCol + halfCols));
-      const startRow = Math.max(0, Math.floor(centerRow - halfRows));
-      const endRow = Math.min(fullRows - 1, Math.ceil(centerRow + halfRows));
-
-      // 限制范围
-      const safeStartCol = Math.max(0, Math.min(startCol, fullCols - 1));
-      const safeEndCol = Math.max(safeStartCol, Math.min(endCol, fullCols - 1));
-      const safeStartRow = Math.max(0, Math.min(startRow, fullRows - 1));
-      const safeEndRow = Math.max(safeStartRow, Math.min(endRow, fullRows - 1));
-
-      const subCols = safeEndCol - safeStartCol + 1;
-      const subRows = safeEndRow - safeStartRow + 1;
-
-      // 统计
+      const { startCol, endCol, startRow, endRow, subCols, subRows } = range;
       const subStats = mosaicCanvas.calculateStatsInRange(
-        fullGridData, safeStartRow, safeEndRow, safeStartCol, safeEndCol
+        fullGridData, startRow, endRow, startCol, endCol
       );
 
-      // 设置快照参数，复用 exportPNG
-      that._snapshotRange = { startCol: safeStartCol, endCol: safeEndCol, startRow: safeStartRow, endRow: safeEndRow, subCols, subRows, subStats };
+      that._snapshotRange = { startCol, endCol, startRow, endRow, subCols, subRows, subStats };
       that.exportPNG();
     });
   },
