@@ -144,11 +144,12 @@ module.exports = {
   /**
    * 获取当前可见区域对应的网格行列范围
    *
-   * 使用「中心点 + 可见半径」方案：
-   * 1. 用 boundingClientRect 获取 wrapper 实际可见区域尺寸
-   * 2. 逆 CSS transform 将可见区域中心映射到 container 的 CSS 坐标
-   * 3. 用 renderToCanvas 同一套 baseScale/baseOffset 公式映射到 grid 行列
-   * 4. 从中心向两侧扩展可见半径
+   * 映射链路：屏幕坐标 → container CSS 坐标 → canvas 位图坐标 → grid 行列
+   *
+   * 1. boundingClientRect 获取 wrapper 屏幕位置
+   * 2. 逆 CSS transform（translate + scale + transform-origin:center）映射到 container CSS 坐标
+   * 3. CSS 坐标 × (actualCanvasWidth / canvasWidth) 映射到 canvas 位图像素
+   * 4. 用 renderToCanvas 同一套 offsetX/cellSize 公式映射到 grid 行列
    *
    * @returns {Promise<{startCol, endCol, startRow, endRow, subCols, subRows} | null>}
    */
@@ -161,19 +162,22 @@ module.exports = {
     const dataOffsetX = this.data.offsetX || 0;
     const dataOffsetY = this.data.offsetY || 0;
 
+    // renderToCanvas 的公式（位图像素空间）
     const totalGridWidth = cols * gridSize;
     const totalGridHeight = rows * gridSize;
-    const sx = totalGridWidth > 0 ? canvasWidth / totalGridWidth : 1;
-    const sy = totalGridHeight > 0 ? canvasHeight / totalGridHeight : 1;
-    const baseScale = Math.min(sx, sy, 1);
+    const scaleX = totalGridWidth > 0 ? canvasWidth / totalGridWidth : 1;
+    const scaleY = totalGridHeight > 0 ? canvasHeight / totalGridHeight : 1;
+    const baseScale = Math.min(scaleX, scaleY, 1);
     const scale = baseScale * userScale;
 
     const actualCanvasWidth = this.canvasNode ? this.canvasNode.width : canvasWidth * userScale;
     const actualCanvasHeight = this.canvasNode ? this.canvasNode.height : canvasHeight * userScale;
     const baseOffsetX = (actualCanvasWidth - totalGridWidth * scale) / 2;
     const baseOffsetY = (actualCanvasHeight - totalGridHeight * scale) / 2;
-
+    const renderOffsetX = baseOffsetX + dataOffsetX;
+    const renderOffsetY = baseOffsetY + dataOffsetY;
     const cellSize = gridSize * scale;
+
     const canvasObj = this;
 
     return new Promise((resolve) => {
@@ -193,85 +197,37 @@ module.exports = {
         const wrapperCenterScreenX = wrapperRect.left + viewportWidth / 2;
         const wrapperCenterScreenY = wrapperRect.top + viewportHeight / 2;
 
-        // CSS transform: translate(offsetX, offsetY) scale(userScale)
+        // CSS transform: translate(dataOffsetX, dataOffsetY) scale(userScale)
         // transform-origin: center center
         //
-        // container CSS 左上角 (0,0) 映射到屏幕位置：
-        //   screenX = wrapperRect.left + (0 - canvasWidth/2) * userScale + canvasWidth/2 + dataOffsetX
-        //          = wrapperRect.left + canvasWidth * (1 - userScale) / 2 + dataOffsetX
-        // 同理 Y 方向
-        const contScreenLeft = wrapperRect.left + canvasWidth * (1 - userScale) / 2 + dataOffsetX;
-        const contScreenTop = wrapperRect.top + canvasHeight * (1 - userScale) / 2 + dataOffsetY;
+        // container 的 CSS 点 (cx, cy) 映射到屏幕：
+        //   screenX = wrapperRect.left + (cx - canvasWidth/2) * userScale + canvasWidth/2 + dataOffsetX
+        //   screenY = wrapperRect.top  + (cy - canvasHeight/2) * userScale + canvasHeight/2 + dataOffsetY
+        //
+        // 逆变换（screen → CSS）：
+        //   cx = (screenX - wrapperRect.left - canvasWidth/2 - dataOffsetX) / userScale + canvasWidth/2
+        //   cy = (screenY - wrapperRect.top - canvasHeight/2 - dataOffsetY) / userScale + canvasHeight/2
 
-        // wrapper 中心在 container CSS 坐标中的位置（逆 transform）
-        const centerCSSX = (wrapperCenterScreenX - contScreenLeft) / userScale;
-        const centerCSSY = (wrapperCenterScreenY - contScreenTop) / userScale;
+        const centerCSSX = (wrapperCenterScreenX - wrapperRect.left - canvasWidth / 2 - dataOffsetX) / userScale + canvasWidth / 2;
+        const centerCSSY = (wrapperCenterScreenY - wrapperRect.top - canvasHeight / 2 - dataOffsetY) / userScale + canvasHeight / 2;
 
-        // container CSS 坐标映射到 canvas 位图坐标
-        // canvas 位图中 grid 的偏移 = baseOffsetX + dataOffsetX * (canvas位图像素/container CSS像素)
-        // 但 renderToCanvas 用的是 offsetX = baseOffsetX + dataOffsetX
-        // 注意：renderToCanvas 的 offsetX 是在 canvas 位图像素空间中的
-        //
-        // CSS 坐标到 canvas 位图像素的映射：
-        // canvas 位图像素 = CSS坐标 * (actualCanvasWidth / canvasWidth) 
-        // 但 canvas 实际像素宽度可能与 canvasWidth * userScale 不同（被 MAX_CANVAS_DIMENSION 限制）
-        //
-        // 更直接：用 renderToCanvas 同一套公式
-        // renderToCanvas: offsetX = baseOffsetX + dataOffsetX
-        // cell 在 canvas 中的 x = offsetX + col * cellSize
-        // 所以 col = (canvasX - offsetX) / cellSize
-        //
-        // centerCSSX 是 container 的 CSS 坐标（范围 0~canvasWidth）
-        // 对应 canvas 位图坐标 = centerCSSX * (actualCanvasWidth / canvasWidth) 不对...
-        // 
-        // 实际上 renderToCanvas 中 grid 的绘制直接基于 actualCanvasWidth，
-        // 不存在 CSS→位图的额外缩放。renderToCanvas 的坐标都在位图像素空间。
-        //
-        // 但 CSS 坐标到 canvas 位图坐标的映射取决于 canvas.width 与 container CSS 宽度的比。
-        // container CSS 宽度 = canvasWidth
-        // canvas.width = actualCanvasWidth
-        // 所以：canvas位图x = centerCSSX * (actualCanvasWidth / canvasWidth) ... 不完全对
-        //
-        // 回到 renderToCanvas 公式：
-        //   canvas.width = actualCanvasWidth (可能被 cap 限制)
-        //   scale = baseScale * userScale
-        //   baseOffsetX = (actualCanvasWidth - totalGridWidth * scale) / 2
-        //   offsetX = baseOffsetX + dataOffsetX
-        //   cell x = offsetX + col * cellSize
-        //
-        // 我们需要把 wrapper 中心映射到这个坐标空间。
-        // wrapper 中心对应的 canvas 位图 x = 
-        //   需要知道 wrapper 中心相对于 canvas 位图原点的偏移
-        //
-        // 简化思路：直接用 CSS 坐标系中的映射
-        // CSS 坐标 (centerCSSX, centerCSSY) 就是 container CSS 坐标
-        // 在 CSS 坐标系中，grid 绘制位置（与 renderToCanvas 同理但用 CSS 尺寸）：
-        //   cssBaseScale = baseScale (同)
-        //   cssBaseOffsetX = (canvasWidth - totalGridWidth * baseScale) / 2
-        //   cssOffsetX = cssBaseOffsetX + dataOffsetX
-        //   col = (centerCSSX - cssOffsetX) / (gridSize * baseScale)
-        //
-        // 等等，renderToCanvas 中的 scale 包含了 userScale，
-        // 而 CSS 坐标系中的"绘制"不包含 userScale（userScale 是 CSS transform）
-        // 所以在 CSS 坐标系中，grid 相当于用 baseScale 绘制在 canvasWidth 的空间中，
-        // 然后整个空间被 CSS scale(userScale) 放大
+        // CSS 坐标 → canvas 位图像素
+        const bitmapCenterX = centerCSSX * (actualCanvasWidth / canvasWidth);
+        const bitmapCenterY = centerCSSY * (actualCanvasHeight / canvasHeight);
 
-        const cssBaseScale = baseScale;
-        const cssBaseOffsetX = (canvasWidth - totalGridWidth * cssBaseScale) / 2;
-        const cssBaseOffsetY = (canvasHeight - totalGridHeight * cssBaseScale) / 2;
-        const cssOffsetX = cssBaseOffsetX + dataOffsetX;
-        const cssOffsetY = cssBaseOffsetY + dataOffsetY;
-        const cssCellSize = gridSize * cssBaseScale;
+        // canvas 位图像素 → grid 行列（复用 renderToCanvas 公式）
+        const centerCol = (bitmapCenterX - renderOffsetX) / cellSize;
+        const centerRow = (bitmapCenterY - renderOffsetY) / cellSize;
 
-        const centerCol = (centerCSSX - cssOffsetX) / cssCellSize;
-        const centerRow = (centerCSSY - cssOffsetY) / cssCellSize;
+        // 可见区域在位图像素中的尺寸
+        // viewportWidth 在屏幕上 = 位图像素 × (canvasWidth/actualCanvasWidth) × userScale
+        // 所以 viewportWidth 在位图像素中 = viewportWidth / (canvasWidth/actualCanvasWidth) / userScale
+        //                                    = viewportWidth * actualCanvasWidth / canvasWidth / userScale
+        const visibleBitmapWidth = viewportWidth * actualCanvasWidth / canvasWidth / userScale;
+        const visibleBitmapHeight = viewportHeight * actualCanvasHeight / canvasHeight / userScale;
 
-        // 可见区域在 container CSS 坐标中的宽度 = viewportWidth / userScale
-        const visibleCSSWidth = viewportWidth / userScale;
-        const visibleCSSHeight = viewportHeight / userScale;
-
-        const halfCols = visibleCSSWidth / cssCellSize / 2;
-        const halfRows = visibleCSSHeight / cssCellSize / 2;
+        const halfCols = visibleBitmapWidth / cellSize / 2;
+        const halfRows = visibleBitmapHeight / cellSize / 2;
 
         const startCol = Math.max(0, Math.floor(centerCol - halfCols));
         const endCol = Math.min(cols - 1, Math.ceil(centerCol + halfCols));
