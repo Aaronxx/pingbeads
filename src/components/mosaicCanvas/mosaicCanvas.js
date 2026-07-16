@@ -96,6 +96,7 @@ Component({
         this.cachedSegments = null;
       }
       this.cachedOriginalGridData = null;
+      this._canvasSizeInitialized = false;
       this._cropOffsetCol = 0;
       this._cropOffsetRow = 0;
 
