@@ -142,29 +142,6 @@ module.exports = {
   },
 
   /**
-   * 屏幕坐标（相对 wrapper 左上角）→ grid 行列
-   * 用于调试：touchEnd 时记录用户点击的格子位置
-   */
-  _screenToGrid(screenX, screenY) {
-    const rp = this._lastRenderParams;
-    if (!rp) return null;
-    const userScale = this.data.scale || 1;
-    const dOX = this.data.offsetX || 0;
-    const dOY = this.data.offsetY || 0;
-    const origCW = this.data.canvasWidth || 300;
-    const origCH = this.data.canvasHeight || 300;
-    const cssToBitmap = rp.actualCanvasWidth / origCW;
-    const cssOffsetX = rp.offsetX / cssToBitmap;
-    const cssOffsetY = rp.offsetY / cssToBitmap;
-    const cssCellSize = rp.cellSize / cssToBitmap;
-    const cssX = (screenX - origCW / 2 - dOX) / userScale + origCW / 2;
-    const cssY = (screenY - origCH / 2 - dOY) / userScale + origCH / 2;
-    const col = (cssX - cssOffsetX) / cssCellSize;
-    const row = (cssY - cssOffsetY) / cssCellSize;
-    return { col, row, cssX, cssY, cssOffsetX, cssOffsetY, cssCellSize, userScale, dOX, dOY, origCW, origCH, rp_offsetX: rp.offsetX, rp_offsetY: rp.offsetY, rp_actualCanvasWidth: rp.actualCanvasWidth, rp_cw: rp.canvasWidth };
-  },
-
-  /**
    * 获取当前可见区域对应的网格行列范围
    *
    * 映射链路：
@@ -232,21 +209,6 @@ module.exports = {
 
         const subCols = Math.max(1, endCol - startCol + 1);
         const subRows = Math.max(1, endRow - startRow + 1);
-
-        const centerCol = ((cssLeft + cssRight) / 2 - cssOffsetX) / cssCellSize;
-        const centerRow = ((cssTop + cssBottom) / 2 - cssOffsetY) / cssCellSize;
-
-        console.log('[getVisibleGridRange]', JSON.stringify({
-          userScale, dOX: currentDataOffsetX, dOY: currentDataOffsetY,
-          viewportWidth, viewportHeight, origCW, origCH,
-          rp_cw: rp.canvasWidth, rp_actualCW: rp.actualCanvasWidth,
-          rp_offsetX: rp.offsetX, rp_offsetY: rp.offsetY, rp_baseOffsetX: rp.baseOffsetX,
-          rp_cellSize: rp.cellSize,
-          cssOffsetX, cssOffsetY, cssCellSize,
-          cssLeft, cssRight, cssTop, cssBottom,
-          centerCol, centerRow,
-          startCol, endCol, startRow, endRow, subCols, subRows
-        }));
 
         resolve({ startCol, endCol, startRow, endRow, subCols, subRows });
       });

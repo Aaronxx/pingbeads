@@ -103,36 +103,7 @@ module.exports = {
       this.initialTouchDistance = 0;
       this.initialCenterX = 0;
       this.initialCenterY = 0;
-      // 不重新渲染：CSS transform 已经处理了视觉位移，renderToCanvas 的 baseOffset 会叠加导致跳变
-      // 刷新可见区域缓存（尺寸可能因 resize 变化）
       this._cacheViewportSize();
-
-      // DEBUG: 记录最后触摸点映射到 grid 的坐标
-      if (e.changedTouches && e.changedTouches[0] && this._lastRenderParams) {
-        const ct = e.changedTouches[0];
-        const query = this.createSelectorQuery();
-        query.select('#mosaic-wrapper').boundingClientRect();
-        query.exec((res) => {
-          if (res[0]) {
-            const relX = ct.clientX - res[0].left;
-            const relY = ct.clientY - res[0].top;
-            const grid = this._screenToGrid(relX, relY);
-            if (grid) {
-              console.log('[touchEnd]', JSON.stringify({
-                relX, relY,
-                tapCol: grid.col, tapRow: grid.row,
-                userScale: grid.userScale, dOX: grid.dOX, dOY: grid.dOY,
-                cssCellSize: grid.cssCellSize,
-                cssX: grid.cssX, cssY: grid.cssY,
-                cssOffsetX: grid.cssOffsetX, cssOffsetY: grid.cssOffsetY,
-                rp_offsetX: grid.rp_offsetX, rp_offsetY: grid.rp_offsetY,
-                rp_actualCW: grid.rp_actualCanvasWidth,
-                cw: grid.cw, ch: grid.ch
-              }));
-            }
-          }
-        });
-      }
     }
   },
 
