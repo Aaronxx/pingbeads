@@ -142,6 +142,29 @@ module.exports = {
   },
 
   /**
+   * 屏幕坐标（相对 wrapper 左上角）→ grid 行列
+   * 用于调试：touchEnd 时记录用户点击的格子位置
+   */
+  _screenToGrid(screenX, screenY) {
+    const rp = this._lastRenderParams;
+    if (!rp) return null;
+    const userScale = this.data.scale || 1;
+    const dOX = this.data.offsetX || 0;
+    const dOY = this.data.offsetY || 0;
+    const cw = rp.canvasWidth;
+    const ch = rp.canvasHeight;
+    const cssToBitmap = rp.actualCanvasWidth / cw;
+    const cssOffsetX = rp.offsetX / cssToBitmap;
+    const cssOffsetY = rp.offsetY / cssToBitmap;
+    const cssCellSize = rp.cellSize / cssToBitmap;
+    const cssX = (screenX - cw / 2 - dOX) / userScale + cw / 2;
+    const cssY = (screenY - ch / 2 - dOY) / userScale + ch / 2;
+    const col = (cssX - cssOffsetX) / cssCellSize;
+    const row = (cssY - cssOffsetY) / cssCellSize;
+    return { col, row, cssX, cssY, cssOffsetX, cssOffsetY, cssCellSize, userScale, dOX, dOY, cw, ch, rp_offsetX: rp.offsetX, rp_offsetY: rp.offsetY, rp_actualCanvasWidth: rp.actualCanvasWidth };
+  },
+
+  /**
    * 获取当前可见区域对应的网格行列范围
    *
    * 映射链路：
@@ -167,7 +190,6 @@ module.exports = {
     const currentDataOffsetX = this.data.offsetX || 0;
     const currentDataOffsetY = this.data.offsetY || 0;
 
-    // grid 在 container CSS 空间中的位置（由最后一次渲染决定，拖动不改变 canvas 内容）
     const cssToBitmap = rp.actualCanvasWidth / rp.canvasWidth;
     const cssOffsetX = rp.offsetX / cssToBitmap;
     const cssOffsetY = rp.offsetY / cssToBitmap;
@@ -187,20 +209,14 @@ module.exports = {
 
         const viewportWidth = wrapperRect.width;
         const viewportHeight = wrapperRect.height;
-
-        // 逆 CSS transform：wrapper 四边 → container CSS 坐标
-        // transform: translate(dOX, dOY) scale(uS), origin: center
-        // container CSS (cx) → 屏幕（相对 wrapper 左上角）:
-        //   sx = (cx - cw/2) * uS + cw/2 + dOX
-        // 逆：cx = (sx - cw/2 - dOX) / uS + cw/2
         const cw = rp.canvasWidth;
         const ch = rp.canvasHeight;
+
         const cssLeft = (-cw / 2 - currentDataOffsetX) / userScale + cw / 2;
         const cssRight = (viewportWidth - cw / 2 - currentDataOffsetX) / userScale + cw / 2;
         const cssTop = (-ch / 2 - currentDataOffsetY) / userScale + ch / 2;
         const cssBottom = (viewportHeight - ch / 2 - currentDataOffsetY) / userScale + ch / 2;
 
-        // CSS 坐标 → grid 行列
         const startCol = Math.max(0, Math.floor((cssLeft - cssOffsetX) / cssCellSize));
         const endCol = Math.min(cols - 1, Math.ceil((cssRight - cssOffsetX) / cssCellSize));
         const startRow = Math.max(0, Math.floor((cssTop - cssOffsetY) / cssCellSize));
@@ -208,6 +224,21 @@ module.exports = {
 
         const subCols = Math.max(1, endCol - startCol + 1);
         const subRows = Math.max(1, endRow - startRow + 1);
+
+        const centerCol = ((cssLeft + cssRight) / 2 - cssOffsetX) / cssCellSize;
+        const centerRow = ((cssTop + cssBottom) / 2 - cssOffsetY) / cssCellSize;
+
+        console.log('[getVisibleGridRange]', JSON.stringify({
+          userScale, dOX: currentDataOffsetX, dOY: currentDataOffsetY,
+          viewportWidth, viewportHeight,
+          rp_cw: cw, rp_ch: ch, rp_actualCW: rp.actualCanvasWidth, rp_actualCH: rp.actualCanvasHeight,
+          rp_offsetX: rp.offsetX, rp_offsetY: rp.offsetY, rp_baseOffsetX: rp.baseOffsetX, rp_baseOffsetY: rp.baseOffsetY,
+          rp_cellSize: rp.cellSize, rp_userScale: rp.userScale,
+          cssOffsetX, cssOffsetY, cssCellSize,
+          cssLeft, cssRight, cssTop, cssBottom,
+          centerCol, centerRow,
+          startCol, endCol, startRow, endRow, subCols, subRows
+        }));
 
         resolve({ startCol, endCol, startRow, endRow, subCols, subRows });
       });
