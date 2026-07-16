@@ -169,8 +169,8 @@ Component({
             // 从全图快照恢复 → 全图聚合 → 再裁剪到预设
             const fullGrid = this.deepCloneGridData(this.cachedOriginalGridData, origRows, origCols);
             this._pipeline.reapplyColors(fullGrid, origRows, origCols);
-            // 保存聚合结果回快照（后续裁剪时复用）
-            this.cachedOriginalGridData = this.deepCloneGridData(fullGrid, origRows, origCols);
+            // reapplyColors 就地修改 fullGrid，_applyGridPreset 不修改输入，直接赋值即可
+            this.cachedOriginalGridData = fullGrid;
             // 裁剪
             const presetVal = this.data.gridPreset;
             const presetResult = this._applyGridPreset(fullGrid, origCols, origRows, presetVal);
@@ -179,7 +179,9 @@ Component({
           } else {
             // 原图比例：直接在当前数据上做
             this._pipeline.reapplyColors(this.cachedGridData, rows, cols);
-            this.cachedOriginalGridData = this.deepCloneGridData(this.cachedGridData, rows, cols);
+            // 未裁剪时 cachedGridData 与 cachedOriginalGridData 同尺寸，
+            // gridPreset 变更时会从 originalGridData 克隆出新 cachedGridData（打破引用）
+            this.cachedOriginalGridData = this.cachedGridData;
           }
         } else {
           this._pipeline.reapplyColors(this.cachedGridData, rows, cols);
