@@ -63,7 +63,7 @@ module.exports = {
         let newOffsetX = this.initialOffsetX * scaleDelta + (currentCenterX - this.initialCenterX);
         let newOffsetY = this.initialOffsetY * scaleDelta + (currentCenterY - this.initialCenterY);
 
-        const limits = this._getDragLimits();
+        const limits = this._getDragLimits(newScale);
         newOffsetX = Math.max(limits.minX, Math.min(limits.maxX, newOffsetX));
         newOffsetY = Math.max(limits.minY, Math.min(limits.maxY, newOffsetY));
 
@@ -135,10 +135,10 @@ module.exports = {
    * - 图片左边缘位置 = offsetX，不能小于 -(imageWidth - canvasWidth + margin)
    * - 图片右边缘位置 = offsetX + imageWidth，不能大于 canvasWidth - margin
    */
-  _getDragLimits() {
+  _getDragLimits(targetScale) {
     const canvasWidth = this.data.canvasWidth || 300;
     const canvasHeight = this.data.canvasHeight || 300;
-    const scale = this.data.scale || 1;
+    const scale = targetScale != null ? targetScale : (this.data.scale || 1);
 
     // CSS transform: translate(offsetX, offsetY) scale(scale)
     // scale 的变换原点是 center，缩放后图片中心不变
