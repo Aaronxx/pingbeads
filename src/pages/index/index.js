@@ -1998,21 +1998,6 @@ Page({
       const startRow = Math.max(0, Math.floor(centerRow - halfRows));
       const endRow = Math.min(fullRows - 1, Math.ceil(centerRow + halfRows));
 
-      console.log('[snapshot] center:', centerCol.toFixed(1), centerRow.toFixed(1),
-        'half:', halfCols.toFixed(1), halfRows.toFixed(1),
-        'cell:', startCol, endCol, startRow, endRow,
-        'offset:', Math.round(offsetX), Math.round(offsetY),
-        'cellSize:', cellSize.toFixed(2),
-        'canvasNode.w:', canvasNode?.width,
-        'container.w:', containerRect.width,
-        'wrapper.w:', wrapperRect.width,
-        'physRatio:', physRatio.toFixed(3),
-        'dataOffset:', mosaicCanvas.data.offsetX, mosaicCanvas.data.offsetY,
-        'baseOffset:', baseOffsetX.toFixed(1), baseOffsetY.toFixed(1),
-        'scale:', userScale.toFixed(2),
-        'fullCols:', fullCols, 'fullRows:', fullRows,
-        'gridDataRows:', fullGridData.length, 'gridDataCols:', fullGridData[0]?.length);
-
       // 限制范围
       const safeStartCol = Math.max(0, Math.min(startCol, fullCols - 1));
       const safeEndCol = Math.max(safeStartCol, Math.min(endCol, fullCols - 1));
