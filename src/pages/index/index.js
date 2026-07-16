@@ -930,6 +930,7 @@ Page({
   // 导出 PNG - 完整导出马赛克图+色号+统计
   exportPNG() {
     if (!this.data.mosaicData) {
+      this._snapshotRange = null;
       wx.showToast({ title: '请先生成拼豆图纸', icon: 'none' });
       return;
     }
@@ -947,6 +948,7 @@ Page({
     // 从组件获取 gridData（避免通过 setData 传输大数据）
     const mosaicCanvas = this.selectComponent('#mosaic-canvas');
     if (!mosaicCanvas || !mosaicCanvas.getExportData) {
+      this._snapshotRange = null;
       wx.showToast({ title: '导出组件异常', icon: 'none' });
       this.setData({ isExporting: false });
       return;
@@ -955,6 +957,7 @@ Page({
     const exportData = mosaicCanvas.getExportData();
 
     if (!exportData || !exportData.gridInfo) {
+      this._snapshotRange = null;
       wx.showToast({ title: '请先生成拼豆图纸', icon: 'none' });
       this.setData({ isExporting: false });
       return;
@@ -968,11 +971,14 @@ Page({
     let colOffset = 0;
     let rowOffset = 0;
     let exportStats = null;
+    let isSnapshotExport = false;
 
     let cols, rows, gridData, segments;
 
     if (this._snapshotRange) {
       const snap = this._snapshotRange;
+      this._snapshotRange = null;
+      isSnapshotExport = true;
       cols = snap.subCols;
       rows = snap.subRows;
       colOffset = snap.startCol;
@@ -1002,13 +1008,13 @@ Page({
     }
 
     // 如果设置了分块导出模式，走分块导出流程（快照模式不走分块）
-    if (this.data.splitMode && !this._snapshotRange) {
+    if (this.data.splitMode && !isSnapshotExport) {
       this.exportSplitPNG(fullGridData, fullCols, fullRows, gridSize, exportData);
       return;
     }
 
     // 检查是否为智能模式（快照模式强制走 gridData 分支）
-    const isMosaicMode = !!segments || !!this._snapshotRange;
+    const isMosaicMode = !!segments || isSnapshotExport;
 
     // 统计数据：快照模式用子矩阵统计，否则用全图统计
     const stats = exportStats || this.data.flatCells || { sortedByCount: [] };
@@ -1393,12 +1399,10 @@ Page({
         setTimeout(() => {
           const exportOptions = {
             success: (res) => {
-              that._snapshotRange = null; // 清理快照参数
               that.saveToPhotoAlbum(res.tempFilePath);
             },
             fail: (err) => {
               console.error('[exportPNG] canvasToTempFilePath 失败:', err?.errMsg || err);
-              that._snapshotRange = null;
               wx.showToast({ title: '导出失败，请重试', icon: 'none' });
               that.setData({ isExporting: false });
             }
