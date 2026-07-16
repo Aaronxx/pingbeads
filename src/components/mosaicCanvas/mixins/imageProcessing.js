@@ -151,17 +151,17 @@ module.exports = {
     const userScale = this.data.scale || 1;
     const dOX = this.data.offsetX || 0;
     const dOY = this.data.offsetY || 0;
-    const cw = rp.canvasWidth;
-    const ch = rp.canvasHeight;
-    const cssToBitmap = rp.actualCanvasWidth / cw;
+    const origCW = this.data.canvasWidth || 300;
+    const origCH = this.data.canvasHeight || 300;
+    const cssToBitmap = rp.actualCanvasWidth / origCW;
     const cssOffsetX = rp.offsetX / cssToBitmap;
     const cssOffsetY = rp.offsetY / cssToBitmap;
     const cssCellSize = rp.cellSize / cssToBitmap;
-    const cssX = (screenX - cw / 2 - dOX) / userScale + cw / 2;
-    const cssY = (screenY - ch / 2 - dOY) / userScale + ch / 2;
+    const cssX = (screenX - origCW / 2 - dOX) / userScale + origCW / 2;
+    const cssY = (screenY - origCH / 2 - dOY) / userScale + origCH / 2;
     const col = (cssX - cssOffsetX) / cssCellSize;
     const row = (cssY - cssOffsetY) / cssCellSize;
-    return { col, row, cssX, cssY, cssOffsetX, cssOffsetY, cssCellSize, userScale, dOX, dOY, cw, ch, rp_offsetX: rp.offsetX, rp_offsetY: rp.offsetY, rp_actualCanvasWidth: rp.actualCanvasWidth };
+    return { col, row, cssX, cssY, cssOffsetX, cssOffsetY, cssCellSize, userScale, dOX, dOY, origCW, origCH, rp_offsetX: rp.offsetX, rp_offsetY: rp.offsetY, rp_actualCanvasWidth: rp.actualCanvasWidth, rp_cw: rp.canvasWidth };
   },
 
   /**
@@ -190,7 +190,12 @@ module.exports = {
     const currentDataOffsetX = this.data.offsetX || 0;
     const currentDataOffsetY = this.data.offsetY || 0;
 
-    const cssToBitmap = rp.actualCanvasWidth / rp.canvasWidth;
+    // 容器的原始 CSS 宽度（this.data.canvasWidth），不受 renderer 内部 res[0].width 覆盖影响
+    const origCW = this.data.canvasWidth || 300;
+    const origCH = this.data.canvasHeight || 300;
+
+    // 位图 → CSS 空间：用原始 CSS 宽度做缩放比
+    const cssToBitmap = rp.actualCanvasWidth / origCW;
     const cssOffsetX = rp.offsetX / cssToBitmap;
     const cssOffsetY = rp.offsetY / cssToBitmap;
     const cssCellSize = rp.cellSize / cssToBitmap;
@@ -209,13 +214,16 @@ module.exports = {
 
         const viewportWidth = wrapperRect.width;
         const viewportHeight = wrapperRect.height;
-        const cw = rp.canvasWidth;
-        const ch = rp.canvasHeight;
 
-        const cssLeft = (-cw / 2 - currentDataOffsetX) / userScale + cw / 2;
-        const cssRight = (viewportWidth - cw / 2 - currentDataOffsetX) / userScale + cw / 2;
-        const cssTop = (-ch / 2 - currentDataOffsetY) / userScale + ch / 2;
-        const cssBottom = (viewportHeight - ch / 2 - currentDataOffsetY) / userScale + ch / 2;
+        // 逆 CSS transform：wrapper 四边 → container CSS 坐标
+        // transform: translate(dOX, dOY) scale(uS), origin: center
+        // container CSS (cx) → 屏幕（相对 wrapper 左上角）:
+        //   sx = (cx - origCW/2) * uS + origCW/2 + dOX
+        // 逆：cx = (sx - origCW/2 - dOX) / uS + origCW/2
+        const cssLeft = (-origCW / 2 - currentDataOffsetX) / userScale + origCW / 2;
+        const cssRight = (viewportWidth - origCW / 2 - currentDataOffsetX) / userScale + origCW / 2;
+        const cssTop = (-origCH / 2 - currentDataOffsetY) / userScale + origCH / 2;
+        const cssBottom = (viewportHeight - origCH / 2 - currentDataOffsetY) / userScale + origCH / 2;
 
         const startCol = Math.max(0, Math.floor((cssLeft - cssOffsetX) / cssCellSize));
         const endCol = Math.min(cols - 1, Math.ceil((cssRight - cssOffsetX) / cssCellSize));
@@ -230,10 +238,10 @@ module.exports = {
 
         console.log('[getVisibleGridRange]', JSON.stringify({
           userScale, dOX: currentDataOffsetX, dOY: currentDataOffsetY,
-          viewportWidth, viewportHeight,
-          rp_cw: cw, rp_ch: ch, rp_actualCW: rp.actualCanvasWidth, rp_actualCH: rp.actualCanvasHeight,
-          rp_offsetX: rp.offsetX, rp_offsetY: rp.offsetY, rp_baseOffsetX: rp.baseOffsetX, rp_baseOffsetY: rp.baseOffsetY,
-          rp_cellSize: rp.cellSize, rp_userScale: rp.userScale,
+          viewportWidth, viewportHeight, origCW, origCH,
+          rp_cw: rp.canvasWidth, rp_actualCW: rp.actualCanvasWidth,
+          rp_offsetX: rp.offsetX, rp_offsetY: rp.offsetY, rp_baseOffsetX: rp.baseOffsetX,
+          rp_cellSize: rp.cellSize,
           cssOffsetX, cssOffsetY, cssCellSize,
           cssLeft, cssRight, cssTop, cssBottom,
           centerCol, centerRow,
