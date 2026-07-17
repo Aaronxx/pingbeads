@@ -268,8 +268,8 @@ Page({
     }
     // 重置原图网格尺寸记录（换图后由 onMosaicGenerated 重新记录）
     this._originalGridSize = null;
-    // 重置所有设置项为默认值
-    this._resetSettings();
+    // 重置所有设置项为默认值（换图不切模式，当前模式即目标模式）
+    this._resetSettings(this.data.processMode);
     this.setData({
       imagePath: path,
       currentStep: 1,
@@ -627,7 +627,7 @@ Page({
     if (cached) {
       this._applyModeParams(cached);
     } else {
-      this._resetSettings();
+      this._resetSettings(newMode);
     }
 
     // 3. 最后切换模式标志（触发组件 observer 重新处理图片）
@@ -713,10 +713,12 @@ Page({
     }
   },
 
-  // 重置所有设置项为默认值
-  _resetSettings() {
+    // 重置所有设置项为默认值（targetMode 必须显式传入：换图用当前模式，切模式用目标模式）
+  _resetSettings(targetMode) {
+    // 目标模式的默认鲜艳度（马赛克默认0，卡通默认2）
+    const defaultVibrant = targetMode === 'mosaic' ? 0 : 2;
     // 计算默认鲜艳度滑块颜色
-    const defaultBlockColor = this.calculateVibrantBlockColor(2);
+    const defaultBlockColor = this.calculateVibrantBlockColor(defaultVibrant);
     // 同步浊色规避默认强度到 colorMapper
     setAntiGrayIntensity(0.5);
 
@@ -733,8 +735,8 @@ Page({
       useSpecialColors: false,
       removeEdge: false,
       mirrorImage: false,
-      // 鲜艳度（马赛克模式默认0，卡通模式默认2）
-      vibrantScale: this.data.processMode === 'mosaic' ? 0 : 2,
+      // 鲜艳度（按目标模式取默认值：马赛克模式默认0，卡通模式默认2）
+      vibrantScale: defaultVibrant,
       vibrantBlockColor: defaultBlockColor,
       // 浊色规避
       antiGrayIntensity: 50,

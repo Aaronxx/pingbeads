@@ -599,21 +599,21 @@
                 <text class="help-sub-icon">🌿</text>
                 <view class="help-sub-content">
                   <text class="help-sub-name">柔和</text>
-                  <text class="help-sub-desc">纯中位数取色，色块干净平整，适合简单图案</text>
+                  <text class="help-sub-desc">色块干净平整，适合简单图案</text>
                 </view>
               </view>
               <view class="help-sub-item">
                 <text class="help-sub-icon">✨</text>
                 <view class="help-sub-content">
                   <text class="help-sub-name">鲜亮</text>
-                  <text class="help-sub-desc">智能众数取色，避免灰浊中间色，色彩更鲜明</text>
+                  <text class="help-sub-desc">色彩更鲜明</text>
                 </view>
               </view>
               <view class="help-sub-item">
                 <text class="help-sub-icon">⚖️</text>
                 <view class="help-sub-content">
                   <text class="help-sub-name">平衡</text>
-                  <text class="help-sub-desc">感知距离取色，兼顾色彩整合度和还原度（推荐）</text>
+                  <text class="help-sub-desc">兼顾色彩整合度和还原度（推荐）</text>
                 </view>
               </view>
             </view>
@@ -639,6 +639,13 @@
                 </view>
               </view>
             </view>
+          </view>
+        </view>
+        <view class="help-item">
+          <text class="help-item-icon">📷</text>
+          <view class="help-item-content">
+            <text class="help-item-name">快照导出</text>
+            <text class="help-item-desc">只导出当前可见区域的图纸，适合截取局部内容</text>
           </view>
         </view>
       </view>
