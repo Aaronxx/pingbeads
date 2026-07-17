@@ -39,6 +39,13 @@ module.exports = {
     } else if (e.touches.length === 1) {
       // 只保留用到的两个坐标，避免序列化完整 Touch 对象
       this._lastTouch = { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+      // 裁剪模式：记录拖动起点（手指初始位置 + 裁剪框初始位置），供累积式位移计算
+      if (this.data.cropMode) {
+        this._cropTouchStartX = e.touches[0].clientX;
+        this._cropTouchStartY = e.touches[0].clientY;
+        this._cropWinStartX = this.data.cropWinX || 0;
+        this._cropWinStartY = this.data.cropWinY || 0;
+      }
       this.setData({ isDragging: true });
     }
   },
@@ -59,7 +66,11 @@ module.exports = {
 
       if (this.initialTouchDistance > 0) {
         const scaleFactor = Math.sqrt(currentDistance / this.initialTouchDistance);
-        const newScale = Math.max(1.0, Math.min(20, this.initialScale * scaleFactor));
+        // 裁剪模式下限制缩放上限，保证裁剪框不超过可见区域
+        const maxScaleLimit = this.data.cropMode && this._getCropModeMaxScale
+          ? this._getCropModeMaxScale()
+          : 20;
+        const newScale = Math.max(1.0, Math.min(maxScaleLimit, this.initialScale * scaleFactor));
 
         const scaleDelta = newScale / this.initialScale;
         const canvasWidth = this.data.canvasWidth;
@@ -80,6 +91,24 @@ module.exports = {
       const last = this._lastTouch;
       const deltaX = current.clientX - last.clientX;
       const deltaY = current.clientY - last.clientY;
+
+      // 裁剪模式：拖动裁剪框（累积式位移），canvas 不重渲染
+      if (this.data.cropMode) {
+        const canvasW = this.data.canvasWidth || 300;
+        const canvasH = this.data.canvasHeight || 300;
+        const maxX = Math.max(0, canvasW - (this.data.cropWinW || 0));
+        const maxY = Math.max(0, canvasH - (this.data.cropWinH || 0));
+
+        // 累积位移 = 裁剪框初始位置 + (当前手指位置 - 手指初始位置)
+        let newX = (this._cropWinStartX || 0) + (current.clientX - (this._cropTouchStartX || current.clientX));
+        let newY = (this._cropWinStartY || 0) + (current.clientY - (this._cropTouchStartY || current.clientY));
+        newX = Math.max(0, Math.min(maxX, newX));
+        newY = Math.max(0, Math.min(maxY, newY));
+
+        this._lastTouch = { clientX: current.clientX, clientY: current.clientY };
+        this.setData({ cropWinX: newX, cropWinY: newY });
+        return;
+      }
 
       if (this.data.scale >= 1.0) {
         const limits = this._getDragLimits();

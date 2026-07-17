@@ -139,6 +139,7 @@
         bind:gridInfoUpdate="onGridInfoUpdate"
         bind:loadingChange="onLoadingChange"
         bind:undoCleared="onUndoCleared"
+        bind:cropConfirmed="onCropConfirmed"
       />
       <!-- 空状态 -->
       <view wx:else class="placeholder">
@@ -580,7 +581,7 @@
           <text class="help-item-icon">📏</text>
           <view class="help-item-content">
             <text class="help-item-name">网格预设</text>
-            <text class="help-item-desc">选择固定尺寸从中心截取，适配不同拼豆板</text>
+            <text class="help-item-desc">按固定尺寸截取，默认取中心区域，可拖动明亮裁剪框调整位置后点剪刀确认</text>
           </view>
         </view>
         <view class="help-item">
@@ -657,5 +658,12 @@
         </view>
       </view>
     </scroll-view>
+  </view>
+
+  <!-- 裁剪确认可爱 toast（✂ 咔嚓!!） -->
+  <view wx:if="{{cropToastVisible}}" class="crop-toast">
+    <image class="crop-toast-scissor" src="/src/assets/icons/scissor.png" mode="aspectFit"></image>
+    <text class="crop-toast-text">咔嚓</text>
+    <text class="crop-toast-exclaim">!!</text>
   </view>
 </view>

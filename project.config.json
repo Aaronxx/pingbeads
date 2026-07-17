@@ -56,6 +56,14 @@
       {
         "value": ".zcode",
         "type": "folder"
+      },
+      {
+        "value": ".font-tmp",
+        "type": "folder"
+      },
+      {
+        "value": "node_modules",
+        "type": "folder"
       }
     ],
     "include": []

@@ -111,12 +111,12 @@
 }
 
 .dropdown-label {
-  font-size: 18rpx;
+  font-size: 14rpx;
   color: var(--text-muted);
 }
 
 .dropdown-value {
-  font-size: 24rpx;
+  font-size: 18rpx;
   color: var(--primary);
   font-weight: 600;
 }
@@ -1953,6 +1953,10 @@
   transform: translateY(100%);
   transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
   max-height: 80vh;
+  /* 说明书面板使用系统默认字体（清晰易读），不应用人偶仿宋 */
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica,
+    Segoe UI, Arial, Roboto, 'PingFang SC', 'miui', 'Hiragino Sans GB', 'Microsoft Yahei',
+    sans-serif;
   display: flex;
   flex-direction: column;
 }
@@ -2097,4 +2101,79 @@
 .help-confirm-btn:active {
   transform: scale(0.98);
   opacity: 0.9;
+}
+
+/* ========================
+   裁剪确认可爱 toast（✂ 咔嚓!!）
+   ======================== */
+.crop-toast {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  z-index: 9999;
+  /* 旋转入场：从缩小+旋转弹入 */
+  animation: cropToastIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* 剪刀图标（PNG）：倾斜 45 度，入场后做一次剪切开合 */
+.crop-toast-scissor {
+  width: 52rpx;
+  height: 52rpx;
+  transform: rotate(45deg);
+  animation: cropToastScissor 0.5s ease-out 0.25s both;
+}
+
+/* 咔嚓文字：圆润可爱字体 */
+/* 咔嚓文字：圆润可爱（圆体优先 + 中粗 + 大字距 + 轻微倾斜手写感）*/
+.crop-toast-text {
+  color: #ff6bb3;
+  font-size: 44rpx;
+  font-weight: 600;
+  font-family: 'Yuanyuan', '圆体', '幼圆', 'YouYuan', 'STXihei', 'PingFang SC', cursive, sans-serif;
+  letter-spacing: 6rpx;
+  transform: rotate(-6deg);
+  text-shadow:
+    0 2rpx 0 rgba(255, 255, 255, 1),
+    0 3rpx 8rpx rgba(255, 255, 255, 0.9),
+    0 1rpx 2rpx rgba(0, 0, 0, 0.12);
+}
+
+/* 感叹号：倾斜 + 延迟跳动，活泼 */
+.crop-toast-exclaim {
+  color: #ff9ecd;
+  font-size: 50rpx;
+  font-weight: 800;
+  letter-spacing: 2rpx;
+  transform: rotate(15deg);
+  text-shadow:
+    0 2rpx 0 rgba(255, 255, 255, 1),
+    0 3rpx 8rpx rgba(255, 255, 255, 0.9),
+    0 1rpx 2rpx rgba(0, 0, 0, 0.12);
+  animation: cropToastExclaim 0.4s ease-out 0.5s both;
+}
+
+/* 旋转入场：缩小+旋转一周弹入（overshoot 回弹）*/
+@keyframes cropToastIn {
+  0% { transform: translate(-50%, -50%) scale(0) rotate(-180deg); opacity: 0; }
+  60% { transform: translate(-50%, -50%) scale(1.1) rotate(10deg); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 1; }
+}
+
+/* 45度倾斜剪刀剪切：用 scale 模拟开合 */
+@keyframes cropToastScissor {
+  0% { transform: rotate(45deg) scale(1); }
+  30% { transform: rotate(45deg) scale(0.8); }
+  60% { transform: rotate(45deg) scale(1.15); }
+  100% { transform: rotate(45deg) scale(1); }
+}
+
+/* 感叹号跳动：延迟出现后上下弹两下（保留 15 度倾斜）*/
+@keyframes cropToastExclaim {
+  0% { transform: rotate(15deg) translateY(0); opacity: 0.4; }
+  40% { transform: rotate(15deg) translateY(-10rpx); opacity: 1; }
+  70% { transform: rotate(15deg) translateY(2rpx); opacity: 1; }
+  100% { transform: rotate(15deg) translateY(0); opacity: 1; }
 }

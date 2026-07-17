@@ -126,6 +126,9 @@ Page({
     undoStack: [],  // 撤销栈，最多20步
     canUndo: false,  // 是否可以撤销
 
+    // 裁剪确认可爱 toast
+    cropToastVisible: false,
+
     // 网格线检测状态
     hasGridLinesDetected: false,  // 马赛克模式下是否检测到网格线
 
@@ -372,6 +375,16 @@ Page({
     this.setData({ undoStack: [], canUndo: false });
   },
 
+  // 自由裁剪确认回调（剪刀按钮点击后）
+  onCropConfirmed() {
+    // 自定义可爱 toast：✂️ 咔嚓
+    this.setData({ cropToastVisible: true });
+    if (this._cropToastTimer) clearTimeout(this._cropToastTimer);
+    this._cropToastTimer = setTimeout(() => {
+      this.setData({ cropToastVisible: false });
+    }, 1200);
+  },
+
   // 点击颜色色号回调
   onCodeClick(e) {
     const { code } = e.detail;
@@ -429,6 +442,11 @@ Page({
     // 只更新 gridPresetIndex，不设置 mosaicData: null
     // mosaicCanvas 的 gridPreset observer 会自动处理裁剪并更新统计
     this.setData({ gridPresetIndex: index });
+
+    // 选了固定尺寸预设（非原图比例）后收起面板，露出裁剪模式交互
+    if (preset.cols > 0 && preset.rows > 0) {
+      this.setData({ isPanelOpen: false });
+    }
   },
 
   // 调整合并阈值

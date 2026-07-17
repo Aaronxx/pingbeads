@@ -1,9 +1,12 @@
 /** app.wxss **/
 
+/* 引入子集化的人偶仿宋字体（界面全局使用，说明书面板除外） */
+@import "/src/styles/font.wxss";
+
 /* 全局样式 */
 page {
   background-color: #f5f5f5;
-  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica,
+  font-family: 'RenOuFangSong', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica,
     Segoe UI, Arial, Roboto, 'PingFang SC', 'miui', 'Hiragino Sans GB', 'Microsoft Yahei',
     sans-serif;
 }

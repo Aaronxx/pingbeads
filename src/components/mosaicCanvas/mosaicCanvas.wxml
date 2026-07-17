@@ -20,6 +20,20 @@
     />
   </view>
 
+  <!-- 裁剪模式：遮罩 + 裁剪框（z-index 高于 canvas，接收拖动事件） -->
+  <view wx:if="{{cropMode}}"
+        class="crop-mask-layer {{cropConfirmAnimating ? 'fading-out' : ''}}"
+        bindtouchstart="handleTouchStart"
+        catchtouchmove="handleTouchMove"
+        bindtouchend="handleTouchEnd">
+    <view class="crop-window" style="width: {{cropWinW}}px; height: {{cropWinH}}px; transform: translate({{cropWinX}}px, {{cropWinY}}px);"></view>
+  </view>
+  <view wx:if="{{cropMode}}"
+        class="crop-confirm-btn {{cropConfirmAnimating ? 'fading-out' : ''}}"
+        catchtap="confirmCrop">
+    <text>✂️</text>
+  </view>
+
 
   <!-- 空状态提示 -->
   <view wx:if="{{!imagePath}}" class="empty-tip">
