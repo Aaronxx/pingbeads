@@ -668,6 +668,8 @@ Component({
 
       if (this.data.processMode === 'mosaic') {
         // 马赛克模式：暂不支持算法切换，使用 imageProcessor 原版
+        // 同步 excludeSpecial 全局状态，让 processMosaicV2 的 fastFindClosestMarkColor 感知特殊色开关
+        this._pipeline.syncColorMapper();
         const { processMosaicV2, processWithSmartRegions } = require('../../utils/imageProcessor');
         try {
           const result = processMosaicV2(pixelData, cachedWidth, cachedHeight, {
