@@ -20,16 +20,16 @@
     />
   </view>
 
-  <!-- 裁剪模式：遮罩 + 裁剪框（z-index 高于 canvas，接收拖动事件） -->
+  <!-- 裁剪模式：遮罩 + 裁剪框 + 剪刀按钮（cropMode 控制全部显示） -->
   <view wx:if="{{cropMode}}"
-        class="crop-mask-layer {{cropConfirmAnimating ? 'fading-out' : ''}}"
+        class="crop-mask-layer"
         bindtouchstart="handleTouchStart"
         catchtouchmove="handleTouchMove"
         bindtouchend="handleTouchEnd">
     <view class="crop-window" style="width: {{cropWinW}}px; height: {{cropWinH}}px; transform: translate({{cropWinX}}px, {{cropWinY}}px);"></view>
   </view>
   <view wx:if="{{cropMode}}"
-        class="crop-confirm-btn {{cropConfirmAnimating ? 'fading-out' : ''}}"
+        class="crop-confirm-btn"
         catchtap="confirmCrop">
     <text>✂️</text>
   </view>

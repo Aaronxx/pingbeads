@@ -732,7 +732,6 @@
   color: var(--primary);
   letter-spacing: 2rpx;
   margin-bottom: 16rpx;
-  font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
 }
 
 /* ========================
@@ -2127,12 +2126,11 @@
 }
 
 /* 咔嚓文字：圆润可爱字体 */
-/* 咔嚓文字：圆润可爱（圆体优先 + 中粗 + 大字距 + 轻微倾斜手写感）*/
+/* 咔嚓文字：人偶仿宋 + 轻微倾斜手写感 */
 .crop-toast-text {
   color: #ff6bb3;
   font-size: 44rpx;
   font-weight: 600;
-  font-family: 'Yuanyuan', '圆体', '幼圆', 'YouYuan', 'STXihei', 'PingFang SC', cursive, sans-serif;
   letter-spacing: 6rpx;
   transform: rotate(-6deg);
   text-shadow:

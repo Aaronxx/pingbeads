@@ -497,7 +497,16 @@ module.exports = {
     });
     this.triggerEvent('statsUpdate', { stats });
 
-    this.renderToCanvas(finalGridData, finalCols, finalRows, qualityGridSize);
+    if (this.data.cropMode) {
+      // 裁剪模式下渲染全图（cachedOriginalGridData），保持遮罩+裁剪框可见
+      const orig = this._getOriginalGridSize();
+      if (orig) {
+        this._recalcCropWindowOnScale(orig.cols, orig.rows, qualityGridSize);
+        this.renderToCanvas(this.cachedOriginalGridData, orig.cols, orig.rows, qualityGridSize);
+      }
+    } else {
+      this.renderToCanvas(finalGridData, finalCols, finalRows, qualityGridSize);
+    }
 
     this.triggerEvent('mosaicGenerated', {
       gridInfo: { cols: finalCols, rows: finalRows, gridSize: qualityGridSize },

@@ -527,24 +527,12 @@ Page({
     });
   },
 
-  // 鲜艳度滑块拖动中（实时更新显示）
-  // 性能：节流到 ~12fps，避免 60fps 拖动时每帧都 setData 跨桥
-  // （拖动结束时会由 onVibrantChange 兜底同步最终值，中间帧丢一些不影响体验）
+  // 鲜艳度滑块拖动中（只更新滑块颜色，不触发重处理）
   onVibrantChanging(e) {
     const vibrantScale = e.detail.value;
-    const now = Date.now();
-    if (now - (this._lastVibrantChangingTs || 0) < 80) {
-      // 节流期间记录最新值，确保节流结束后能同步
-      this._pendingVibrantScale = vibrantScale;
-      return;
-    }
-    this._lastVibrantChangingTs = now;
-    this._pendingVibrantScale = vibrantScale;
     const blockColor = this.calculateVibrantBlockColor(vibrantScale);
-    this.setData({
-      vibrantScale: vibrantScale,
-      vibrantBlockColor: blockColor
-    });
+    // 只更新视觉颜色，不更新 vibrantScale（避免触发组件 observer 重处理）
+    this.setData({ vibrantBlockColor: blockColor });
   },
 
   // 浊色规避滑块变化（完成）：更新映射表强度 + 传给组件触发重渲染
@@ -558,12 +546,9 @@ Page({
     });
   },
 
-  // 浊色规避滑块拖动中（仅更新显示，不触发重渲染避免卡顿）
+  // 浊色规避滑块拖动中（不触发重处理，松手后才处理）
   onAntiGrayChanging(e) {
-    const sliderVal = e.detail.value;
-    this.setData({
-      antiGrayIntensity: sliderVal
-    });
+    // 留空：滑动中不 setData antiGrayIntensity，避免触发组件 observer 重处理
   },
 
   // 自定义网格大小勾选

@@ -31,8 +31,17 @@ module.exports = {
       return { gridData, cols, rows };
     }
 
-    const startCol = Math.max(0, Math.floor((cols - targetCols) / 2));
-    const startRow = Math.max(0, Math.floor((rows - targetRows) / 2));
+    // 已确认裁剪时用用户自定义位置，否则用中心
+    let startCol, startRow;
+    if (this._cropConfirmed) {
+      const origCols = gridData[0] ? gridData[0].length : cols;
+      const origRows = gridData.length;
+      startCol = Math.max(0, Math.min(this._cropOffsetCol, origCols - targetCols));
+      startRow = Math.max(0, Math.min(this._cropOffsetRow, origRows - targetRows));
+    } else {
+      startCol = Math.max(0, Math.floor((cols - targetCols) / 2));
+      startRow = Math.max(0, Math.floor((rows - targetRows) / 2));
+    }
 
     this._cropOffsetCol = startCol;
     this._cropOffsetRow = startRow;

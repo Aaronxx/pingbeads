@@ -50,7 +50,6 @@ Component({
   cachedHeight: 0,
   // 裁剪模式：选预设后进入，置灰全图 + 可拖动明亮裁剪框
   cropMode: false,
-  cropConfirmAnimating: false,
   cropWinX: 0,
   cropWinY: 0,
   cropWinW: 0,
@@ -62,6 +61,8 @@ Component({
   cachedSegments: null,
   _cropOffsetCol: 0,
   _cropOffsetRow: 0,
+  _lastPresetIndex: 0,
+  _cropConfirmed: false,
   canvasCtx: null,
   canvasNode: null,
 
@@ -86,15 +87,20 @@ Component({
         }, 200);
       }
     },
-    'gridSize, mergeThreshold, previewQuality, processMode': function() {
+    'gridSize, previewQuality': function() {
+      // 改格子数的参数：退出 cropMode + 清缓存 + 完整重生成
       if (this.data.isProcessing) return;
-
-      const key = `${this.data.gridSize}_${this.data.mergeThreshold}_${this.data.previewQuality}_${this.data.processMode}`;
-      if (this._lastProcessedKey === key) return;
-      this._lastProcessedKey = key;
+      const key = `${this.data.gridSize}_${this.data.previewQuality}`;
+      if (this._lastGridSizeKey === key) return;
+      this._lastGridSizeKey = key;
 
       if (this._pipeline) {
         this._pipeline.update({ mergeThreshold: this.data.mergeThreshold });
+      }
+
+      // 格子数变更 → 裁剪定位失效，退出裁剪模式
+      if (this.data.cropMode) {
+        this.setData({ cropMode: false });
       }
 
       if (this.data.processMode === 'mosaic') {
@@ -106,6 +112,29 @@ Component({
       this._cropOffsetCol = 0;
       this._cropOffsetRow = 0;
 
+      this._reapplyPipeline(3);
+    },
+    'mergeThreshold, processMode': function() {
+      // 不改格子数的参数：不清缓存，不退出 cropMode
+      if (this.data.isProcessing) return;
+      const key = `${this.data.mergeThreshold}_${this.data.processMode}`;
+      if (this._lastMergeProcessKey === key) return;
+      this._lastMergeProcessKey = key;
+
+      if (this._pipeline) {
+        this._pipeline.update({ mergeThreshold: this.data.mergeThreshold });
+      }
+
+      if (this.data.processMode === 'mosaic') {
+        this.cachedGridData = null;
+        this.cachedGridInfo = null;
+        this.cachedSegments = null;
+        this.cachedOriginalGridData = null;
+        this._cropOffsetCol = 0;
+        this._cropOffsetRow = 0;
+      }
+
+      // 不退出 cropMode（格子数未变）
       this._reapplyPipeline(3);
     },
     'useSpecialColors': function() {
@@ -122,17 +151,32 @@ Component({
     },
     'removeEdge': function() {
       this._waitForData((rows, cols, gridSize) => {
-        this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+        if (this.data.cropMode && this.cachedOriginalGridData) {
+          const orig = this._getOriginalGridSize();
+          if (orig) this.renderToCanvas(this.cachedOriginalGridData, orig.cols, orig.rows, gridSize);
+        } else {
+          this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+        }
       });
     },
     'mirrorImage': function() {
       this._waitForData((rows, cols, gridSize) => {
-        this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+        if (this.data.cropMode && this.cachedOriginalGridData) {
+          const orig = this._getOriginalGridSize();
+          if (orig) this.renderToCanvas(this.cachedOriginalGridData, orig.cols, orig.rows, gridSize);
+        } else {
+          this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+        }
       });
     },
     'splitMode': function() {
       this._waitForData((rows, cols, gridSize) => {
-        this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+        if (this.data.cropMode && this.cachedOriginalGridData) {
+          const orig = this._getOriginalGridSize();
+          if (orig) this.renderToCanvas(this.cachedOriginalGridData, orig.cols, orig.rows, gridSize);
+        } else {
+          this.renderToCanvas(this.cachedGridData, cols, rows, gridSize);
+        }
       });
     },
     'vibrantScale': function() {
@@ -147,7 +191,10 @@ Component({
       this._reapplyPipeline(2);
     },
     'gridPreset': function(newVal, oldVal) {
-      if (oldVal && oldVal[0] === newVal[0]) return;
+      if (!newVal) return;
+      // 用实例变量去重（oldVal 在组件重渲染时可能为 undefined，不可靠）
+      if (this._lastPresetIndex === newVal[0]) return;
+      this._lastPresetIndex = newVal[0];
       this._reapplyPipeline(1);
     },
     'scale': function() {
@@ -279,7 +326,6 @@ Component({
     // 确认裁剪：由裁剪框位置反算网格行列，从原图快照裁出子网格
     confirmCrop() {
       if (!this.cachedOriginalGridData || !this.cachedGridInfo) return;
-      if (this.data.cropConfirmAnimating) return;
 
       // 点击瞬间立即触发 toast（✂️ 咔嚓），让用户立刻看到反馈
       this.triggerEvent('cropConfirmed');
@@ -314,7 +360,6 @@ Component({
       startCol = Math.max(0, Math.min(origCols - targetCols, startCol));
       startRow = Math.max(0, Math.min(origRows - targetRows, startRow));
 
-      const that = this;
       const cropResult = this._applyCustomCrop(
         this.cachedOriginalGridData, startCol, startRow, targetCols, targetRows
       );
@@ -322,23 +367,17 @@ Component({
       this.cachedGridInfo = { cols: targetCols, rows: targetRows, gridSize };
       this._cropOffsetCol = startCol;
       this._cropOffsetRow = startRow;
+      this._cropConfirmed = true; // 标记已确认，后续重生成用自定义位置裁剪
 
-      // 触发剪刀按钮淡出淡入动画
-      this.setData({ cropConfirmAnimating: true });
+      // 立即退出裁剪模式，渲染裁剪后网格
+      this.setData({ cropMode: false });
+      this.resetPreviewState();
+      this.renderToCanvas(this.cachedGridData, targetCols, targetRows, gridSize);
 
-      // 动画 600ms 结束后：退出裁剪模式 + 渲染裁剪后网格 + 通知页面层
-      setTimeout(() => {
-        that.setData({ cropMode: false });
-        that.resetPreviewState();
-        that.renderToCanvas(that.cachedGridData, targetCols, targetRows, gridSize);
-
-        const stats = that.calculateStats(that.cachedGridData, targetRows, targetCols);
-        that.triggerEvent('statsUpdate', { stats });
-        that.triggerEvent('gridInfoUpdate', { cols: targetCols, rows: targetRows });
-        that._clearUndoAndNotify();
-
-        that.setData({ cropConfirmAnimating: false });
-      }, 600);
+      const stats = this.calculateStats(this.cachedGridData, targetRows, targetCols);
+      this.triggerEvent('statsUpdate', { stats });
+      this.triggerEvent('gridInfoUpdate', { cols: targetCols, rows: targetRows });
+      this._clearUndoAndNotify();
     },
 
     // 自定义裁剪：从原图快照裁出指定起始位置的子网格
@@ -393,6 +432,7 @@ Component({
       }
 
       this._waitForData((rows, cols, gridSize) => {
+        const doProcess = () => {
         this.setData({ isProcessing: true });
 
         if (level >= 2) {
@@ -417,9 +457,12 @@ Component({
                 desaturateGrayColors(fullGrid, origRows, origCols, this.data.antiGrayIntensity);
               }
               this.cachedOriginalGridData = fullGrid;
-              const presetResult = this._applyGridPreset(fullGrid, origCols, origRows, this.data.gridPreset);
-              this.cachedGridData = presetResult.gridData;
-              this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
+              // cropMode 下不重裁剪（裁剪框位置由 cropWinX/Y 跟踪，不需要更新中心裁剪结果）
+              if (!this.data.cropMode) {
+                const presetResult = this._applyGridPreset(fullGrid, origCols, origRows, this.data.gridPreset);
+                this.cachedGridData = presetResult.gridData;
+                this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
+              }
             } else {
               this._pipeline.reapplyColors(this.cachedGridData, rows, cols);
               if (this.data.antiGrayIntensity > 0) {
@@ -436,8 +479,9 @@ Component({
         }
 
         if (level === 1) {
-          // 选了新预设：重置裁剪模式状态
-          this.setData({ cropMode: false, cropConfirmAnimating: false });
+          // 选了新预设：重置裁剪模式状态，清空已确认标志（中心裁剪）
+          this._cropConfirmed = false;
+          this.setData({ cropMode: false });
 
           if (this.cachedOriginalGridData) {
             const origRows = this.cachedOriginalGridData.length;
@@ -513,10 +557,28 @@ Component({
         const stats = this.calculateStats(gd, gi.rows, gi.cols);
         this.triggerEvent('statsUpdate', { stats: stats });
         this.setData({ isProcessing: false });
-        this.renderToCanvas(gd, gi.cols, gi.rows, gridSize);
+
+        if (this.data.cropMode) {
+          // cropMode：渲染全图（cachedOriginalGridData），保持遮罩+裁剪框可见
+          const orig = this._getOriginalGridSize();
+          if (orig) {
+            this.renderToCanvas(this.cachedOriginalGridData, orig.cols, orig.rows, gridSize);
+          }
+        } else {
+          this.renderToCanvas(gd, gi.cols, gi.rows, gridSize);
+        }
 
         if (level >= 1) {
           this._clearUndoAndNotify();
+        }
+        }; // end doProcess
+
+        // Level 2：显示 loading 并延迟处理，让 loading 先渲染（与 Level 3 一致）
+        if (level >= 2) {
+          this.triggerEvent('loadingChange', { show: true, text: '正在重新应用色彩...' });
+          setTimeout(() => doProcess(), 100);
+        } else {
+          doProcess();
         }
       });
     },

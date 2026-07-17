@@ -155,14 +155,3 @@
   box-sizing: border-box;
   pointer-events: none;
 }
-
-/* 确认裁剪时的淡出动画（遮罩+按钮一起淡出） */
-.crop-mask-layer.fading-out,
-.crop-confirm-btn.fading-out {
-  animation: cropFadeOut 0.6s ease forwards;
-}
-
-@keyframes cropFadeOut {
-  0% { opacity: 1; }
-  100% { opacity: 0; }
-}
