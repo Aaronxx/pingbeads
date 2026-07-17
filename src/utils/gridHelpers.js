@@ -4,6 +4,7 @@
 
 /**
  * 深拷贝 gridData（只拷贝必要的属性，避免拷贝大对象）
+ * 删除死字段：originalMarkCode/initialMark* 经核实无任何读取者
  */
 function deepCloneGridData(gridData, rows, cols) {
   const cloned = [];
@@ -21,10 +22,6 @@ function deepCloneGridData(gridData, rows, cols) {
           col: cell.col,
           rawRgb: cell.rawRgb ? { ...cell.rawRgb } : null,
           originalRgb: cell.originalRgb ? { ...cell.originalRgb } : null,
-          originalMarkCode: cell.originalMarkCode,
-          initialMarkCode: cell.markCode,
-          initialMarkHex: cell.markHex,
-          initialMarkRgb: cell.markRgb ? { ...cell.markRgb } : null,
           markCode: cell.markCode,
           markHex: cell.markHex,
           markRgb: cell.markRgb ? { ...cell.markRgb } : null,

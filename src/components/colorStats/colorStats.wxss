@@ -16,7 +16,7 @@
 
 /* 按钮容器 */
 .color-btn {
-  width: calc(20% - 16rpx);
+  width: calc(16.66% - 16rpx);
   height: 64rpx;
   box-sizing: border-box;
 }

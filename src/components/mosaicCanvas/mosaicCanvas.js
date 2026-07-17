@@ -445,7 +445,26 @@ Component({
             mergeThreshold: this.data.mergeThreshold
           });
 
-          if (this.cachedOriginalGridData) {
+          // 马赛克模式：保留 processMosaicV2 的色号映射，只做特殊色替换 + 浊色规避
+          // （不走 reapplyColors，否则会从 rawRgb 重映射，永久覆盖马赛克映射）
+          if (this.data.processMode === 'mosaic') {
+            if (this.cachedOriginalGridData) {
+              const origRows = this.cachedOriginalGridData.length;
+              const origCols = this.cachedOriginalGridData[0] ? this.cachedOriginalGridData[0].length : 0;
+              const fullGrid = this.deepCloneGridData(this.cachedOriginalGridData, origRows, origCols);
+              // 仅特殊色替换 + 浊色规避，不重映射色号、不覆盖快照
+              this._pipeline.replaceSpecialsOnly(fullGrid, origRows, origCols);
+              if (this.data.antiGrayIntensity > 0) {
+                desaturateGrayColors(fullGrid, origRows, origCols, this.data.antiGrayIntensity);
+              }
+              // 快照不覆盖（cachedOriginalGridData 保持马赛克原始映射）
+              if (!this.data.cropMode) {
+                const presetResult = this._applyGridPreset(fullGrid, origCols, origRows, this.data.gridPreset);
+                this.cachedGridData = presetResult.gridData;
+                this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
+              }
+            }
+          } else if (this.cachedOriginalGridData) {
             const origRows = this.cachedOriginalGridData.length;
             const origCols = this.cachedOriginalGridData[0] ? this.cachedOriginalGridData[0].length : 0;
             const isCropped = rows !== origRows || cols !== origCols;

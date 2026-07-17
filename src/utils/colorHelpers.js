@@ -2,8 +2,14 @@
  * Shared color and Mark code helpers.
  */
 
+// 色板只有 291 种 hex，缓存命中后零开销（渲染热路径每格调用一次）
+const _isLightCache = new Map();
+
 function isLightColor(hex) {
   if (!hex) return false;
+  const cached = _isLightCache.get(hex);
+  if (cached !== undefined) return cached;
+
   const normalized = hex.replace('#', '');
   let r;
   let g;
@@ -22,7 +28,9 @@ function isLightColor(hex) {
   }
 
   const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-  return brightness > 150;
+  const result = brightness > 150;
+  _isLightCache.set(hex, result);
+  return result;
 }
 
 /**

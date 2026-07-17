@@ -775,7 +775,8 @@ function detectEdgeColorFromGrid(gridData, rows, cols, gridSize, threshold = 50)
           const cell = gridData[scanRow] && gridData[scanRow][scanCol];
           if (cell && cell.originalRgb) {
             const color = cell.originalRgb;
-            const key = `${color.r},${color.g},${color.b}`;
+            // int 打包做 key（避免模板字符串分配 + split 解码）
+            const key = (color.r << 16) | (color.g << 8) | color.b;
             colorCounts[key] = (colorCounts[key] || 0) + 1;
             total++;
           }
@@ -790,8 +791,12 @@ function detectEdgeColorFromGrid(gridData, rows, cols, gridSize, threshold = 50)
       const count = colorCounts[key];
       if (count > maxCount) {
         maxCount = count;
-        const [r, g, b] = key.split(',').map(Number);
-        dominantColor = { r, g, b };
+        const packed = Number(key);
+        dominantColor = {
+          r: (packed >> 16) & 0xff,
+          g: (packed >> 8) & 0xff,
+          b: packed & 0xff
+        };
       }
     }
 
@@ -862,7 +867,11 @@ function detectEdgeColorFromSegments(segments, cols, rows, threshold = 50) {
 
       if (isEdge && seg.avgColor) {
         const color = seg.avgColor;
-        const key = `${Math.round(color.r / 8) * 8},${Math.round(color.g / 8) * 8},${Math.round(color.b / 8) * 8}`;
+        // 量化后 int 打包做 key（避免模板字符串分配 + split 解码）
+        const qr = Math.round(color.r / 8) * 8;
+        const qg = Math.round(color.g / 8) * 8;
+        const qb = Math.round(color.b / 8) * 8;
+        const key = (qr << 16) | (qg << 8) | qb;
         colorCounts[key] = (colorCounts[key] || 0) + 1;
         total++;
       }
@@ -875,8 +884,12 @@ function detectEdgeColorFromSegments(segments, cols, rows, threshold = 50) {
       const count = colorCounts[key];
       if (count > maxCount) {
         maxCount = count;
-        const [r, g, b] = key.split(',').map(Number);
-        dominantColor = { r, g, b };
+        const packed = Number(key);
+        dominantColor = {
+          r: (packed >> 16) & 0xff,
+          g: (packed >> 8) & 0xff,
+          b: packed & 0xff
+        };
       }
     }
 

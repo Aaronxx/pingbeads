@@ -20,8 +20,7 @@ describe('deepCloneGridData', () => {
     // 值相等
     assert.deepEqual(cloned[0][0].rawRgb, { r: 100, g: 150, b: 200 });
     assert.equal(cloned[0][0].markCode, 'A1');
-    assert.equal(cloned[0][0].initialMarkCode, 'A1');
-    assert.equal(cloned[0][0].initialMarkHex, '#FAF4C8');
+    assert.equal(cloned[0][0].markHex, '#FAF4C8');
     assert.equal(cloned[1][0], null);
 
     // 引用不同（深拷贝）
@@ -33,7 +32,7 @@ describe('deepCloneGridData', () => {
     const gridData = [[{ x: 0, y: 0, rawRgb: null, markCode: 'A1', markHex: '#fff', markRgb: null }]];
     const cloned = deepCloneGridData(gridData, 1, 1);
     assert.equal(cloned[0][0].rawRgb, null);
-    assert.equal(cloned[0][0].initialMarkRgb, null);
+    assert.equal(cloned[0][0].markRgb, null);
   });
 });
 
