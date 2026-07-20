@@ -140,6 +140,7 @@
         bind:loadingChange="onLoadingChange"
         bind:undoCleared="onUndoCleared"
         bind:cropConfirmed="onCropConfirmed"
+        bind:cropCanceled="onCropCanceled"
       />
       <!-- 空状态 -->
       <view wx:else class="placeholder">

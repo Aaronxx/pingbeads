@@ -33,6 +33,11 @@
         catchtap="confirmCrop">
     <text>✂️</text>
   </view>
+  <view wx:if="{{cropMode}}"
+        class="crop-cancel-btn"
+        catchtap="cancelCrop">
+    <text>✕</text>
+  </view>
 
 
   <!-- 空状态提示 -->

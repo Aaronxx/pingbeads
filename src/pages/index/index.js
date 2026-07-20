@@ -375,6 +375,11 @@ Page({
     this.setData({ undoStack: [], canUndo: false });
   },
 
+  // 自由裁剪取消回调（✕ 按钮点击）：预设回到原图比例
+  onCropCanceled() {
+    this.setData({ gridPresetIndex: 0 });
+  },
+
   // 自由裁剪确认回调（剪刀按钮点击后）
   onCropConfirmed() {
     // 自定义可爱 toast：✂️ 咔嚓
@@ -443,9 +448,9 @@ Page({
     // mosaicCanvas 的 gridPreset observer 会自动处理裁剪并更新统计
     this.setData({ gridPresetIndex: index });
 
-    // 选了固定尺寸预设（非原图比例）后收起面板，露出裁剪模式交互
+    // 选了固定尺寸预设（非原图比例）后收起面板 + 取消分块，露出裁剪模式交互
     if (preset.cols > 0 && preset.rows > 0) {
-      this.setData({ isPanelOpen: false });
+      this.setData({ isPanelOpen: false, splitMode: '', splitModeText: '' });
     }
   },
 
@@ -615,6 +620,12 @@ Page({
     const newMode = currentMode === 'cartoon' ? 'mosaic' : 'cartoon';
     const cacheKey = this.data.imagePath;
 
+    // 0. 通知组件保存当前裁剪状态（在 gridPreset observer 因 gridPresetIndex 变化而清状态之前）
+    const mosaicCanvas = this.selectComponent('#mosaic-canvas');
+    if (mosaicCanvas && mosaicCanvas._saveCropStateBeforeSwitch) {
+      mosaicCanvas._saveCropStateBeforeSwitch();
+    }
+
     // 1. 保存当前模式的参数快照（仅在已有图片时缓存）
     if (cacheKey) {
       this._saveModeParams(cacheKey, currentMode);
@@ -639,6 +650,11 @@ Page({
       mosaicData: null,
       currentStep: 1
     });
+
+    // 4. 切换后恢复目标模式的裁剪状态（不能依赖 observer，因为 isProcessing 会拦截）
+    if (mosaicCanvas && mosaicCanvas._restoreCropStateAfterSwitch) {
+      mosaicCanvas._restoreCropStateAfterSwitch();
+    }
   },
 
   // 保存当前模式的处理参数快照（仅缓存用户可调参数，不含操作/UI状态）
@@ -1443,6 +1459,7 @@ Page({
   exportSplitPNG(fullGridData, totalCols, totalRows, gridSize, exportData) {
     const that = this;
     const splitMode = this.data.splitMode;
+    const shouldMirror = that.data.mirrorImage;  // 是否镜像
     const { isLightColor, formatMarkCode } = require('../../utils/colorHelpers');
 
     // 获取 canvas 节点（只获取一次，避免重复查询导致的节点失效）
@@ -1619,8 +1636,12 @@ Page({
             for (let c = 0; c < cols; c++) {
               const cell = partGridData[r] && partGridData[r][c];
               if (!cell || (shouldRemoveEdge && cell.isEdge)) continue;
-              const x = offX + c * cellW;
+              let x = offX + c * cellW;
               const y = offY + r * cellW;
+              // 应用镜像变换（和预览/普通导出一致）
+              if (shouldMirror) {
+                x = offX + mosaicW - (c + 1) * cellW;
+              }
               ctx.fillStyle = cell.isEmpty ? '#F0F0F0' : (cell.markHex || '#cccccc');
               ctx.fillRect(x, y, cellW, cellW);
               ctx.strokeStyle = cell.isEmpty ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.1)';

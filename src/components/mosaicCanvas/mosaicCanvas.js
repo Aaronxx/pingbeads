@@ -7,6 +7,7 @@ const imageProcessing = require('./mixins/imageProcessing');
 const exportPreset = require('./mixins/exportPreset');
 const { createColorPipeline } = require('../../utils/colorPipeline');
 const { desaturateGrayColors } = require('../../utils/imageProcessor');
+const { computeBaseScale, applyCustomCrop, computeCropStartCell, getCropModeMaxScale, recalcCropWindow, computeInitialCropWindow } = require('../../utils/cropHelpers');
 
 Component({
   properties: {
@@ -62,11 +63,22 @@ Component({
   _cropOffsetCol: 0,
   _cropOffsetRow: 0,
   _lastPresetIndex: 0,
+  _lastPresetSize: '0_0',
   _cropConfirmed: false,
+  // 裁剪状态按模式分存（模式切换时保存/恢复，避免原图比例中间态清标志）
+  _cropStateCartoon: { confirmed: false, offsetCol: 0, offsetRow: 0 },
+  _cropStateMosaic:  { confirmed: false, offsetCol: 0, offsetRow: 0 },
+  _lastProcessMode: 'cartoon',
+  _modeSwitching: false,
   canvasCtx: null,
   canvasNode: null,
 
   lifetimes: {
+    created() {
+      // WeChat 组件定义层的对象字面量不会自动赋到实例上，需在 created 里初始化
+      this._cropStateCartoon = { confirmed: false, offsetCol: 0, offsetRow: 0 };
+      this._cropStateMosaic = { confirmed: false, offsetCol: 0, offsetRow: 0 };
+    },
     attached() {
       this._initPipeline();
     },
@@ -115,26 +127,15 @@ Component({
       this._reapplyPipeline(3);
     },
     'mergeThreshold, processMode': function() {
-      // 不改格子数的参数：不清缓存，不退出 cropMode
       if (this.data.isProcessing) return;
       const key = `${this.data.mergeThreshold}_${this.data.processMode}`;
       if (this._lastMergeProcessKey === key) return;
       this._lastMergeProcessKey = key;
 
+      // 仅 mergeThreshold 变化：重生成（模式切换的恢复由 _restoreCropStateAfterSwitch 负责）
       if (this._pipeline) {
         this._pipeline.update({ mergeThreshold: this.data.mergeThreshold });
       }
-
-      if (this.data.processMode === 'mosaic') {
-        this.cachedGridData = null;
-        this.cachedGridInfo = null;
-        this.cachedSegments = null;
-        this.cachedOriginalGridData = null;
-        this._cropOffsetCol = 0;
-        this._cropOffsetRow = 0;
-      }
-
-      // 不退出 cropMode（格子数未变）
       this._reapplyPipeline(3);
     },
     'useSpecialColors': function() {
@@ -150,6 +151,7 @@ Component({
       this._reapplyPipeline(3);
     },
     'removeEdge': function() {
+      if (this._modeSwitching) return;
       this._waitForData((rows, cols, gridSize) => {
         if (this.data.cropMode && this.cachedOriginalGridData) {
           const orig = this._getOriginalGridSize();
@@ -160,6 +162,7 @@ Component({
       });
     },
     'mirrorImage': function() {
+      if (this._modeSwitching) return;
       this._waitForData((rows, cols, gridSize) => {
         if (this.data.cropMode && this.cachedOriginalGridData) {
           const orig = this._getOriginalGridSize();
@@ -170,6 +173,7 @@ Component({
       });
     },
     'splitMode': function() {
+      if (this._modeSwitching) return;
       this._waitForData((rows, cols, gridSize) => {
         if (this.data.cropMode && this.cachedOriginalGridData) {
           const orig = this._getOriginalGridSize();
@@ -192,9 +196,26 @@ Component({
     },
     'gridPreset': function(newVal, oldVal) {
       if (!newVal) return;
-      // 用实例变量去重（oldVal 在组件重渲染时可能为 undefined，不可靠）
       if (this._lastPresetIndex === newVal[0]) return;
+      // 模式切换中：gridPreset 变化是页面层恢复 gridPresetIndex 导致的，
+      // 不是用户操作。跳过，由 processMode observer 完成状态恢复。
+      if (this._modeSwitching) {
+        this._lastPresetIndex = newVal[0];
+        this._lastPresetSize = newVal[1] + '_' + newVal[2];
+        return;
+      }
       this._lastPresetIndex = newVal[0];
+      const newSize = newVal[1] + '_' + newVal[2];
+      console.log('[cropTrace] gridPreset:', JSON.stringify(newVal), '_lastPresetSize=', this._lastPresetSize, 'newSize=', newSize, '_cropConfirmed=', this._cropConfirmed);
+      if (this._lastPresetSize !== '0_0' && newSize !== '0_0' && this._lastPresetSize !== newSize) {
+        this._cropConfirmed = false;
+        const cs = this._getCropState();
+        cs.confirmed = false;
+        cs.offsetCol = 0;
+        cs.offsetRow = 0;
+        console.log('[cropTrace]   size changed, cleared _cropConfirmed');
+      }
+      this._lastPresetSize = newSize;
       this._reapplyPipeline(1);
     },
     'scale': function() {
@@ -257,41 +278,17 @@ Component({
 
     // 裁剪模式下缩放时，同步重算裁剪框尺寸和位置（保持中心点不变）
     _recalcCropWindowOnScale(origCols, origRows, gridSize) {
-      const canvasW = this.data.canvasWidth || 300;
-      const canvasH = this.data.canvasHeight || 300;
-      const userScale = this.data.scale || 1;
-      // 复用 renderer 的 baseScale 计算
-      const baseScale = Math.min(
-        origCols * gridSize > 0 ? canvasW / (origCols * gridSize) : 1,
-        origRows * gridSize > 0 ? canvasH / (origRows * gridSize) : 1,
-        1
-      );
-      const newCellSize = gridSize * baseScale * userScale;
-
       const presetVal = this.data.gridPreset;
-      const targetCols = presetVal[1];
-      const targetRows = presetVal[2];
-      const newCropWinW = targetCols * newCellSize;
-      const newCropWinH = targetRows * newCellSize;
-
-      // 保持裁剪框中心点不变
-      const oldCenterX = (this.data.cropWinX || 0) + (this.data.cropWinW || 0) / 2;
-      const oldCenterY = (this.data.cropWinY || 0) + (this.data.cropWinH || 0) / 2;
-      let newCropWinX = oldCenterX - newCropWinW / 2;
-      let newCropWinY = oldCenterY - newCropWinH / 2;
-
-      // clamp 到 canvas 范围
-      const maxX = Math.max(0, canvasW - newCropWinW);
-      const maxY = Math.max(0, canvasH - newCropWinH);
-      newCropWinX = Math.max(0, Math.min(maxX, newCropWinX));
-      newCropWinY = Math.max(0, Math.min(maxY, newCropWinY));
-
-      this.setData({
-        cropWinW: newCropWinW,
-        cropWinH: newCropWinH,
-        cropWinX: newCropWinX,
-        cropWinY: newCropWinY
+      const result = recalcCropWindow({
+        canvasW: this.data.canvasWidth || 300,
+        canvasH: this.data.canvasHeight || 300,
+        userScale: this.data.scale || 1,
+        origCols, origRows, gridSize,
+        targetCols: presetVal[1], targetRows: presetVal[2],
+        prevCropWinX: this.data.cropWinX, prevCropWinY: this.data.cropWinY,
+        prevCropWinW: this.data.cropWinW, prevCropWinH: this.data.cropWinH
       });
+      this.setData(result);
     },
 
     // 裁剪模式下缩放上限：放大到最大时，裁剪框两侧各留 2 格色块的可见空间，
@@ -299,28 +296,90 @@ Component({
     _getCropModeMaxScale() {
       if (!this.cachedOriginalGridData || !this.cachedGridInfo) return 20;
       const presetVal = this.data.gridPreset;
-      const targetCols = presetVal[1];
-      const targetRows = presetVal[2];
-      if (!targetCols || !targetRows) return 20;
+      if (!presetVal[1] || !presetVal[2]) return 20;
+      return getCropModeMaxScale({
+        origCols: this.cachedOriginalGridData[0] ? this.cachedOriginalGridData[0].length : 0,
+        origRows: this.cachedOriginalGridData.length,
+        gridSize: this.cachedGridInfo.gridSize,
+        canvasW: this.data.canvasWidth || 300,
+        canvasH: this.data.canvasHeight || 300,
+        targetCols: presetVal[1], targetRows: presetVal[2]
+      });
+    },
 
-      const origRows = this.cachedOriginalGridData.length;
-      const origCols = this.cachedOriginalGridData[0] ? this.cachedOriginalGridData[0].length : 0;
-      const gridSize = this.cachedGridInfo.gridSize;
-      const canvasW = this.data.canvasWidth || 300;
-      const canvasH = this.data.canvasHeight || 300;
-      const baseScale = Math.min(
-        origCols * gridSize > 0 ? canvasW / (origCols * gridSize) : 1,
-        origRows * gridSize > 0 ? canvasH / (origRows * gridSize) : 1,
-        1
-      );
-      // 最大时：裁剪框 + 两侧各 2 格 ≤ canvas，即占用 (targetCols + 4) 格宽
-      // 但不能超过原图本身的格数，否则会算出过大的上限
-      const availColsW = Math.min(origCols, targetCols + 4);
-      const availRowsH = Math.min(origRows, targetRows + 4);
-      const maxByW = canvasW / (availColsW * gridSize * baseScale);
-      const maxByH = canvasH / (availRowsH * gridSize * baseScale);
-      // 下限至少 1（不能小于初始 scale）
-      return Math.max(1, Math.min(maxByW, maxByH));
+    // 根据当前模式返回对应的裁剪状态（卡通/马赛克各自独立存储）
+    _getCropState() {
+      const state = this.data.processMode === 'mosaic' ? this._cropStateMosaic : this._cropStateCartoon;
+      if (!state) return { confirmed: false, offsetCol: 0, offsetRow: 0 };
+      return state;
+    },
+
+    // 页面层 toggleProcessMode 在改 gridPresetIndex 之前调用此方法，
+    // 把当前完整状态保存到当前模式的 slot，并标记模式切换中（抑制 gridPreset observer）。
+    _saveCropStateBeforeSwitch() {
+      if (!this._cropStateCartoon || !this._cropStateMosaic) {
+        this._cropStateCartoon = { confirmed: false, offsetCol: 0, offsetRow: 0 };
+        this._cropStateMosaic = { confirmed: false, offsetCol: 0, offsetRow: 0 };
+      }
+      const state = this.data.processMode === 'mosaic' ? this._cropStateMosaic : this._cropStateCartoon;
+      state.confirmed = this._cropConfirmed;
+      state.offsetCol = this._cropOffsetCol;
+      state.offsetRow = this._cropOffsetRow;
+      state.cachedGridData = this.cachedGridData;
+      state.cachedGridInfo = this.cachedGridInfo;
+      state.cachedOriginalGridData = this.cachedOriginalGridData;
+      state.lastPresetSize = this._lastPresetSize;
+      state.lastPresetIndex = this._lastPresetIndex;
+      this._modeSwitching = true;
+      console.log('[cropTrace] _saveCropStateBeforeSwitch: saved to', this.data.processMode, 'confirmed=', this._cropConfirmed);
+    },
+
+    // 页面层 toggleProcessMode 在 setData({processMode}) 之后调用此方法，
+    // 从目标模式的 slot 恢复完整状态并渲染。不依赖 observer（会被 isProcessing 拦截）。
+    _restoreCropStateAfterSwitch() {
+      this._lastProcessMode = this.data.processMode;
+      this._modeSwitching = false;
+
+      const newState = this._getCropState();
+      console.log('[cropTrace] _restoreCropStateAfterSwitch:', this.data.processMode,
+        'confirmed=', newState.confirmed, 'hasCache=', !!newState.cachedOriginalGridData);
+
+      if (newState.cachedOriginalGridData && newState.cachedGridData) {
+        // 有缓存：直接恢复 + 渲染
+        this.cachedOriginalGridData = newState.cachedOriginalGridData;
+        this.cachedGridData = newState.cachedGridData;
+        this.cachedGridInfo = newState.cachedGridInfo;
+        this._cropConfirmed = newState.confirmed;
+        this._cropOffsetCol = newState.offsetCol;
+        this._cropOffsetRow = newState.offsetRow;
+        this._lastPresetSize = newState.lastPresetSize || '0_0';
+        this._lastPresetIndex = newState.lastPresetIndex || 0;
+
+        const gi = this.cachedGridInfo;
+        const gd = this.cachedGridData;
+        const stats = this.calculateStats(gd, gi.rows, gi.cols);
+        this.triggerEvent('statsUpdate', { stats });
+        this.triggerEvent('gridInfoUpdate', { cols: gi.cols, rows: gi.rows });
+        this.renderToCanvas(gd, gi.cols, gi.rows, gi.gridSize);
+        this.setData({ isProcessing: false });
+      } else {
+        // 无缓存：清空 + 重新生成
+        this._cropConfirmed = false;
+        this._cropOffsetCol = 0;
+        this._cropOffsetRow = 0;
+        this.cachedOriginalGridData = null;
+        this.cachedGridData = null;
+        this.cachedGridInfo = null;
+        this.setData({ cropMode: false });
+        this._reapplyPipeline(3);
+      }
+    },
+
+    // 取消裁剪：退出 cropMode，预设回到原图比例（gridPresetIndex=0）
+    cancelCrop() {
+      this.setData({ cropMode: false });
+      // 通知页面层：预设回到原图比例
+      this.triggerEvent('cropCanceled');
     },
 
     // 确认裁剪：由裁剪框位置反算网格行列，从原图快照裁出子网格
@@ -339,28 +398,16 @@ Component({
       const origCols = this.cachedOriginalGridData[0] ? this.cachedOriginalGridData[0].length : 0;
       const gridSize = this.cachedGridInfo.gridSize;
 
-      // 用 CSS 空间反算（和裁剪框尺寸计算一致）
-      const canvasW = this.data.canvasWidth || 300;
-      const canvasH = this.data.canvasHeight || 300;
-      const userScale = this.data.scale || 1;
-      const baseScale = Math.min(
-        origCols * gridSize > 0 ? canvasW / (origCols * gridSize) : 1,
-        origRows * gridSize > 0 ? canvasH / (origRows * gridSize) : 1,
-        1
-      );
-      const cssCellSize = gridSize * baseScale * userScale;
-      // 原图网格居中在 canvas 里，CSS 空间起始坐标
-      const cssGridOffsetX = (canvasW - origCols * cssCellSize) / 2;
-      const cssGridOffsetY = (canvasH - origRows * cssCellSize) / 2;
+      const { startCol, startRow } = computeCropStartCell({
+        cropWinX: this.data.cropWinX, cropWinY: this.data.cropWinY,
+        canvasW: this.data.canvasWidth || 300, canvasH: this.data.canvasHeight || 300,
+        userScale: this.data.scale || 1,
+        origCols, origRows, gridSize,
+        mirrorImage: this.data.mirrorImage,
+        targetCols, targetRows
+      });
 
-      let startCol = Math.round((this.data.cropWinX - cssGridOffsetX) / cssCellSize);
-      let startRow = Math.round((this.data.cropWinY - cssGridOffsetY) / cssCellSize);
-
-      // clamp 到原图范围内
-      startCol = Math.max(0, Math.min(origCols - targetCols, startCol));
-      startRow = Math.max(0, Math.min(origRows - targetRows, startRow));
-
-      const cropResult = this._applyCustomCrop(
+      const cropResult = applyCustomCrop(
         this.cachedOriginalGridData, startCol, startRow, targetCols, targetRows
       );
       this.cachedGridData = cropResult.gridData;
@@ -368,6 +415,8 @@ Component({
       this._cropOffsetCol = startCol;
       this._cropOffsetRow = startRow;
       this._cropConfirmed = true; // 标记已确认，后续重生成用自定义位置裁剪
+      console.log('[cropTrace] confirmCrop: _cropConfirmed=true, offset=', startCol, startRow,
+        'mode=', this.data.processMode);
 
       // 立即退出裁剪模式，渲染裁剪后网格
       this.setData({ cropMode: false });
@@ -378,41 +427,6 @@ Component({
       this.triggerEvent('statsUpdate', { stats });
       this.triggerEvent('gridInfoUpdate', { cols: targetCols, rows: targetRows });
       this._clearUndoAndNotify();
-    },
-
-    // 自定义裁剪：从原图快照裁出指定起始位置的子网格
-    _applyCustomCrop(originalGrid, startCol, startRow, targetCols, targetRows) {
-      const origRows = originalGrid.length;
-      const origCols = originalGrid[0] ? originalGrid[0].length : 0;
-      const newGridData = [];
-
-      for (let r = 0; r < targetRows; r++) {
-        newGridData[r] = [];
-        for (let c = 0; c < targetCols; c++) {
-          const srcR = startRow + r;
-          const srcC = startCol + c;
-          if (srcR >= 0 && srcR < origRows && srcC >= 0 && srcC < origCols
-              && originalGrid[srcR] && originalGrid[srcR][srcC]) {
-            newGridData[r][c] = { ...originalGrid[srcR][srcC] };
-          } else {
-            const refCell = originalGrid[0] && originalGrid[0][0] ? originalGrid[0][0] : { width: 10, height: 10 };
-            newGridData[r][c] = {
-              x: c * (refCell.width || 10),
-              y: r * (refCell.height || 10),
-              width: refCell.width || 10,
-              height: refCell.height || 10,
-              rawRgb: { r: 240, g: 240, b: 240 },
-              originalRgb: { r: 240, g: 240, b: 240 },
-              originalMarkCode: '',
-              markCode: '',
-              markHex: '#F0F0F0',
-              markRgb: { r: 240, g: 240, b: 240 },
-              isEmpty: true
-            };
-          }
-        }
-      }
-      return { gridData: newGridData };
     },
 
     _reapplyPipeline(level) {
@@ -445,14 +459,16 @@ Component({
             mergeThreshold: this.data.mergeThreshold
           });
 
-          // 马赛克模式：保留 processMosaicV2 的色号映射，只做特殊色替换 + 浊色规避
-          // （不走 reapplyColors，否则会从 rawRgb 重映射，永久覆盖马赛克映射）
+          // 马赛克模式：保留 processMosaicV2 的聚类结构，只重应用鲜艳度 + 特殊色替换 + 浊色规避
+          // （不走 reapplyColors 的聚类，否则会破坏马赛克映射）
           if (this.data.processMode === 'mosaic') {
             if (this.cachedOriginalGridData) {
               const origRows = this.cachedOriginalGridData.length;
               const origCols = this.cachedOriginalGridData[0] ? this.cachedOriginalGridData[0].length : 0;
               const fullGrid = this.deepCloneGridData(this.cachedOriginalGridData, origRows, origCols);
-              // 仅特殊色替换 + 浊色规避，不重映射色号、不覆盖快照
+              // 1. 鲜艳度重映射色号（不聚类，保留马赛克结构）
+              this._pipeline.reapplyVibrantMosaic(fullGrid, origRows, origCols);
+              // 2. 特殊色替换 + 浊色规避
               this._pipeline.replaceSpecialsOnly(fullGrid, origRows, origCols);
               if (this.data.antiGrayIntensity > 0) {
                 desaturateGrayColors(fullGrid, origRows, origCols, this.data.antiGrayIntensity);
@@ -498,8 +514,7 @@ Component({
         }
 
         if (level === 1) {
-          // 选了新预设：重置裁剪模式状态，清空已确认标志（中心裁剪）
-          this._cropConfirmed = false;
+          // 选了新预设：退出 cropMode（交互态）
           this.setData({ cropMode: false });
 
           if (this.cachedOriginalGridData) {
@@ -510,39 +525,41 @@ Component({
             const targetRows = presetVal[2];
 
             if (targetCols === 0 || targetRows === 0) {
-              // 原图比例：不裁剪，正常渲染原图
+              // 原图比例：放弃裁剪，清空确认标志，正常渲染原图
+              console.log('[cropTrace] L1 branch: ORIGINAL RATIO, clearing crop');
+              this._cropConfirmed = false;
               this._cropOffsetCol = 0;
               this._cropOffsetRow = 0;
+              const cs = this._getCropState();
+              cs.confirmed = false;
+              cs.offsetCol = 0;
+              cs.offsetRow = 0;
               this.cachedGridData = this.deepCloneGridData(this.cachedOriginalGridData, origRows, origCols);
               this.cachedGridInfo = { cols: origCols, rows: origRows, gridSize };
-            } else {
-              // 选了预设：进入裁剪模式
-              // 1. 先渲染原图网格（供裁剪框叠加）
-              this.renderToCanvas(this.cachedOriginalGridData, origCols, origRows, gridSize);
-              // 2. 算裁剪框尺寸（CSS 空间 cellSize = gridSize * baseScale * userScale）
-              const canvasW = this.data.canvasWidth || 300;
-              const canvasH = this.data.canvasHeight || 300;
-              const userScale = this.data.scale || 1;
-              const baseScale = Math.min(
-                origCols * gridSize > 0 ? canvasW / (origCols * gridSize) : 1,
-                origRows * gridSize > 0 ? canvasH / (origRows * gridSize) : 1,
-                1
-              );
-              const cssCellSize = gridSize * baseScale * userScale;
-              const cropWinW = targetCols * cssCellSize;
-              const cropWinH = targetRows * cssCellSize;
-              // 裁剪框初始居中（相对 canvas 左上角）
-              const cropWinX = (canvasW - cropWinW) / 2;
-              const cropWinY = (canvasH - cropWinH) / 2;
-              // 3. 记录中心裁剪结果（cachedGridData 保持裁剪后的，供取消裁剪模式时使用）
+            } else if (this._cropConfirmed) {
+              // 已确认过裁剪（如模式切换恢复）：直接用保存的位置裁剪，不进 cropMode
+              console.log('[cropTrace] L1 branch: CONFIRMED CROP, applying offset=', this._cropOffsetCol, this._cropOffsetRow);
+              this.resetPreviewState();
               const presetResult = this._applyGridPreset(this.cachedOriginalGridData, origCols, origRows, presetVal);
               this.cachedGridData = presetResult.gridData;
               this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
-              // 4. 进入裁剪模式
+            } else {
+              // 首次选预设：进入裁剪模式
+              console.log('[cropTrace] L1 branch: ENTER CROPMODE (first time)');
               this.resetPreviewState();
+              this.renderToCanvas(this.cachedOriginalGridData, origCols, origRows, gridSize);
+              // 算裁剪框初始位置/尺寸（居中，userScale=1）
+              const win = computeInitialCropWindow({
+                canvasW: this.data.canvasWidth || 300, canvasH: this.data.canvasHeight || 300,
+                origCols, origRows, gridSize, targetCols, targetRows
+              });
+              const presetResult = this._applyGridPreset(this.cachedOriginalGridData, origCols, origRows, presetVal);
+              this.cachedGridData = presetResult.gridData;
+              this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
               this.setData({
                 cropMode: true,
-                cropWinX, cropWinY, cropWinW, cropWinH
+                cropWinX: win.cropWinX, cropWinY: win.cropWinY,
+                cropWinW: win.cropWinW, cropWinH: win.cropWinH
               });
               const gi = this.cachedGridInfo;
               this.triggerEvent('gridInfoUpdate', { cols: gi.cols, rows: gi.rows });
@@ -573,6 +590,11 @@ Component({
 
         const gi = this.cachedGridInfo;
         const gd = this.cachedGridData;
+        // 防御：模式切换/重生成期间数据可能被清空，跳过本次渲染
+        if (!gi || !gd) {
+          this.setData({ isProcessing: false });
+          return;
+        }
         const stats = this.calculateStats(gd, gi.rows, gi.cols);
         this.triggerEvent('statsUpdate', { stats: stats });
         this.setData({ isProcessing: false });
@@ -638,12 +660,15 @@ Component({
       return presetResult;
     },
 
-    // 马赛克模式专用：保留 processMosaicV2 自己的色号映射，不走 reapplyColors
+    // 马赛克模式专用：应用鲜艳度 + 特殊色替换 + 浊色规避，保留 processMosaicV2 的聚类结构
     _applyMosaicResult(gridData, rows, cols, gridSize) {
       if (this._pipeline) {
+        // 1. 鲜艳度重映射色号（从 rawRgb，不聚类，保留马赛克结构）
+        this._pipeline.reapplyVibrantMosaic(gridData, rows, cols);
+        // 2. 特殊色替换
         this._pipeline.replaceSpecialsOnly(gridData, rows, cols);
       }
-      // 浊色规避在快照保存之前执行
+      // 3. 浊色规避在快照保存之前执行
       if (this.data.antiGrayIntensity > 0) {
         desaturateGrayColors(gridData, rows, cols, this.data.antiGrayIntensity);
       }

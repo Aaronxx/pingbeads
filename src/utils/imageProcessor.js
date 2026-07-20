@@ -1685,8 +1685,10 @@ function desaturateGrayColors(gridData, rows, cols, intensity) {
   // 1. 预建 markCode → {grayness, hex, rgb} 查找表
   const markLookup = {};
   for (let r = 0; r < rows; r++) {
+    const rowData = gridData[r];
+    if (!rowData) continue; // 防御：行缺失（竞态/稀疏网格）
     for (let c = 0; c < cols; c++) {
-      const cell = gridData[r][c];
+      const cell = rowData[c];
       if (cell && cell.markCode && !markLookup[cell.markCode]) {
         markLookup[cell.markCode] = {
           grayness: computeGrayness(cell.markRgb),
@@ -1706,8 +1708,10 @@ function desaturateGrayColors(gridData, rows, cols, intensity) {
 
   // 2. 遍历浊色格子，找非浊色邻居
   for (let r = 0; r < rows; r++) {
+    const rowData = gridData[r];
+    if (!rowData) continue; // 防御：行缺失
     for (let c = 0; c < cols; c++) {
-      const cell = gridData[r][c];
+      const cell = rowData[c];
       if (!cell || !cell.markCode) continue;
       const info = markLookup[cell.markCode];
       if (!info || info.grayness <= grayThreshold) continue; // 非浊色或浊度不够，跳过
@@ -1718,7 +1722,7 @@ function desaturateGrayColors(gridData, rows, cols, intensity) {
         const nr = r + dirs[d][0];
         const nc = c + dirs[d][1];
         if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
-        const n = gridData[nr][nc];
+        const n = gridData[nr] && gridData[nr][nc];
         if (!n || !n.markCode) continue;
         const nInfo = markLookup[n.markCode];
         if (!nInfo || nInfo.grayness > 0) continue; // 邻居也是浊色，跳过

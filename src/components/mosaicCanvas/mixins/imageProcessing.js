@@ -202,10 +202,20 @@ module.exports = {
         const cssTop = (-origCH / 2 - currentDataOffsetY) / userScale + origCH / 2;
         const cssBottom = (viewportHeight - origCH / 2 - currentDataOffsetY) / userScale + origCH / 2;
 
-        const startCol = Math.max(0, Math.floor((cssLeft - cssOffsetX) / cssCellSize));
-        const endCol = Math.min(cols - 1, Math.ceil((cssRight - cssOffsetX) / cssCellSize));
+        let startCol = Math.max(0, Math.floor((cssLeft - cssOffsetX) / cssCellSize));
+        let endCol = Math.min(cols - 1, Math.ceil((cssRight - cssOffsetX) / cssCellSize));
         const startRow = Math.max(0, Math.floor((cssTop - cssOffsetY) / cssCellSize));
         const endRow = Math.min(rows - 1, Math.ceil((cssBottom - cssOffsetY) / cssCellSize));
+
+        // 镜像模式下，预览视觉左右翻转（col=0 在右），但数据顺序未变。
+        // 可见区域的视觉左边对应数据的高 col，视觉右边对应低 col，需翻转列范围
+        // 才能截取到视觉可见区域对应的数据。
+        if (this.data.mirrorImage) {
+          const newStart = cols - 1 - endCol;
+          const newEnd = cols - 1 - startCol;
+          startCol = Math.max(0, newStart);
+          endCol = Math.min(cols - 1, newEnd);
+        }
 
         const subCols = Math.max(1, endCol - startCol + 1);
         const subRows = Math.max(1, endRow - startRow + 1);

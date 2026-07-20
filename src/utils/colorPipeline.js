@@ -181,6 +181,42 @@ function createColorPipeline(options) {
     replaceSpecialsOnly(gridData, rows, cols) {
       replaceSpecials(gridData, rows, cols, opts.algorithmVersion, opts.useSpecialColors);
     },
+
+    /**
+     * 马赛克模式鲜艳度重应用（专用）
+     * 从 rawRgb 应用鲜艳度并重新映射色号，但不做聚类（保留马赛克聚类结构）
+     * 也不做特殊色替换（由 replaceSpecialsOnly 单独处理）
+     *
+     * @param {Array} gridData
+     * @param {number} rows
+     * @param {number} cols
+     */
+    reapplyVibrantMosaic(gridData, rows, cols) {
+      this.syncColorMapper();
+      const ver = opts.algorithmVersion;
+      const vibrantScale = opts.vibrantScale || 0;
+      const fastFind = getFastFind(ver);
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const cell = gridData[row] && gridData[row][col];
+          if (!cell || !cell.rawRgb) continue;
+
+          let color = cell.rawRgb;
+          if (vibrantScale > 0) {
+            color = enhanceVibrant(color, vibrantScale / 10);
+          } else if (vibrantScale < 0) {
+            color = reduceVibrant(color, Math.abs(vibrantScale) / 10);
+          }
+
+          cell.originalRgb = color;
+          const markColor = fastFind(color);
+          cell.markCode = markColor.code;
+          cell.markHex = markColor.hex;
+          cell.markRgb = markColor.rgb;
+        }
+      }
+    },
   };
 }
 
