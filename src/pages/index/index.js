@@ -136,10 +136,10 @@ Page({
     gridPresetIndex: 0,  // 默认 原图比例
     gridPresets: [
       { name: '原图比例', cols: 0, rows: 0 },
-      { name: '200×200', cols: 200, rows: 200 },
+      { name: '208×208', cols: 208, rows: 208 },
       { name: '156×156', cols: 156, rows: 156 },
       { name: '104×104', cols: 104, rows: 104 },
-      { name: '72×72', cols: 72, rows: 72 },
+      { name: '78×78', cols: 78, rows: 78 },
       { name: '52×52', cols: 52, rows: 52 },
       { name: '36×36', cols: 36, rows: 36 }
     ],
