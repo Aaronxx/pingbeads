@@ -1456,7 +1456,7 @@ Page({
   // ========================
   //  分块导出
   // ========================
-  exportSplitPNG(fullGridData, totalCols, totalRows, gridSize, exportData) {
+  exportSplitPNG(fullGridData, totalCols, totalRows, gridSize) {
     const that = this;
     const splitMode = this.data.splitMode;
     const shouldMirror = that.data.mirrorImage;  // 是否镜像
@@ -1487,8 +1487,6 @@ Page({
         };
 
         const extractPart = (startRow, endRow, startCol, endCol, blockSize) => {
-          const actualEndRow = Math.min(endRow, totalRows);
-          const actualEndCol = Math.min(endCol, totalCols);
           const partGrid = [];
 
           for (let r = startRow; r < startRow + (blockSize || (endRow - startRow)); r++) {
