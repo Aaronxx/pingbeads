@@ -22,10 +22,21 @@ module.exports = {
   _applyGridPreset(gridData, cols, rows, presetOverride) {
     const preset = presetOverride || this.data.gridPreset;
     const presetIndex = preset[0];
-    const targetCols = preset[1];
-    const targetRows = preset[2];
+    let targetCols = preset[1];
+    let targetRows = preset[2];
 
-    if (presetIndex === 0 || targetCols === 0 || targetRows === 0) {
+    // 模式切换恢复兜底：页面按上一模式（卡通）尺寸过滤预设列表后，
+    // gridPresetKey 匹配失败被还原成原图比例 [0,0,0]，但裁剪已确认
+    // （_cropConfirmed 与偏移在 _restoreCropStateAfterSwitch 已恢复）。
+    // 此时用缓存的裁剪尺寸继续裁剪，避免重生成把确认的裁剪还原成全图。
+    if ((presetIndex === 0 || targetCols === 0 || targetRows === 0) &&
+        this._cropConfirmed && this.cachedGridInfo &&
+        this.cachedGridInfo.cols > 0 && this.cachedGridInfo.rows > 0) {
+      targetCols = this.cachedGridInfo.cols;
+      targetRows = this.cachedGridInfo.rows;
+    }
+
+    if (targetCols === 0 || targetRows === 0) {
       this._cropOffsetCol = 0;
       this._cropOffsetRow = 0;
       return { gridData, cols, rows };

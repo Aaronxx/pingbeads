@@ -101,19 +101,27 @@ Component({
     },
     'gridSize, previewQuality': function() {
       // 改格子数的参数：退出 cropMode + 清缓存 + 完整重生成
-      if (this.data.isProcessing) return;
-      const key = `${this.data.gridSize}_${this.data.previewQuality}`;
+      // key 包含 forceGridSize，区分自定义网格和预设网格
+      const key = `${this.data.gridSize}_${this.data.previewQuality}_${this.data.forceGridSize || 'auto'}`;
       if (this._lastGridSizeKey === key) return;
-      this._lastGridSizeKey = key;
+      this._lastGridSizeKey = key;  // 先记录（即使 isProcessing 拦截，下次同值不会误判）
+      // 模式切换中：gridSize 变化是页面层恢复模式参数导致的（非用户调整），
+      // 跳过破坏性清理——裁剪状态由 _saveCropStateBeforeSwitch/_restoreCropStateAfterSwitch 维护
+      if (this._modeSwitching) return;
+      if (this.data.isProcessing) return;
 
       if (this._pipeline) {
         this._pipeline.update({ mergeThreshold: this.data.mergeThreshold });
       }
 
       // 格子数变更 → 裁剪定位失效，退出裁剪模式
+      // 必须同步清 _cropConfirmed：否则 _applyGridPreset 的兜底（模式切换恢复时
+      // 用缓存尺寸继续裁剪）会在手动改豆豆数后误触发，导致预设不重置回原图比例。
+      // 模式切换（_modeSwitching=true）已提前 return，这里只会是用户手动调整。
       if (this.data.cropMode) {
         this.setData({ cropMode: false });
       }
+      this._cropConfirmed = false;
 
       if (this.data.processMode === 'mosaic') {
         this.cachedGridData = null;
@@ -127,10 +135,10 @@ Component({
       this._reapplyPipeline(3);
     },
     'mergeThreshold, processMode': function() {
-      if (this.data.isProcessing) return;
       const key = `${this.data.mergeThreshold}_${this.data.processMode}`;
       if (this._lastMergeProcessKey === key) return;
-      this._lastMergeProcessKey = key;
+      this._lastMergeProcessKey = key;  // 先记录（即使 isProcessing 拦截，下次同值不会误判）
+      if (this.data.isProcessing) return;
 
       // 仅 mergeThreshold 变化：重生成（模式切换的恢复由 _restoreCropStateAfterSwitch 负责）
       if (this._pipeline) {
@@ -206,14 +214,12 @@ Component({
       }
       this._lastPresetIndex = newVal[0];
       const newSize = newVal[1] + '_' + newVal[2];
-      console.log('[cropTrace] gridPreset:', JSON.stringify(newVal), '_lastPresetSize=', this._lastPresetSize, 'newSize=', newSize, '_cropConfirmed=', this._cropConfirmed);
       if (this._lastPresetSize !== '0_0' && newSize !== '0_0' && this._lastPresetSize !== newSize) {
         this._cropConfirmed = false;
         const cs = this._getCropState();
         cs.confirmed = false;
         cs.offsetCol = 0;
         cs.offsetRow = 0;
-        console.log('[cropTrace]   size changed, cleared _cropConfirmed');
       }
       this._lastPresetSize = newSize;
       this._reapplyPipeline(1);
@@ -223,7 +229,6 @@ Component({
       if (!this.data.hasUserZoomed) {
         this.setData({ hasUserZoomed: true });
       }
-      if (this.isRendering) return;
       if (this.data.cropMode && this.cachedOriginalGridData) {
         // 裁剪模式下缩放：渲染原图 + 同步重算裁剪框尺寸（保持中心点）
         const orig = this._getOriginalGridSize();
@@ -244,7 +249,6 @@ Component({
     'offsetX,offsetY': function() {
       if (this.data.isDragging) return;
       if (this._isResetting) return;
-      if (this.isRendering) return;
       if (this.data.cropMode) return; // 裁剪模式下 offset 不影响渲染（裁剪框自己移动）
       if (this.cachedGridData && this.cachedGridInfo) {
         const { cols, rows, gridSize } = this.cachedGridInfo;
@@ -331,7 +335,6 @@ Component({
       state.lastPresetSize = this._lastPresetSize;
       state.lastPresetIndex = this._lastPresetIndex;
       this._modeSwitching = true;
-      console.log('[cropTrace] _saveCropStateBeforeSwitch: saved to', this.data.processMode, 'confirmed=', this._cropConfirmed);
     },
 
     // 页面层 toggleProcessMode 在 setData({processMode}) 之后调用此方法，
@@ -341,8 +344,6 @@ Component({
       this._modeSwitching = false;
 
       const newState = this._getCropState();
-      console.log('[cropTrace] _restoreCropStateAfterSwitch:', this.data.processMode,
-        'confirmed=', newState.confirmed, 'hasCache=', !!newState.cachedOriginalGridData);
 
       if (newState.cachedOriginalGridData && newState.cachedGridData) {
         // 有缓存：直接恢复 + 渲染
@@ -415,8 +416,6 @@ Component({
       this._cropOffsetCol = startCol;
       this._cropOffsetRow = startRow;
       this._cropConfirmed = true; // 标记已确认，后续重生成用自定义位置裁剪
-      console.log('[cropTrace] confirmCrop: _cropConfirmed=true, offset=', startCol, startRow,
-        'mode=', this.data.processMode);
 
       // 立即退出裁剪模式，渲染裁剪后网格
       this.setData({ cropMode: false });
@@ -448,6 +447,14 @@ Component({
       this._waitForData((rows, cols, gridSize) => {
         const doProcess = () => {
         this.setData({ isProcessing: true });
+        try {
+        // 数据可能在 _waitForData 触发后、setTimeout 延迟期间被清空
+        // （切换图片、改格子数、模式切换等），此时跳过本次后处理，
+        // 否则 reapplyColors 会收到 null 网格而崩溃（Cannot read properties of null）
+        if (!this.cachedGridData && !this.cachedOriginalGridData) {
+          this.setData({ isProcessing: false });
+          return;
+        }
 
         if (level >= 2) {
           if (!this._pipeline) this._initPipeline();
@@ -526,7 +533,6 @@ Component({
 
             if (targetCols === 0 || targetRows === 0) {
               // 原图比例：放弃裁剪，清空确认标志，正常渲染原图
-              console.log('[cropTrace] L1 branch: ORIGINAL RATIO, clearing crop');
               this._cropConfirmed = false;
               this._cropOffsetCol = 0;
               this._cropOffsetRow = 0;
@@ -538,14 +544,12 @@ Component({
               this.cachedGridInfo = { cols: origCols, rows: origRows, gridSize };
             } else if (this._cropConfirmed) {
               // 已确认过裁剪（如模式切换恢复）：直接用保存的位置裁剪，不进 cropMode
-              console.log('[cropTrace] L1 branch: CONFIRMED CROP, applying offset=', this._cropOffsetCol, this._cropOffsetRow);
               this.resetPreviewState();
               const presetResult = this._applyGridPreset(this.cachedOriginalGridData, origCols, origRows, presetVal);
               this.cachedGridData = presetResult.gridData;
               this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
             } else {
               // 首次选预设：进入裁剪模式
-              console.log('[cropTrace] L1 branch: ENTER CROPMODE (first time)');
               this.resetPreviewState();
               this.renderToCanvas(this.cachedOriginalGridData, origCols, origRows, gridSize);
               // 算裁剪框初始位置/尺寸（居中，userScale=1）
@@ -611,6 +615,12 @@ Component({
 
         if (level >= 1) {
           this._clearUndoAndNotify();
+        }
+        } finally {
+          // 兜底：即使中间抛异常，也确保 isProcessing 被重置
+          if (this.data.isProcessing) {
+            this.setData({ isProcessing: false });
+          }
         }
         }; // end doProcess
 
@@ -684,7 +694,12 @@ Component({
       const pixelData = this.getCachedPixelData();
       const cachedWidth = this.cachedWidth;
       const cachedHeight = this.cachedHeight;
-      if (!pixelData || cachedWidth === 0) return;
+      if (!pixelData || cachedWidth === 0) {
+        // 提前返回时必须清 isProcessing，否则后续 observer 全部被拦截
+        this.setData({ isProcessing: false });
+        this.triggerEvent('loadingChange', { show: false, text: '' });
+        return;
+      }
 
       // 确保管道已初始化
       if (!this._pipeline) this._initPipeline();

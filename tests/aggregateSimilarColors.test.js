@@ -113,3 +113,34 @@ describe('aggregateSimilarColors', () => {
     assert.ok(used.size <= 6, `聚类后色号数 ${used.size} 应减少`);
   });
 });
+
+describe('classic 版 aggregateSimilarColors（共享实现委托）', () => {
+  const { aggregateSimilarColors: classicAggregate } = require('../src/utils/algorithms/classic');
+
+  it('暴露导出且可正常聚类（色号被合并）', () => {
+    assert.equal(typeof classicAggregate, 'function');
+    const grid = makeUniformGrid(10, 10, 'T1');
+    const codes = ['F4', 'E5', 'D1', 'A4', 'B5'];
+    for (let r = 0; r < 10; r++) {
+      for (let c = 0; c < 10; c++) {
+        if (r < 2) {
+          const cc = markPalette.find(p => p.code === codes[c % codes.length]);
+          grid[r][c] = {
+            markCode: cc.code, markHex: cc.hex, markRgb: { ...cc.rgb },
+            rawRgb: { ...cc.rgb }, originalRgb: { ...cc.rgb }
+          };
+        }
+      }
+    }
+    classicAggregate(grid, 10, 10, 3);
+    const used = new Set();
+    for (let r = 0; r < 10; r++) for (let c = 0; c < 10; c++) used.add(grid[r][c].markCode);
+    assert.ok(used.size <= 6, `classic 聚类后色号数 ${used.size} 应减少`);
+  });
+
+  it('targetCount=0 时不应改动（与 current 版一致）', () => {
+    const grid = makeUniformGrid(5, 5, 'F4');
+    classicAggregate(grid, 5, 5, 0);
+    assert.equal(grid[0][0].markCode, 'F4');
+  });
+});

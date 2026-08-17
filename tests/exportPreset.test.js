@@ -117,6 +117,38 @@ describe('_applyGridPreset', () => {
     assert.equal(result.cols, 4);
     assert.equal(result.rows, 4);
   });
+
+  it('模式切换兜底：presetIndex=0 但裁剪已确认时用缓存尺寸裁剪', () => {
+    const gridData = makeGrid(10, 10);
+    const ctx = createMockCtx({
+      data: { gridPreset: [0, 0, 0] },
+      _cropConfirmed: true,
+      _cropOffsetCol: 1,
+      _cropOffsetRow: 2,
+      cachedGridInfo: { cols: 4, rows: 4, gridSize: 10 }
+    });
+    const result = mixin._applyGridPreset.call(ctx, gridData, 10, 10);
+    assert.equal(result.cols, 4);
+    assert.equal(result.rows, 4);
+    // 保留用户自定义偏移（不因 presetIndex=0 清空）
+    assert.equal(ctx._cropOffsetCol, 1);
+    assert.equal(ctx._cropOffsetRow, 2);
+    // 裁剪格子从偏移起点 (1,2) 截取：gridData[2][1].x=10, y=20
+    assert.equal(result.gridData[0][0].x, 10);
+    assert.equal(result.gridData[0][0].y, 20);
+  });
+
+  it('裁剪未确认时 presetIndex=0 仍返回全图（不触发兜底）', () => {
+    const gridData = makeGrid(5, 5);
+    const ctx = createMockCtx({
+      data: { gridPreset: [0, 0, 0] },
+      cachedGridInfo: { cols: 3, rows: 3, gridSize: 10 }
+    });
+    const result = mixin._applyGridPreset.call(ctx, gridData, 5, 5);
+    assert.equal(result.cols, 5);
+    assert.equal(result.rows, 5);
+    assert.equal(ctx._cropOffsetCol, 0);
+  });
 });
 
 describe('getSplitStats', () => {

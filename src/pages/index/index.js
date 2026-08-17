@@ -122,8 +122,7 @@ Page({
     // 帮助面板
     showHelpPanel: false,  // 是否显示帮助面板
 
-    // 撤销功能
-    undoStack: [],  // 撤销栈，最多20步
+    // 撤销功能（undoStack 移到实例属性避免大数组过桥序列化）
     canUndo: false,  // 是否可以撤销
 
     // 裁剪确认可爱 toast
@@ -151,10 +150,12 @@ Page({
   },
 
   onLoad() {
-    // 同步浊色规避默认强度到 colorMapper（默认 50 → 0.5）
+    // 同步浊色规避默认强度到 colorMapper（默认 50 -> 0.5）
     setAntiGrayIntensity(this.data.antiGrayIntensity / 100);
     // 按图片+模式缓存参数：{ "<tempFilePath>": { cartoon: {...}, mosaic: {...} } }
     this._modeParamCache = {};
+    // 撤销栈实例属性（避免大数组通过 setData 过桥序列化）
+    this._undoStack = [];
     this.setData({
       vibrantBlockColor: this.calculateVibrantBlockColor(this.data.vibrantScale),
       availableGridPresets: this.data.gridPresets.slice()
@@ -323,11 +324,20 @@ Page({
 
     // 过滤可用的网格预设（基于原图尺寸，而非裁剪后尺寸）
     const available = this.data.gridPresets.filter(p => p.cols === 0 || p.rows === 0 || (filterCols >= p.cols && filterRows >= p.rows));
-    // 按当前选中预设的 cols/rows 在新列表中重新定位；找不到则回退原图比例。
-    // availableGridPresets 会随尺寸动态过滤，同一 index 可能指向不同预设。
+    // 重新定位预设 index：优先按最终（裁剪后）网格尺寸精确匹配。
+    // 模式切换时 availableGridPresets 可能是上一模式的残留过滤结果（尺寸不同导致
+    // 104×104 等预设被过滤掉），prevPreset 匹配会失败回退到 0，但组件内部已按
+    // _cropConfirmed 保留了裁剪——这里用最终尺寸把 index 校正回来，避免 UI 显示
+    // 原图比例且后续 _saveModeParams 把错误预设写进缓存。
     const prevPreset = this.data.availableGridPresets[this.data.gridPresetIndex];
     let newPresetIndex = 0;
-    if (prevPreset) {
+    if (actualCols > 0 && actualRows > 0) {
+      const cropMatchedIdx = available.findIndex(p => p.cols === actualCols && p.rows === actualRows);
+      if (cropMatchedIdx >= 0) {
+        newPresetIndex = cropMatchedIdx;
+      }
+    }
+    if (newPresetIndex === 0 && prevPreset) {
       const matchedIdx = available.findIndex(p => p.cols === prevPreset.cols && p.rows === prevPreset.rows);
       newPresetIndex = matchedIdx >= 0 ? matchedIdx : 0;
     }
@@ -372,7 +382,8 @@ Page({
   },
 
   onUndoCleared() {
-    this.setData({ undoStack: [], canUndo: false });
+    this._undoStack = [];
+    this.setData({ canUndo: false });
   },
 
   // 自由裁剪取消回调（✕ 按钮点击）：预设回到原图比例
@@ -715,7 +726,6 @@ Page({
       replaceFromCode: '',
       replaceToCode: '',
       replaceScope: 'all',
-      undoStack: [],
       canUndo: false,
       hasGridLinesDetected: false,
       // 不覆盖 availableGridPresets：它是按图片实际尺寸过滤的派生列表，
@@ -767,7 +777,6 @@ Page({
       // 算法版本重置为默认值
       algorithmVersion: 'perceptual',
       // 撤销
-      undoStack: [],
       canUndo: false,
       // 网格线检测状态
       hasGridLinesDetected: false,
@@ -854,50 +863,49 @@ Page({
       return;
     }
 
-    let result;
-    if (replaceScope === 'region') {
-      // 大区替换
-      result = mosaicCanvas.replaceByRegion(replaceRegionCode, fromCode, toCode);
-    } else {
-      // 全图替换
-      result = mosaicCanvas.replaceColor(fromCode, toCode, 'all', null);
-    }
+    // 显示 loading（替换 + 渲染可能需要时间）
+    this.showCustomLoading('正在替换...');
 
-    if (result.success) {
-      // 记录撤销操作
-      this._addUndoOperation({
-        type: 'replace',
-        fromCode: fromCode,
-        toCode: toCode,
-        positions: result.positions,
-        scope: replaceScope
-      });
+    // 延迟执行替换，让 loading 先渲染
+    const that = this;
+    setTimeout(() => {
+      let result;
+      if (replaceScope === 'region') {
+        result = mosaicCanvas.replaceByRegion(replaceRegionCode, fromCode, toCode);
+      } else {
+        result = mosaicCanvas.replaceColor(fromCode, toCode, 'all', null);
+      }
 
-      wx.showToast({ title: `已替换 ${result.count} 个色块`, icon: 'none' });
-    } else {
-      wx.showToast({ title: result.message || '替换失败', icon: 'none' });
-    }
+      that.hideCustomLoading();
+
+      if (result.success) {
+        that._addUndoOperation({
+          type: 'replace',
+          fromCode: fromCode,
+          toCode: toCode,
+          positions: result.positions,
+          scope: replaceScope
+        });
+        wx.showToast({ title: `已替换 ${result.count} 个色块`, icon: 'none' });
+      } else {
+        wx.showToast({ title: result.message || '替换失败', icon: 'none' });
+      }
+    }, 100);
   },
 
-  // 添加撤销操作
+  // 添加撤销操作（undoStack 存实例属性，只同步 canUndo 到 data）
   _addUndoOperation(operation) {
-    // 性能：先拷贝数组再修改，避免直接 mutate this.data.undoStack
-    // （直接 mutate 会让框架无法 diff 新旧值，可能导致视图不更新）
-    let undoStack = this.data.undoStack.slice();
-    undoStack.push(operation);
-    // 最多保留20步
-    if (undoStack.length > 20) {
-      undoStack = undoStack.slice(-20);
+    this._undoStack = this._undoStack || [];
+    this._undoStack.push(operation);
+    if (this._undoStack.length > 20) {
+      this._undoStack = this._undoStack.slice(-20);
     }
-    this.setData({
-      undoStack: undoStack,
-      canUndo: undoStack.length > 0
-    });
+    this.setData({ canUndo: this._undoStack.length > 0 });
   },
 
   // 撤销操作
   onUndo() {
-    const { undoStack } = this.data;
+    const undoStack = this._undoStack || [];
     if (undoStack.length === 0) {
       wx.showToast({ title: '没有可撤销的操作', icon: 'none' });
       return;
@@ -923,12 +931,8 @@ Page({
       );
 
       if (result.success) {
-        // 移除最新的操作（拷贝后再 pop，避免 mutate this.data）
-        const newStack = undoStack.slice(0, -1);
-        this.setData({
-          undoStack: newStack,
-          canUndo: newStack.length > 0
-        });
+        this._undoStack = undoStack.slice(0, -1);
+        this.setData({ canUndo: this._undoStack.length > 0 });
         wx.showToast({ title: `已撤销 ${result.count} 个色块`, icon: 'none' });
       }
     }
@@ -1101,7 +1105,7 @@ Page({
         // 0.1 绘制顶部标题栏
         ctx.fillStyle = '#f5f5f5';
         ctx.fillRect(0, 0, canvasWidth, titleHeight);
-        const titleFontSize = 120;
+        const titleFontSize = 72;
         ctx.font = `bold ${titleFontSize}px "KaiTi", "STKaiti", "楷体", "PingFang SC", cursive, sans-serif`;
         ctx.fillStyle = '#ff7eb3';
         ctx.textAlign = 'left';
@@ -1584,7 +1588,7 @@ Page({
           // 标题
           ctx.fillStyle = '#f5f5f5';
           ctx.fillRect(0, 0, canvasW, titleHeight);
-          ctx.font = 'bold 80px "KaiTi", "STKaiti", "楷体", "PingFang SC", cursive, sans-serif';
+          ctx.font = 'bold 56px "KaiTi", "STKaiti", "楷体", "PingFang SC", cursive, sans-serif';
           ctx.fillStyle = '#ff7eb3';
           ctx.textAlign = 'left';
           ctx.textBaseline = 'middle';

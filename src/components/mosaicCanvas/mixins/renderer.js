@@ -48,7 +48,11 @@ module.exports = {
   },
 
   renderToCanvas(gridData, cols, rows, gridSize) {
-    if (this.isRendering) return;
+    if (this.isRendering) {
+      // 渲染进行中：记录最新请求，完成后自动补渲一次（覆盖式，最多补一次）
+      this._pendingReRender = { gridData, cols, rows, gridSize };
+      return;
+    }
     this.isRendering = true;
     const that = this;
 
@@ -164,49 +168,55 @@ module.exports = {
         const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - offsetY) / cellSize));
 
         const shouldRemoveEdge = that.data.removeEdge === true;
+        const showCode = that.data.showCode && that.data.hasUserZoomed && cellSize >= 15;
+        // 预计算循环不变量（HIGH3 优化）
+        const ceilCellW = Math.ceil(cellSize);
+        const ceilCellH = Math.ceil(cellSize);
+        const fontSize = Math.max(4, cellSize * 0.25);
+        const fontStr = fontSize + 'px sans-serif';
+        ctx.lineWidth = 1;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
         for (let row = startRow; row <= endRow; row++) {
           for (let col = startCol; col <= endCol; col++) {
             const cell = gridData[row] && gridData[row][col];
             if (!cell || (shouldRemoveEdge && cell.isEdge)) continue;
 
-            const cellWidth = cellSize;
-            const cellHeight = cellSize;
-
             let x = offsetX + col * cellSize;
             const y = offsetY + row * cellSize;
 
             if (that.data.mirrorImage) {
-              x = actualCanvasWidth - x - cellWidth;
+              x = actualCanvasWidth - x - cellSize;
             }
+
+            const floorX = Math.floor(x);
+            const floorY = Math.floor(y);
 
             if (cell.isEmpty) {
               ctx.fillStyle = '#F0F0F0';
             } else {
               ctx.fillStyle = cell.markHex;
             }
-            ctx.fillRect(Math.floor(x), Math.floor(y), Math.ceil(cellWidth), Math.ceil(cellHeight));
+            ctx.fillRect(floorX, floorY, ceilCellW, ceilCellH);
 
             ctx.strokeStyle = cell.isEmpty ? 'rgba(0, 0, 0, 0.05)' : 'rgba(0, 0, 0, 0.1)';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(cellWidth) - 1, Math.ceil(cellHeight) - 1);
+            ctx.strokeRect(floorX + 0.5, floorY + 0.5, ceilCellW - 1, ceilCellH - 1);
 
-            const size = Math.min(cellWidth, cellHeight);
-            if (!cell.isEmpty && that.data.showCode && that.data.hasUserZoomed && size >= 8 && (!shouldRemoveEdge || !cell.isEdge)) {
+            if (showCode && !cell.isEmpty && (!shouldRemoveEdge || !cell.isEdge)) {
               const isLight = isLightColor(cell.markHex);
               ctx.fillStyle = isLight ? '#333333' : '#ffffff';
-              ctx.font = `${Math.max(6, size * 0.25)}px sans-serif`;
-              ctx.textAlign = 'center';
-              ctx.textBaseline = 'middle';
-              ctx.fillText(formatMarkCode(cell.markCode), x + cellWidth / 2, y + cellHeight / 2);
+              ctx.font = fontStr;
+              ctx.fillText(formatMarkCode(cell.markCode), x + cellSize / 2, y + cellSize / 2);
             }
           }
         }
 
-        if (that.data.hasUserZoomed && cellSize >= 8) {
+        if (that.data.hasUserZoomed && cellSize >= 15) {
           that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
         }
 
-        if (that.data.hasUserZoomed && cellSize >= 8) {
+        if (that.data.hasUserZoomed && cellSize >= 15) {
           that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
         }
 
@@ -215,7 +225,16 @@ module.exports = {
         that.isRendering = false;
         that.triggerEvent('loadingChange', { show: false, text: '' });
         that._loadingShown = false;
+        that._flushPendingRender();
       });
+  },
+
+  _flushPendingRender() {
+    const pending = this._pendingReRender;
+    this._pendingReRender = null;
+    if (pending) {
+      this.renderToCanvas(pending.gridData, pending.cols, pending.rows, pending.gridSize);
+    }
   },
 
   drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, mirrorImage, canvasWidth) {
@@ -399,10 +418,10 @@ module.exports = {
           ctx.strokeRect(Math.floor(x) + 0.5, Math.floor(y) + 0.5, Math.ceil(width) - 1, Math.ceil(height) - 1);
 
           const cellSize = Math.min(width, height);
-          if (that.data.showCode && that.data.hasUserZoomed && cellSize >= 8 && (!shouldRemoveEdge || !segment.isEdge)) {
+          if (that.data.showCode && that.data.hasUserZoomed && cellSize >= 15 && (!shouldRemoveEdge || !segment.isEdge)) {
             const isLight = isLightColor(segment.markHex);
             ctx.fillStyle = isLight ? '#333333' : '#ffffff';
-            ctx.font = `${Math.max(6, cellSize * 0.25)}px sans-serif`;
+            ctx.font = `${Math.max(4, cellSize * 0.25)}px sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(formatMarkCode(segment.markCode), x + width / 2, y + height / 2);
@@ -423,13 +442,14 @@ module.exports = {
           const startRow = Math.max(0, Math.floor((visibleTop - offsetY) / cellSize));
           const endRow = Math.min(rows - 1, Math.ceil((visibleBottom - offsetY) / cellSize));
 
-          if (that.data.hasUserZoomed && gridSize * scale >= 8) {
+          if (that.data.hasUserZoomed && gridSize * scale >= 15) {
             that.drawGuideLines(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
             that.drawRegionWatermarks(ctx, offsetX, offsetY, cols, rows, gridSize, scale, startCol, endCol, startRow, endRow, that.data.mirrorImage, actualCanvasWidth);
           }
         }
 
         that.isRendering = false;
+        that._flushPendingRender();
       });
   },
 

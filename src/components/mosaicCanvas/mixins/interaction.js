@@ -111,6 +111,11 @@ module.exports = {
       }
 
       if (this.data.scale >= 1.0) {
+        // 节流：iOS 上 touchmove 每帧触发，setData 桥接代价高，30ms 足够平滑
+        const now = Date.now();
+        if (now - (this._lastPanTs || 0) < 30) return;
+        this._lastPanTs = now;
+
         const limits = this._getDragLimits();
 
         let newOffsetX = this.data.offsetX + deltaX;

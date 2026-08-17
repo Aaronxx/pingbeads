@@ -6133,3 +6133,9 @@
 /cloudfunctions/contentCheck/node_modules/yn/package.json
 /cloudfunctions/contentCheck/node_modules/yn/readme.md
 /cloudfunctions/contentCheck/node_modules/.package-lock.json
+
+# ---- 工具/依赖产物（不入库）----
+/node_modules/
+/.toon-memory/
+/.zcode/
+/qodana.yaml

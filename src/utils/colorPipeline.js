@@ -57,6 +57,7 @@ function createColorPipeline(options) {
   /** 替换特殊色 */
   function replaceSpecials(gridData, rows, cols, version, useSpecial) {
     if (useSpecial) return;
+    if (!gridData || rows <= 0 || cols <= 0) return;
     const getAlt = getGetAlt(version);
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
@@ -131,6 +132,8 @@ function createColorPipeline(options) {
      * @param {number} cols
      */
     reapplyColors(gridData, rows, cols) {
+      // 防御：调用方在数据被清空的竞态窗口可能传入 null 网格，直接跳过
+      if (!gridData || rows <= 0 || cols <= 0) return;
       this.syncColorMapper();
 
       const ver = opts.algorithmVersion;
@@ -179,6 +182,7 @@ function createColorPipeline(options) {
      * @param {number} cols
      */
     replaceSpecialsOnly(gridData, rows, cols) {
+      if (!gridData || rows <= 0 || cols <= 0) return;
       replaceSpecials(gridData, rows, cols, opts.algorithmVersion, opts.useSpecialColors);
     },
 
@@ -192,6 +196,7 @@ function createColorPipeline(options) {
      * @param {number} cols
      */
     reapplyVibrantMosaic(gridData, rows, cols) {
+      if (!gridData || rows <= 0 || cols <= 0) return;
       this.syncColorMapper();
       const ver = opts.algorithmVersion;
       const vibrantScale = opts.vibrantScale || 0;

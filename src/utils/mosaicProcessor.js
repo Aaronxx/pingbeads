@@ -12,7 +12,7 @@
 
 const { fastFindClosestMarkColor } = require('./colorMapper');
 const { NoBorderMosaicProcessor } = require('./noBorderMosaicProcessor');
-const { extractCellColor } = require('./mosaicColorUtils');
+const { extractCellColor, medianColor } = require('./mosaicColorUtils');
 
 /**
  * 验证图片是否为马赛克图（无网格线类型）
@@ -122,62 +122,6 @@ function validateGridPattern(pixelData, width, height, cellSize) {
 
 // ========== 工具函数 ==========
 
-/** 快速中位数 */
-function fastMedian(arr) {
-  const len = arr.length;
-  if (len === 0) return 0;
-  const sorted = arr.slice().sort((a, b) => a - b);
-  const mid = len >> 1;
-  return len % 2 === 1 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
-}
-
-/** 计算一组颜色的中位数颜色 */
-function medianColor(colors) {
-  if (!colors || colors.length === 0) return null;
-  const rs = [], gs = [], bs = [];
-  for (const c of colors) {
-    rs.push(c.r); gs.push(c.g); bs.push(c.b);
-  }
-  return { r: fastMedian(rs), g: fastMedian(gs), b: fastMedian(bs) };
-}
-
-/**
- * 改进的颜色提取：中位数引导的加权平均
- * 1. 先找中位数作为参考中心
- * 2. 对接近中位数的像素赋予更高权重（高斯权重）
- * 3. 计算加权平均作为最终颜色
- * 这样既抗噪又准确代表主色调
- */
-function extractDominantColor(colors) {
-  if (!colors || colors.length === 0) return null;
-  if (colors.length <= 4) return medianColor(colors);
-
-  const median = medianColor(colors);
-  if (!median) return null;
-
-  const sigmaSq = 2 * 25 * 25;
-  let sumW = 0, sumR = 0, sumG = 0, sumB = 0;
-
-  for (const c of colors) {
-    const dr = c.r - median.r;
-    const dg = c.g - median.g;
-    const db = c.b - median.b;
-    const distSq = dr * dr + dg * dg + db * db;
-    const w = Math.exp(-distSq / sigmaSq);
-    sumW += w;
-    sumR += c.r * w;
-    sumG += c.g * w;
-    sumB += c.b * w;
-  }
-
-  if (sumW === 0) return median;
-  return {
-    r: Math.round(sumR / sumW),
-    g: Math.round(sumG / sumW),
-    b: Math.round(sumB / sumW)
-  };
-}
-
 /** 找数组众数 */
 function findMode(arr) {
   if (!arr || arr.length === 0) return 0;
@@ -212,73 +156,6 @@ function findMedian(arr) {
  * @param {number} clusterGap - 聚类间距阈值，默认 5
  * @returns {Array} 分界线数组 [{ center, start, end, pixels }]
  */
-/**
- * 验证分界线是否有双跳变特征（真正的边界线 vs JPG过渡带）
- *
- * 真正的边界线：色块A → 跳变 → 边界线颜色（稳定N像素）→ 跳变 → 色块B
- * JPG过渡带：色块A → 渐变 → 色块B（只有一次连续变化，没有中间稳定区）
- *
- * 检查方法：在每个聚类分界线的宽度范围内，采样像素看中间区域是否颜色稳定
- * @returns {boolean} true=有双跳变特征（真正边界线）
- */
-function hasDoubleJump(data, width, height, direction, pos, line, colorDistThreshold) {
-  const start = line.start;
-  const end = line.end;
-  if (end - start < 2) return false; // 太窄不可能有双跳变
-
-  // 采样边界线中间区域的像素颜色
-  const midStart = start + Math.floor((end - start) * 0.3);
-  const midEnd = start + Math.floor((end - start) * 0.7);
-  if (midEnd <= midStart) return false;
-
-  const samples = [];
-  if (direction === 'horizontal') {
-    const y = pos;
-    for (let x = midStart; x <= midEnd && x < width; x++) {
-      const i = (y * width + x) * 4;
-      samples.push({ r: data[i], g: data[i + 1], b: data[i + 2] });
-    }
-  } else {
-    const x = pos;
-    for (let y = midStart; y <= midEnd && y < height; y++) {
-      const i = (y * width + x) * 4;
-      samples.push({ r: data[i], g: data[i + 1], b: data[i + 2] });
-    }
-  }
-
-  if (samples.length < 2) return false;
-
-  // 检查中间区域颜色是否稳定（方差小 = 真正的边界线颜色带）
-  const med = medianColor(samples);
-  let maxDeviation = 0;
-  for (const s of samples) {
-    const dev = Math.sqrt((s.r - med.r) ** 2 + (s.g - med.g) ** 2 + (s.b - med.b) ** 2);
-    if (dev > maxDeviation) maxDeviation = dev;
-  }
-
-  // 中间区域颜色稳定（最大偏差 < 阈值）= 有双跳变 = 真正的边界线
-  return maxDeviation < colorDistThreshold * 0.7;
-}
-
-/**
- * 统计一组扫描线中有双跳变特征的分界线比例
- * 用于区分真正的边界线马赛克图 vs 无边界线马赛克图的JPG过渡带
- */
-function countDoubleJumpLines(data, width, height, allLines, direction, colorDistThreshold) {
-  let total = 0, doubleJump = 0;
-  for (const lineGroup of allLines) {
-    const pos = direction === 'horizontal'
-      ? Math.floor(height * 0.5)  // 近似位置
-      : Math.floor(width * 0.5);
-    for (const line of lineGroup) {
-      total++;
-      // 需要找到对应的扫描线位置，但这里简化用第一条扫描线的pos
-      // 实际验证应该在原始扫描线上做
-    }
-  }
-  return { total, doubleJump: 0 }; // 占位，实际在 process() 中用
-}
-
 /**
  * 扫描单条线，找颜色变化点，然后聚类成分界线
  */
@@ -800,14 +677,5 @@ class MosaicProcessor {
 module.exports = {
   MosaicProcessor,
   scanLineForGridLines,
-  inferCellSize,
-  medianColor,
-  extractDominantColor
-};
-module.exports = {
-  MosaicProcessor,
-  scanLineForGridLines,
-  inferCellSize,
-  medianColor,
-  extractDominantColor
+  inferCellSize
 };
