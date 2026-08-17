@@ -6,7 +6,7 @@ const colorReplace = require('./mixins/colorReplace');
 const imageProcessing = require('./mixins/imageProcessing');
 const exportPreset = require('./mixins/exportPreset');
 const { createColorPipeline } = require('../../utils/colorPipeline');
-const { desaturateGrayColors } = require('../../utils/imageProcessor');
+const { desaturateGrayColors, filterEdgeByMarkCode, cropMosaicData, findCropBoundaryFromGrid } = require('../../utils/imageProcessor');
 const { computeBaseScale, applyCustomCrop, computeCropStartCell, getCropModeMaxScale, recalcCropWindow, computeInitialCropWindow } = require('../../utils/cropHelpers');
 
 Component({
@@ -655,7 +655,7 @@ Component({
     },
 
     // 覆盖 mixin 的 _applyColorAndPreset（卡通模式专用）
-    // 完整后处理：鲜艳度 + 聚合 + 特殊色替换 + 浊色规避
+    // 完整后处理：鲜艳度 + 聚合 + 特殊色替换 + 浊色规避 + 边缘标记 + 自动裁边
     _applyColorAndPreset(gridData, rows, cols, gridSize) {
       if (this._pipeline) {
         this._pipeline.reapplyColors(gridData, rows, cols);
@@ -663,6 +663,11 @@ Component({
       if (this.data.antiGrayIntensity > 0) {
         desaturateGrayColors(gridData, rows, cols, this.data.antiGrayIntensity);
       }
+      // 边缘标记 + 自动裁边：必须在色号映射之后，按最终 markCode 连通判定
+      const edgeResult = this._markEdgeAndAutoCrop(gridData, rows, cols, gridSize);
+      gridData = edgeResult.gridData;
+      rows = edgeResult.rows;
+      cols = edgeResult.cols;
       this.cachedOriginalGridData = this.deepCloneGridData(gridData, rows, cols);
       const presetResult = this._applyGridPreset(gridData, cols, rows);
       this.cachedGridData = presetResult.gridData;
@@ -671,7 +676,7 @@ Component({
     },
 
     // 马赛克模式专用：应用鲜艳度 + 特殊色替换 + 浊色规避，保留 processMosaicV2 的聚类结构
-    _applyMosaicResult(gridData, rows, cols, gridSize) {
+    _applyMosaicResult(gridData, rows, cols, gridSize, segments) {
       if (this._pipeline) {
         // 1. 鲜艳度重映射色号（从 rawRgb，不聚类，保留马赛克结构）
         this._pipeline.reapplyVibrantMosaic(gridData, rows, cols);
@@ -682,11 +687,42 @@ Component({
       if (this.data.antiGrayIntensity > 0) {
         desaturateGrayColors(gridData, rows, cols, this.data.antiGrayIntensity);
       }
+      // 4. 边缘标记 + 自动裁边：必须在色号映射之后，按最终 markCode 连通判定
+      const edgeResult = this._markEdgeAndAutoCrop(gridData, rows, cols, gridSize, segments);
+      gridData = edgeResult.gridData;
+      rows = edgeResult.rows;
+      cols = edgeResult.cols;
       this.cachedOriginalGridData = this.deepCloneGridData(gridData, rows, cols);
       const presetResult = this._applyGridPreset(gridData, cols, rows);
       this.cachedGridData = presetResult.gridData;
       this.cachedGridInfo = { cols: presetResult.cols, rows: presetResult.rows, gridSize };
       return presetResult;
+    },
+
+    // 按「最终色号 markCode」从四边洪泛标记边缘，并据此自动裁掉整圈边缘底色。
+    // 必须在色号映射完成之后调用（否则鲜艳度增强会改变边缘取色的最终色号，导致漏标）。
+    // 可选 segments（马赛克模式）：在裁边前把 isEdge 按 row/col 回写，供 segments 渲染/导出路径使用。
+    // 返回裁边后的 { gridData, rows, cols }；无边缘或无内容时原样返回。
+    _markEdgeAndAutoCrop(gridData, rows, cols, gridSize, segments) {
+      const markRes = filterEdgeByMarkCode(gridData, rows, cols);
+      if (!markRes.marked) return { gridData, rows, cols };
+
+      // 回写 isEdge 到 segments（此时 gridData 尚未裁边，cell.row/col 与 seg.row/col 一一对应）
+      if (segments && segments.length) {
+        for (const seg of segments) {
+          if (seg.row === undefined || seg.col === undefined) continue;
+          const cell = gridData[seg.row] && gridData[seg.row][seg.col];
+          if (cell) seg.isEdge = !!cell.isEdge;
+        }
+      }
+
+      const boundary = findCropBoundaryFromGrid(gridData, rows, cols);
+      if (!boundary.hasContent) return { gridData, rows, cols };
+
+      const cropResult = cropMosaicData({ gridData, rows, cols, gridSize }, boundary);
+      if (!cropResult.gridData) return { gridData, rows, cols };
+
+      return { gridData: cropResult.gridData, rows: cropResult.rows, cols: cropResult.cols };
     },
 
     // 覆盖 mixin 的 regenerateFromCache，使用管道处理

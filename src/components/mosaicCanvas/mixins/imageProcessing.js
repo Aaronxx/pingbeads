@@ -4,7 +4,7 @@
  * regenerateFromCache / _applyColorAndPreset 已在 mosaicCanvas.js 主文件中覆盖，
  * 通过 colorPipeline.js 统一处理色彩算法。
  */
-const { detectEdgeColorFromGrid, detectEdgeColorFromSegments, filterEdgeSegments, filterEdgeBlocks, cropMosaicData, findCropBoundaryFromGrid, convertSegmentsToGridData, desaturateGrayColors } = require('../../../utils/imageProcessor');
+const { convertSegmentsToGridData } = require('../../../utils/imageProcessor');
 
 module.exports = {
   _waitForData(callback, retryCount) {
@@ -387,43 +387,12 @@ module.exports = {
   },
 
   _finishMosaicResult(result, qualityGridSize, srcWidth, srcHeight) {
-    const edgeDetection = detectEdgeColorFromSegments(result.segments, result.cols, result.rows, 30);
-    if (edgeDetection && edgeDetection.hasEdge) {
-      filterEdgeSegments(result.segments, result.cols, result.rows, edgeDetection.edgeColor, 25);
-    }
-
     const gridData = convertSegmentsToGridData(result.segments, result.cols, result.rows);
 
-    let edgeCount = 0, nonEdgeCount = 0, nullCount = 0;
-    for (let r = 0; r < result.rows; r++) {
-      for (let c = 0; c < result.cols; c++) {
-        const cell = gridData[r] && gridData[r][c];
-        if (!cell) { nullCount++; }
-        else if (cell.isEdge) { edgeCount++; }
-        else { nonEdgeCount++; }
-      }
-    }
-
-    if (nonEdgeCount > 0 && edgeCount > 0) {
-      const contentBoundary = findCropBoundaryFromGrid(gridData, result.rows, result.cols);
-      if (contentBoundary.hasContent) {
-        const cropResult = cropMosaicData(
-          { gridData, rows: result.rows, cols: result.cols, gridSize: result.gridSize },
-          contentBoundary
-        );
-        if (cropResult.gridData) {
-          gridData.splice(0, gridData.length, ...cropResult.gridData);
-          result.rows = cropResult.rows;
-          result.cols = cropResult.cols;
-        }
-      }
-    } else if (nonEdgeCount === 0) {
-      console.log('[_finishMosaicResult] ⚠️ 所有格子都被标记为边缘，内容为空！');
-    }
-
-    // 浊色规避已移入 _applyMosaicResult 内部
+    // 边缘标记按「最终色号 markCode」进行，且必须在鲜艳度/色号映射之后，
+    // 故移入 _applyMosaicResult 内部（与自动裁边一起，在色号映射后统一处理）。
     // 马赛克模式专用：不走 reapplyColors，保留 processMosaicV2 的色号映射
-    const presetResult = this._applyMosaicResult(gridData, result.rows, result.cols, result.gridSize);
+    const presetResult = this._applyMosaicResult(gridData, result.rows, result.cols, result.gridSize, result.segments);
     const finalGridData = presetResult.gridData;
     const finalCols = presetResult.cols;
     const finalRows = presetResult.rows;
@@ -451,49 +420,8 @@ module.exports = {
   },
 
   _finishSimpleResult(result, qualityGridSize) {
-    try {
-      const pixelData = this.getCachedPixelData();
-      const hasPixelData = pixelData && this.cachedWidth > 0 && this.cachedHeight > 0;
-
-      const hasExistingIsEdge = result.gridData.some(row =>
-        row && row.some(cell => cell && cell.isEdge)
-      );
-
-      let edgeDetection = null;
-      let boundary = { hasEdge: false };
-
-      if (hasExistingIsEdge) {
-        edgeDetection = { hasEdge: true, edgeColor: null };
-        boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
-      } else if (hasPixelData) {
-        edgeDetection = detectEdgeColorFromGrid(result.gridData, result.rows, result.cols, qualityGridSize, 30);
-        if (edgeDetection && edgeDetection.hasEdge) {
-          boundary = { hasEdge: true, top: 0, bottom: result.rows, left: 0, right: result.cols };
-        }
-      }
-
-      if (edgeDetection && edgeDetection.hasEdge) {
-        const cropResult = filterEdgeBlocks(result.gridData, result.rows, result.cols, qualityGridSize, edgeDetection.edgeColor, boundary);
-        if (cropResult.marked) {
-          const contentBoundary = findCropBoundaryFromGrid(result.gridData, result.rows, result.cols);
-          if (contentBoundary.hasContent) {
-            const finalCropResult = cropMosaicData(
-              { gridData: result.gridData, rows: result.rows, cols: result.cols, gridSize: qualityGridSize },
-              contentBoundary
-            );
-            if (finalCropResult.gridData) {
-              result.gridData = finalCropResult.gridData;
-              result.rows = finalCropResult.rows;
-              result.cols = finalCropResult.cols;
-            }
-          }
-        }
-      }
-    } catch (e) {
-      // ignore
-    }
-
-    // 浊色规避已移入 _applyColorAndPreset 内部，确保快照包含浊色规避结果
+    // 鲜艳度/色号映射、浊色规避、边缘标记、自动裁边均移入 _applyColorAndPreset 内部。
+    // 边缘标记按「最终色号 markCode」进行，必须在色号映射之后。
     const presetResult = this._applyColorAndPreset(result.gridData, result.rows, result.cols, qualityGridSize);
 
     const finalGridData = presetResult.gridData;

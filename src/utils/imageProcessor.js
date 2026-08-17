@@ -1038,6 +1038,113 @@ function filterEdgeBlocks(gridData, rows, cols, gridSize, edgeColor, boundary, d
 }
 
 /**
+ * 基于最终色号(markCode)从四边洪泛标记边缘色块（4 连通 BFS）。
+ *
+ * 与 filterEdgeSegments / filterEdgeBlocks 不同：后者用「原始取色 avgColor/originalRgb」
+ * 做欧氏距离阈值判定，在鲜艳度等后处理之前执行；而本函数用「最终显示色号」精确匹配，
+ * 必须在色号映射（鲜艳度增强/特殊色替换/浊色规避）完成之后调用，才能保证
+ * "同色号一起去掉"的语义一致。
+ *
+ * 背景：鲜艳度增强会把边缘取色偏脏的格子拉白，使其与四周映射成同一个色号（如 H2），
+ * 但若按映射前的 avgColor 判距离，该格可能超过阈值、漏标 isEdge，导致去边缘时
+ * "四周同色号都隐藏、唯独留下它"。
+ *
+ * @param {Array} gridData - 2D 网格数据（cell.markCode 已是最终色号）
+ * @param {number} rows
+ * @param {number} cols
+ * @returns {object} { marked: boolean, edgeMarkCode: string|null }
+ */
+function filterEdgeByMarkCode(gridData, rows, cols) {
+  if (!gridData || rows <= 0 || cols <= 0) {
+    return { marked: false, edgeMarkCode: null };
+  }
+
+  // 1. 统计四边（最外一圈）格子的色号频率，选主导色号作为边缘底色
+  const counts = {};
+  let total = 0;
+  const tally = (cell) => {
+    if (cell && cell.markCode) {
+      counts[cell.markCode] = (counts[cell.markCode] || 0) + 1;
+      total++;
+    }
+  };
+  for (let c = 0; c < cols; c++) {
+    tally(gridData[0] && gridData[0][c]);
+    if (rows > 1) tally(gridData[rows - 1] && gridData[rows - 1][c]);
+  }
+  for (let r = 1; r < rows - 1; r++) {
+    tally(gridData[r] && gridData[r][0]);
+    if (cols > 1) tally(gridData[r] && gridData[r][cols - 1]);
+  }
+
+  let edgeMarkCode = null;
+  let bestCount = 0;
+  for (const code in counts) {
+    if (counts[code] > bestCount) {
+      bestCount = counts[code];
+      edgeMarkCode = code;
+    }
+  }
+  // 过半才算边缘底色，避免把内容色误当背景
+  if (!edgeMarkCode || total === 0 || bestCount / total < 0.5) {
+    return { marked: false, edgeMarkCode: null };
+  }
+
+  // 2. 从四边 BFS，标记 markCode === edgeMarkCode 的连通格子
+  const visited = createVisitedArray(rows, cols);
+  const queue = [];
+  const enqueue = (r, c) => {
+    const cell = gridData[r] && gridData[r][c];
+    if (!cell || !cell.markCode) return;
+    if (visited[r][c]) return;
+    if (cell.markCode === edgeMarkCode) {
+      visited[r][c] = true;
+      queue.push({ row: r, col: c });
+    }
+  };
+  for (let c = 0; c < cols; c++) {
+    enqueue(0, c);
+    if (rows > 1) enqueue(rows - 1, c);
+  }
+  for (let r = 1; r < rows - 1; r++) {
+    enqueue(r, 0);
+    if (cols > 1) enqueue(r, cols - 1);
+  }
+
+  const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    for (const [dr, dc] of directions) {
+      const nr = cur.row + dr;
+      const nc = cur.col + dc;
+      if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+      if (visited[nr][nc]) continue;
+
+      const cell = gridData[nr] && gridData[nr][nc];
+      if (cell && cell.markCode === edgeMarkCode) {
+        visited[nr][nc] = true;
+        queue.push({ row: nr, col: nc });
+      }
+    }
+  }
+
+  // 3. 回写 isEdge
+  let marked = false;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cell = gridData[r] && gridData[r][c];
+      if (cell) {
+        cell.isEdge = visited[r][c];
+        if (cell.isEdge) marked = true;
+      }
+    }
+  }
+
+  return { marked, edgeMarkCode };
+}
+
+/**
  * 从 isEdge 标记查找主体内容的边界
  * 从四边向中心扫描，找到第一行/列包含非 isEdge 格子位置
  * @param {Array} gridData - 网格数据 2D 数组
@@ -1729,6 +1836,7 @@ module.exports = {
   detectEdgeColorFromSegments,
   filterEdgeSegments,
   filterEdgeBlocks,
+  filterEdgeByMarkCode,
   cropMosaicData,
   findCropBoundaryFromGrid,
   convertSegmentsToGridData,
